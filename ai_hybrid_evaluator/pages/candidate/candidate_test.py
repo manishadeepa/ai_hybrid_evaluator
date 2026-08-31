@@ -311,7 +311,7 @@ def question_card() -> rx.Component:
                     rx.hstack(
                         rx.text("Next", font_family=FONT_BODY, size="2", weight="medium"),
                         rx.icon("arrow-right", size=14),
-                        spacing="1",
+                spacing="1",
                         align_items="center",
                     ),
                     on_click=CandidateState.next_question,
@@ -347,18 +347,57 @@ def question_card() -> rx.Component:
 # Right Column: Answer Editor Card
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _toolbar_btn(icon_name: str) -> rx.Component:
+# ── Rich-Text Editor JS helpers ──────────────────────────────────────────────
+# Runs execCommand on the contenteditable editor, then syncs the updated HTML
+# back to the backend state via the hidden relay input.
+_EXEC_CMD_JS = """
+(function(cmd, arg) {
+    var ed = document.getElementById('rte-editor');
+    if (!ed) return;
+    ed.focus();
+    document.execCommand(cmd, false, arg || null);
+    // Sync updated HTML back to state via the hidden relay input
+    var relay = document.getElementById('rte-relay');
+    if (relay) {
+        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        nativeInputValueSetter.call(relay, ed.innerHTML);
+        relay.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+})('{cmd}', {arg});
+"""
+
+
+def _exec_cmd(cmd: str, arg: str = "null") -> rx.event.EventSpec:
+    """Return a call_script that fires document.execCommand and syncs state."""
+    js = _EXEC_CMD_JS.replace("'{cmd}'", f"'{cmd}'").replace("{arg}", arg)
+    return rx.call_script(js)
+
+
+def _toolbar_btn(icon_name: str, cmd: str, arg: str = "null") -> rx.Component:
+    """A toolbar icon button that fires execCommand on the rich-text editor."""
     return rx.icon_button(
         rx.icon(icon_name, size=15),
         size="1",
         variant="ghost",
         color_scheme="gray",
         cursor="pointer",
+        on_click=_exec_cmd(cmd, arg),
     )
 
 
 def answer_card() -> rx.Component:
     return rx.box(
+        # ── Hidden relay input: bridges the contenteditable -> Reflex state ──
+        # The JS oninput handler writes editor.innerHTML into this input,
+        # which Reflex picks up as a normal on_change event.
+        rx.el.input(
+            id="rte-relay",
+            type="hidden",
+            value=CandidateState.current_answer_text,
+            on_change=CandidateState.set_answer_html,
+            style={"display": "none"},
+        ),
+
         rx.vstack(
             # Top Header Row: Your Answer + Auto-saved badge + Words count
             rx.hstack(
@@ -386,20 +425,28 @@ def answer_card() -> rx.Component:
                 align_items="center",
             ),
 
-            # Formatting Toolbar Bar
+            # ── Formatting Toolbar ────────────────────────────────────────
             rx.hstack(
-                _toolbar_btn("undo-2"),
-                _toolbar_btn("redo-2"),
+                # Undo / Redo
+                _toolbar_btn("undo-2",        "undo"),
+                _toolbar_btn("redo-2",        "redo"),
                 rx.box(width="1px", height="16px", background="#E5E7EB", margin="0 0.3em"),
-                _toolbar_btn("bold"),
-                _toolbar_btn("italic"),
-                _toolbar_btn("underline"),
+                # Inline formatting
+                _toolbar_btn("bold",          "bold"),
+                _toolbar_btn("italic",        "italic"),
+                _toolbar_btn("underline",     "underline"),
                 rx.box(width="1px", height="16px", background="#E5E7EB", margin="0 0.3em"),
-                _toolbar_btn("list"),
-                _toolbar_btn("list-ordered"),
+                # Lists
+                _toolbar_btn("list",          "insertUnorderedList"),
+                _toolbar_btn("list-ordered",  "insertOrderedList"),
                 rx.box(width="1px", height="16px", background="#E5E7EB", margin="0 0.3em"),
-                _toolbar_btn("align-justify"),
-                _toolbar_btn("strikethrough"),
+                # Alignment
+                _toolbar_btn("align-left",    "justifyLeft"),
+                _toolbar_btn("align-center",  "justifyCenter"),
+                _toolbar_btn("align-right",   "justifyRight"),
+                rx.box(width="1px", height="16px", background="#E5E7EB", margin="0 0.3em"),
+                _toolbar_btn("align-justify", "justifyFull"),
+                _toolbar_btn("strikethrough", "strikeThrough"),
                 spacing="1",
                 align_items="center",
                 padding="0.45em 0.8em",
@@ -411,25 +458,64 @@ def answer_card() -> rx.Component:
                 margin_top="1.2em",
             ),
 
-            # Answer Text Area
-            rx.text_area(
-                value=CandidateState.current_answer_text,
-                on_change=CandidateState.update_answer,
-                disabled=CandidateState.is_test_submitted | CandidateState.is_time_expired,
-                placeholder=rx.cond(
-                    CandidateState.is_time_expired,
-                    "Time has expired. Assessment has been automatically submitted and editing is locked.",
-                    "Type your answer here...",
+
+            # ── Rich-Text Editor (contenteditable div) ────────────────────
+            rx.box(
+                # Script: hydrate editor content from state on mount/question-change,
+                # and wire the oninput sync to the relay.
+                rx.script(
+                    """
+                    (function() {
+                        function initRTE() {
+                            var ed = document.getElementById('rte-editor');
+                            var relay = document.getElementById('rte-relay');
+                            if (!ed || !relay) { setTimeout(initRTE, 80); return; }
+
+                            // Sync relay value -> editor HTML (restores content on
+                            // question navigation or page hydration).
+                            if (ed.innerHTML !== relay.value) {
+                                ed.innerHTML = relay.value || '';
+                            }
+
+                            // Attach oninput once (guard against double-attach).
+                            if (!ed.__rteAttached) {
+                                ed.__rteAttached = true;
+                                ed.addEventListener('input', function() {
+                                    var niv = Object.getOwnPropertyDescriptor(
+                                        window.HTMLInputElement.prototype, 'value').set;
+                                    niv.call(relay, ed.innerHTML);
+                                    relay.dispatchEvent(new Event('input', { bubbles: true }));
+                                });
+                            }
+                        }
+                        initRTE();
+                    })();
+                    """
+                ),
+                id="rte-editor",
+                content_editable=rx.cond(
+                    CandidateState.is_test_submitted | CandidateState.is_time_expired,
+                    "false",
+                    "true",
                 ),
                 min_height="440px",
                 width="100%",
                 font_family=FONT_BODY,
-                size="3",
+                font_size="var(--font-size-3)",
+                line_height="1.7",
                 padding="1.2em",
                 border="1px solid #E5E7EB",
                 border_radius="0 0 8px 8px",
-                background=rx.cond(CandidateState.is_time_expired, "#F9FAFB", "white"),
-                _focus={"outline": "none", "border_color": "#4338CA"},
+                background=rx.cond(
+                    CandidateState.is_test_submitted | CandidateState.is_time_expired,
+                    "#F9FAFB",
+                    "white",
+                ),
+                overflow_y="auto",
+                outline="none",
+                _focus={"border_color": "#4338CA", "box_shadow": "0 0 0 2px rgba(67,56,202,0.12)"},
+                white_space="pre-wrap",
+                word_break="break-word",
             ),
 
             spacing="0",
@@ -444,6 +530,7 @@ def answer_card() -> rx.Component:
         min_height="580px",
         box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
     )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -854,6 +941,7 @@ def candidate_test_page() -> rx.Component:
             rx.script(
                 """
                 (function() {
+                    // ── Fullscreen detection ──────────────────────────────────────
                     function checkFS() {
                         var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
                         if (!isFS) {
@@ -871,6 +959,37 @@ def candidate_test_page() -> rx.Component:
                     window.__candidate_fs_handler = checkFS;
                     document.addEventListener('fullscreenchange', checkFS);
                     document.addEventListener('webkitfullscreenchange', checkFS);
+
+                    // ── RTE relay watcher ─────────────────────────────────────────
+                    // When Reflex updates the relay input's value (e.g. question
+                    // navigation), push that HTML into the contenteditable editor.
+                    function watchRelay() {
+                        var relay = document.getElementById('rte-relay');
+                        var ed    = document.getElementById('rte-editor');
+                        if (!relay || !ed) { setTimeout(watchRelay, 100); return; }
+                        if (window.__rteRelayObserver) window.__rteRelayObserver.disconnect();
+                        window.__rteRelayObserver = new MutationObserver(function() {
+                            if (ed.innerHTML !== relay.value) {
+                                // Temporarily detach oninput to avoid feedback loop
+                                ed.__rteAttached = false;
+                                ed.innerHTML = relay.value || '';
+                                ed.__rteAttached = true;
+                                // Re-wire the input listener
+                                ed.addEventListener('input', function onInput() {
+                                    var niv = Object.getOwnPropertyDescriptor(
+                                        window.HTMLInputElement.prototype, 'value').set;
+                                    niv.call(relay, ed.innerHTML);
+                                    relay.dispatchEvent(new Event('input', { bubbles: true }));
+                                });
+                            }
+                        });
+                        window.__rteRelayObserver.observe(relay, { attributes: true, attributeFilter: ['value'] });
+                    }
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', watchRelay);
+                    } else {
+                        watchRelay();
+                    }
                 })();
                 """
             ),

@@ -5,6 +5,7 @@ Includes mock questions, candidate answers, navigation, proctoring alerts, and s
 
 import asyncio
 import base64
+import re
 from datetime import datetime
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
@@ -89,6 +90,20 @@ MOCK_SUBJECTIVE_QUESTIONS = [
 ]
 
 
+def _strip_html(html: str) -> str:
+    """Best-effort plain-text extraction from the rich-text editor's HTML,
+    used only for word-counting / "has the candidate answered this
+    question yet" checks — never for grading or storage."""
+    if not html:
+        return ""
+    # Turn block-level breaks into spaces so words across separate
+    # <div>/<p>/<br> lines don't get glued together when tags are stripped.
+    text = re.sub(r"<(br|/div|/p|/li)\s*/?>", " ", html, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    return text.strip()
+
+
 class CandidateState(rx.State):
     # ── Active Test Session Metadata ─────────────────────────────────────
     active_assessment_name: str = "Quality"
@@ -101,7 +116,8 @@ class CandidateState(rx.State):
     is_time_expired: bool = False
     timer_session_id: int = 0
 
-    # Candidate Answers — dictionary mapping question ID (str) to answer string
+    # Candidate Answers — dictionary mapping question ID (str) to answer
+    # HTML (rich-text content from the answer editor).
     answers: dict[str, str] = {}
 
     # Marked for Review question IDs (list of ints)
@@ -148,7 +164,7 @@ class CandidateState(rx.State):
 
     @rx.var
     def current_word_count(self) -> int:
-        text = self.current_answer_text.strip()
+        text = _strip_html(self.current_answer_text)
         if not text:
             return 0
         return len(text.split())
@@ -162,7 +178,7 @@ class CandidateState(rx.State):
         count = 0
         for q in MOCK_SUBJECTIVE_QUESTIONS:
             qid_str = str(q["id"])
-            if self.answers.get(qid_str, "").strip():
+            if _strip_html(self.answers.get(qid_str, "")).strip():
                 count += 1
         return count
 
@@ -257,6 +273,19 @@ class CandidateState(rx.State):
         qid_str = str(self.current_question_number)
         new_answers = dict(self.answers)
         new_answers[qid_str] = text
+        self.answers = new_answers
+        self.auto_save_status = "Auto-saved"
+
+    def set_answer_html(self, html: str):
+        """Save the rich-text HTML produced by the answer editor's
+        toolbar/typing for the currently active question. Mirrors
+        update_answer but stores markup instead of plain text so
+        Bold/Italic/Underline/Lists/etc. persist and redisplay correctly."""
+        if self.is_test_submitted or self.is_time_expired:
+            return
+        qid_str = str(self.current_question_number)
+        new_answers = dict(self.answers)
+        new_answers[qid_str] = html
         self.answers = new_answers
         self.auto_save_status = "Auto-saved"
 
@@ -440,4 +469,3 @@ class CandidateProfileState(rx.State):
     async def save_profile(self):
         """Save candidate profile changes."""
         return rx.toast.success("Profile saved successfully!")
-

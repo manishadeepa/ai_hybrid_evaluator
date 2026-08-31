@@ -118,17 +118,7 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
                 font_family=FONT_BODY, color=COLORS["slate"], size="2",
             ),
         ),
-        # 5. Status
-        rx.table.cell(
-            rx.match(
-                a["status"],
-                ("Scheduled", rx.badge("Scheduled", color_scheme="orange", variant="soft", size="1", font_family=FONT_BODY)),
-                ("Active", rx.badge("Active", color_scheme="indigo", variant="soft", size="1", font_family=FONT_BODY)),
-                ("Completed", rx.badge("Completed", color_scheme="green", variant="soft", size="1", font_family=FONT_BODY)),
-                rx.badge("Draft", color_scheme="gray", variant="soft", size="1", font_family=FONT_BODY),
-            ),
-        ),
-        # 6. Actions (Type of Test / Edit / Delete)
+
         rx.table.cell(
             rx.hstack(
                 rx.button(
@@ -1087,7 +1077,6 @@ def assessments_page() -> rx.Component:
                         rx.table.column_header_cell("Facilitator"),
                         rx.table.column_header_cell("Candidates"),
                         rx.table.column_header_cell("Tests"),
-                        rx.table.column_header_cell("Status"),
                         rx.table.column_header_cell("Actions", justify="center", align="center"),
                         rx.table.column_header_cell("Facilitator Response"),
                     ),

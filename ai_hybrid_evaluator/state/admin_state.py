@@ -524,6 +524,7 @@ class AdminState(rx.State):
 
         self.assessments.append({
             "name": self.new_assessment_name,
+            "assessment_date": self.new_assessment_date,
             "facilitator_id": self.new_assessment_facilitator_id,
             "facilitator_name": facilitator["name"],
             "assigned_candidates": list(self.new_assessment_candidate_ids),
@@ -555,7 +556,7 @@ class AdminState(rx.State):
         a = self.assessments[index]
         self.edit_assessment_index = index
         self.edit_assessment_name = a["name"]
-        self.edit_assessment_date = a["assessment_date"]
+        self.edit_assessment_date = a.get("assessment_date", "")
         self.edit_assessment_facilitator_id = a["facilitator_id"]
         self.edit_assessment_status = a["status"]
         self.edit_assessment_candidate_ids = list(a["assigned_candidates"])
@@ -655,6 +656,7 @@ class AdminState(rx.State):
 
         self.assessments[self.edit_assessment_index] = {
             "name": self.edit_assessment_name,
+            "assessment_date": self.edit_assessment_date,
             "facilitator_id": self.edit_assessment_facilitator_id,
             "facilitator_name": facilitator["name"],
             "assigned_candidates": list(self.edit_assessment_candidate_ids),
