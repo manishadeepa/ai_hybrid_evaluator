@@ -1,88 +1,120 @@
-"""Sidebar navigation — Dashboard, Users (Facilitators/Candidates), Assessments, Reports, Settings, Logout."""
+"""
+Clean White Sidebar navigation for Admin — Dashboard, Users (Facilitators/Candidates), Assessments, Reports, Settings, Logout.
+Matches reference design with purple active states, clean outline icons, and subtle borders.
+"""
 
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 
-SIDEBAR_MUTED = "#94A3C4"
-SIDEBAR_HOVER = "#232B45"
-
 
 def nav_link(label: str, route: str, icon: str, active: bool, indent: bool = False) -> rx.Component:
     return rx.link(
         rx.hstack(
-            rx.icon(icon, size=16, color="white" if active else SIDEBAR_MUTED),
+            rx.box(
+                rx.icon(
+                    icon,
+                    size=16,
+                    color=COLORS["primary"] if active else COLORS["slate"],
+                ),
+                background="#EDE9FE" if active else "transparent",
+                padding="0.35em",
+                border_radius="6px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+            ),
             rx.text(
                 label,
-                color="white" if active else SIDEBAR_MUTED,
+                color=COLORS["primary"] if active else "#334155",
                 font_family=FONT_BODY,
                 size="2",
-                weight="bold" if active else "regular",
+                weight="bold" if active else "medium",
             ),
             spacing="3",
             align_items="center",
             width="100%",
-            padding="0.55em 0.8em",
-            padding_left="2.4em" if indent else "0.8em",
-            background=COLORS["primary"] if active else "transparent",
-            border_radius="8px",
+            padding="0.55em 0.85em",
+            padding_left="2.2em" if indent else "0.85em",
+            background=COLORS["primary_soft"] if active else "transparent",
+            border_radius="10px",
+            transition="all 0.15s ease",
+            _hover={"background": COLORS["primary_soft"] if active else "#F8FAFC"},
         ),
         href=route,
         width="100%",
         text_decoration="none",
-        _hover={"background": "transparent" if active else SIDEBAR_HOVER},
-        border_radius="8px",
+        border_radius="10px",
     )
 
 
 def users_menu_header(active: bool) -> rx.Component:
     return rx.hstack(
-        rx.icon("users", size=16, color="white" if active else SIDEBAR_MUTED),
-        rx.text("Users", color="white" if active else SIDEBAR_MUTED, font_family=FONT_BODY, size="2"),
+        rx.box(
+            rx.icon("users", size=16, color=COLORS["slate"]),
+            padding="0.35em",
+            border_radius="6px",
+            display="flex",
+            align_items="center",
+            justify_content="center",
+        ),
+        rx.text(
+            "Users",
+            color="#334155",
+            font_family=FONT_BODY,
+            size="2",
+            weight="medium",
+        ),
         rx.spacer(),
         rx.icon(
-            rx.cond(AdminState.users_menu_open, "chevron-down", "chevron-right"),
+            rx.cond(AdminState.users_menu_open, "chevron-up", "chevron-down"),
             size=14,
-            color=SIDEBAR_MUTED,
+            color=COLORS["slate"],
         ),
         spacing="3",
         align_items="center",
         width="100%",
-        padding="0.55em 0.8em",
-        border_radius="8px",
+        padding="0.55em 0.85em",
+        border_radius="10px",
         cursor="pointer",
         on_click=AdminState.toggle_users_menu,
-        _hover={"background": SIDEBAR_HOVER},
+        _hover={"background": "#F8FAFC"},
+        transition="all 0.15s ease",
     )
 
 
 def logout_item() -> rx.Component:
-    return rx.hstack(
-        rx.icon("log-out", size=16, color=SIDEBAR_MUTED),
-        rx.text("Logout", color=SIDEBAR_MUTED, font_family=FONT_BODY, size="2"),
-        spacing="3",
-        align_items="center",
-        width="100%",
-        padding="0.55em 0.8em",
-        border_radius="8px",
+    return rx.box(
+        rx.hstack(
+            rx.icon("log-out", size=16, color=COLORS["slate"]),
+            rx.text(
+                "Logout",
+                color="#334155",
+                font_family=FONT_BODY,
+                size="2",
+                weight="medium",
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        border_radius="10px",
+        padding="0.7em 1em",
         cursor="pointer",
+        width="100%",
         on_click=AuthState.logout,
-        _hover={"background": SIDEBAR_HOVER},
+        _hover={"background": "#F8FAFC", "border_color": "#D0D5DD"},
+        transition="all 0.15s ease",
     )
 
 
 def sidebar(active: str) -> rx.Component:
     return rx.box(
         rx.vstack(
-            rx.hstack(
-                rx.image(src="/tvs_logo.png", width="26px", height="26px", object_fit="contain"),
-                rx.text("GenAI Hybrid Evaluator", font_family=FONT_BODY, weight="bold", size="2", color="white"),
-                spacing="2",
-                align_items="center",
-                padding_bottom="1.8em",
-            ),
-            nav_link("Dashboard", "/admin/dashboard", "layout-dashboard", active == "dashboard"),
+            nav_link("Dashboard", "/admin/dashboard", "layout-grid", active == "dashboard"),
             users_menu_header(active in ("facilitators", "candidates")),
             rx.cond(
                 AdminState.users_menu_open,
@@ -93,19 +125,22 @@ def sidebar(active: str) -> rx.Component:
                     width="100%",
                 ),
             ),
-            nav_link("Assessments", "/admin/assessments", "file-text", active == "assessments"),
-            nav_link("Reports", "/admin/reports", "bar-chart-3", active == "reports"),
+            nav_link("Assessments", "/admin/assessments", "clipboard-list", active == "assessments"),
+            nav_link("Reports", "/admin/reports", "bar-chart-2", active == "reports"),
             nav_link("Settings", "/admin/settings", "settings", active == "settings"),
             rx.spacer(),
             logout_item(),
-            spacing="1",
+            spacing="2",
             width="100%",
             height="100%",
             align_items="stretch",
         ),
-        background=COLORS["ink"],
+        background=COLORS["surface"],
+        border_right=f"1px solid {COLORS['line']}",
         width="240px",
         min_width="240px",
-        height="100vh",
+        height="calc(100vh - 64px)",
         padding="1.5em 1em",
+        display="flex",
+        flex_direction="column",
     )

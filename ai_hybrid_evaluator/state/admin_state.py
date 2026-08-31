@@ -808,3 +808,165 @@ class AdminState(rx.State):
     @rx.var
     def viewing_test_is_final(self) -> bool:
         return self.viewing_test_name.lower() == "final test"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mock "submitted reports" data
+# Conceptually: Facilitator's Results page → Submit Report → Admin receives it
+# ─────────────────────────────────────────────────────────────────────────────
+
+ADMIN_SUBMITTED_REPORTS = [
+    {
+        "report_id": "RPT-001",
+        "assessment_name": "Quality",
+        "facilitator_name": "Ravi Kumar",
+        "facilitator_id": "F001",
+        "assessment_date": "25 Aug 2026",
+        "submitted_date": "29 Aug 2026",
+        "candidate_count": 4,
+        "overall_score": 78,
+        "final_test_score": 86,
+        "passing_rate": "100%",
+        "passing_count": "4 of 4 Candidates Passed",
+        "status": "Submitted",
+        # Test-level scores
+        "test_scores": [
+            {"name": "Test 1", "score": 72, "is_final": False},
+            {"name": "Test 2", "score": 68, "is_final": False},
+            {"name": "Test 3", "score": 81, "is_final": False},
+            {"name": "Final Test", "score": 86, "is_final": True},
+        ],
+        # CO, LO, Knowledge, Domain, RBT scores (All Candidates cohort)
+        "co": [
+            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 82},
+            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 76},
+            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 91},
+            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 68},
+        ],
+        "lo": [
+            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 88},
+            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 74},
+            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 82},
+            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 79},
+            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 90},
+        ],
+        "knowledge_type": [
+            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 84},
+            {"name": "Procedural Knowledge", "code": "Procedural", "score": 78},
+            {"name": "Application Knowledge", "code": "Application", "score": 72},
+        ],
+        "domain": [
+            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 86},
+            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 79},
+            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 74},
+            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 88},
+        ],
+        "rbt_level": [
+            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 91},
+            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 84},
+            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 76},
+            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 68},
+        ],
+        "insight_diff": 14,
+        "insight_start": "Test 1 (72%)",
+        "insight_end": "Final Test (86%)",
+        # Candidate leaderboard (matches RESULTS_CANDIDATE_SUMMARY)
+        "candidates": [
+            {"rank": 1, "name": "Sneha Kulkarni", "emp_id": "EMP-104", "overall_score": 96, "final_test_score": 94, "result": "Passed"},
+            {"rank": 2, "name": "Rohan Sharma", "emp_id": "EMP-101", "overall_score": 92, "final_test_score": 90, "result": "Passed"},
+            {"rank": 3, "name": "Priya Nair", "emp_id": "EMP-102", "overall_score": 86, "final_test_score": 84, "result": "Passed"},
+            {"rank": 4, "name": "Amit Patel", "emp_id": "EMP-103", "overall_score": 78, "final_test_score": 76, "result": "Passed"},
+        ],
+    },
+]
+
+
+class AdminReportsState(rx.State):
+    """State for the Admin Reports page — mock submitted reports from Facilitators."""
+
+    submitted_reports: list[dict] = list(ADMIN_SUBMITTED_REPORTS)
+
+    # Which report is currently being viewed in the detail modal
+    show_report_detail: bool = False
+    viewed_report_id: str = ""
+    is_full_view: bool = False
+
+    # Active analytics tab in the report detail view
+    report_detail_tab: str = "overall"  # "overall"|"co"|"lo"|"knowledge_type"|"domain"|"rbt_level"
+
+    def open_report(self, report_id: str, full_view: bool = False):
+        self.viewed_report_id = report_id
+        self.report_detail_tab = "overall"
+        self.is_full_view = full_view
+        self.show_report_detail = True
+
+    def toggle_full_view(self):
+        self.is_full_view = not self.is_full_view
+
+    def close_report(self):
+        self.show_report_detail = False
+        self.viewed_report_id = ""
+        self.is_full_view = False
+
+    def set_show_report_detail(self, value: bool):
+        self.show_report_detail = value
+        if not value:
+            self.viewed_report_id = ""
+            self.is_full_view = False
+
+    def set_report_detail_tab(self, tab: str):
+        self.report_detail_tab = tab
+
+    @rx.var
+    def current_report(self) -> dict:
+        for r in self.submitted_reports:
+            if r["report_id"] == self.viewed_report_id:
+                return r
+        return self.submitted_reports[0] if self.submitted_reports else {}
+
+    @rx.var
+    def report_candidates(self) -> list[dict]:
+        return self.current_report.get("candidates", [])
+
+    @rx.var
+    def report_test_scores(self) -> list[dict]:
+        return self.current_report.get("test_scores", [])
+
+    @rx.var
+    def report_co_scores(self) -> list[dict]:
+        return self.current_report.get("co", [])
+
+    @rx.var
+    def report_lo_scores(self) -> list[dict]:
+        return self.current_report.get("lo", [])
+
+    @rx.var
+    def report_knowledge_scores(self) -> list[dict]:
+        return self.current_report.get("knowledge_type", [])
+
+    @rx.var
+    def report_domain_scores(self) -> list[dict]:
+        return self.current_report.get("domain", [])
+
+    @rx.var
+    def report_rbt_scores(self) -> list[dict]:
+        return self.current_report.get("rbt_level", [])
+
+    @rx.var
+    def report_active_dimension_items(self) -> list[dict]:
+        tab = self.report_detail_tab
+        r = self.current_report
+        if tab == "co":
+            return r.get("co", [])
+        elif tab == "lo":
+            return r.get("lo", [])
+        elif tab == "knowledge_type":
+            return r.get("knowledge_type", [])
+        elif tab == "domain":
+            return r.get("domain", [])
+        elif tab == "rbt_level":
+            return r.get("rbt_level", [])
+        return r.get("test_scores", [])
+
+    def mock_export_report(self):
+        return rx.toast.info("Report exported as PDF (Mock)!")

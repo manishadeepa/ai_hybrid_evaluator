@@ -1,142 +1,124 @@
-"""Shared candidate shell — sidebar + topbar + content area.
-Mirrors the same pattern as admin_shell / facilitator_shell.
-"""
+"""Shared shell for Candidate pages — unified top bar + clean white sidebar + content area."""
 
 import reflex as rx
+from ai_hybrid_evaluator.components.layout.topbar import unified_topbar
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
-
-SIDEBAR_MUTED = "#94A3C4"
-SIDEBAR_HOVER = "#232B45"
 
 
 def _candidate_nav_link(label: str, route: str, icon: str, active: bool) -> rx.Component:
     return rx.link(
         rx.hstack(
-            rx.icon(icon, size=16, color="white" if active else SIDEBAR_MUTED),
+            rx.box(
+                rx.icon(
+                    icon,
+                    size=16,
+                    color=COLORS["primary"] if active else COLORS["slate"],
+                ),
+                background="#EDE9FE" if active else "transparent",
+                padding="0.35em",
+                border_radius="6px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+            ),
             rx.text(
                 label,
-                color="white" if active else SIDEBAR_MUTED,
+                color=COLORS["primary"] if active else "#334155",
                 font_family=FONT_BODY,
                 size="2",
-                weight="bold" if active else "regular",
+                weight="bold" if active else "medium",
             ),
             spacing="3",
             align_items="center",
             width="100%",
-            padding="0.55em 0.8em",
-            background=COLORS["primary"] if active else "transparent",
-            border_radius="8px",
+            padding="0.55em 0.85em",
+            background=COLORS["primary_soft"] if active else "transparent",
+            border_radius="10px",
+            transition="all 0.15s ease",
+            _hover={"background": COLORS["primary_soft"] if active else "#F8FAFC"},
         ),
         href=route,
         width="100%",
         text_decoration="none",
-        _hover={"background": "transparent" if active else SIDEBAR_HOVER},
-        border_radius="8px",
+        border_radius="10px",
     )
 
 
 def candidate_sidebar(active: str) -> rx.Component:
     return rx.box(
         rx.vstack(
-            # Brand
-            rx.hstack(
-                rx.image(src="/tvs_logo.png", width="26px", height="26px", object_fit="contain"),
-                rx.text("GenAI Hybrid Evaluator", font_family=FONT_BODY, weight="bold", size="2", color="white"),
-                spacing="2",
-                align_items="center",
-                padding_bottom="1.8em",
-            ),
-            # Nav items
-            _candidate_nav_link("My Assessments", "/candidate/dashboard", "clipboard-list", active == "assessments"),
+            _candidate_nav_link("My Assessments", "/candidate/dashboard", "layout-grid", active == "assessments"),
             _candidate_nav_link("Profile", "/candidate/profile", "user", active == "profile"),
             rx.spacer(),
             # Logout
-            rx.hstack(
-                rx.icon("log-out", size=16, color=SIDEBAR_MUTED),
-                rx.text("Logout", color=SIDEBAR_MUTED, font_family=FONT_BODY, size="2"),
-                spacing="3",
-                align_items="center",
-                width="100%",
-                padding="0.55em 0.8em",
-                border_radius="8px",
+            rx.box(
+                rx.hstack(
+                    rx.icon("log-out", size=16, color=COLORS["slate"]),
+                    rx.text(
+                        "Logout",
+                        color="#334155",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="medium",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                ),
+                background=COLORS["surface"],
+                border=f"1px solid {COLORS['line']}",
+                border_radius="10px",
+                padding="0.7em 1em",
                 cursor="pointer",
+                width="100%",
                 on_click=AuthState.candidate_logout,
-                _hover={"background": SIDEBAR_HOVER},
+                _hover={"background": "#F8FAFC", "border_color": "#D0D5DD"},
+                transition="all 0.15s ease",
             ),
-            spacing="1",
+            spacing="2",
             width="100%",
             height="100%",
             align_items="stretch",
         ),
-        background=COLORS["ink"],
+        background=COLORS["surface"],
+        border_right=f"1px solid {COLORS['line']}",
         width="240px",
         min_width="240px",
-        height="100vh",
+        height="calc(100vh - 64px)",
         padding="1.5em 1em",
-    )
-
-
-def candidate_topbar(title: str, subtitle: str) -> rx.Component:
-    return rx.hstack(
-        rx.vstack(
-            rx.heading(title, size="5", weight="bold", font_family=FONT_BODY, color=COLORS["ink"]),
-            rx.text(subtitle, size="2", color=COLORS["slate"], font_family=FONT_BODY),
-            spacing="0",
-            align_items="start",
-        ),
-        rx.spacer(),
-        rx.hstack(
-            rx.box(
-                rx.icon("user", size=14, color=COLORS["primary"]),
-                background=COLORS["primary_soft"],
-                padding="0.35em",
-                border_radius="50%",
-                display="flex",
-                align_items="center",
-                justify_content="center",
-            ),
-            rx.vstack(
-                rx.text(
-                    "Welcome, " + AuthState.candidate_name,
-                    font_family=FONT_BODY,
-                    size="2",
-                    weight="medium",
-                    color=COLORS["ink"],
-                ),
-                rx.text(
-                    AuthState.candidate_emp_id,
-                    font_family=FONT_BODY,
-                    size="1",
-                    color=COLORS["slate"],
-                ),
-                spacing="0",
-                align_items="start",
-            ),
-            spacing="2",
-            align_items="center",
-        ),
-        width="100%",
-        padding="1.4em 2em",
-        border_bottom=f"1px solid {COLORS['line']}",
-        background=COLORS["surface"],
-        align_items="center",
+        display="flex",
+        flex_direction="column",
     )
 
 
 def candidate_shell(active: str, title: str, subtitle: str, content: rx.Component) -> rx.Component:
-    return rx.hstack(
-        candidate_sidebar(active),
-        rx.vstack(
-            candidate_topbar(title, subtitle),
-            rx.box(content, padding="2em", width="100%"),
+    return rx.vstack(
+        # Unified Header
+        unified_topbar(
+            user_name="Candidate",
+            role_name="Candidate",
+            avatar_initial="C",
+        ),
+        # Body: Sidebar + Main Content Area
+        rx.hstack(
+            candidate_sidebar(active),
+            rx.box(
+                content,
+                padding="2em",
+                width="100%",
+                height="calc(100vh - 64px)",
+                overflow_y="auto",
+                background=COLORS["canvas"],
+            ),
             spacing="0",
             width="100%",
-            height="100vh",
-            overflow_y="auto",
-            background=COLORS["canvas"],
+            flex="1",
+            overflow="hidden",
         ),
         spacing="0",
         width="100%",
         height="100vh",
+        overflow="hidden",
+        background=COLORS["canvas"],
     )

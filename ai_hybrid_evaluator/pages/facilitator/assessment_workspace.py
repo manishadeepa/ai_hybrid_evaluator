@@ -1867,10 +1867,12 @@ def results_vertical_bar_chart() -> rx.Component:
                 rx.text("50%", font_family=FONT_BODY, size="1", color="#94A3B8"),
                 rx.text("25%", font_family=FONT_BODY, size="1", color="#94A3B8"),
                 rx.text("0%", font_family=FONT_BODY, size="1", color="#94A3B8"),
-                justify="between",
+                style={"justify_content": "space-between"},
                 height="180px",
                 align_items="end",
                 padding_right="0.5em",
+                flex_direction="column",
+                display="flex",
             ),
             # Chart Canvas
             rx.box(
