@@ -190,26 +190,27 @@ def approval_action_row(a: dict, idx: int) -> rx.Component:
 
 
 
-def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool) -> rx.Component:
-    """Row for an individual test showing test-wise question paper status."""
+def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool, test_date: str) -> rx.Component:
+    """Row for an individual test showing test-wise question paper status and test date with fixed column alignment."""
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
     fname = FacilitatorState.question_papers.get(assessment_name, {}).get(test_name, "")
     return rx.box(
         rx.hstack(
+            # ── 1. Left: Test Info + QP Status (Flex: 1) ───────────────
             rx.hstack(
                 rx.cond(
                     is_final,
                     rx.box(
-                        rx.icon("award", size=15, color="#B45309"),
+                        rx.icon("award", size=16, color="#B45309"),
                         background="#FEF3C7",
-                        padding="0.4em",
-                        border_radius="6px",
+                        padding="0.45em",
+                        border_radius="8px",
                     ),
                     rx.box(
-                        rx.icon("file-text", size=15, color=COLORS["primary"]),
+                        rx.icon("file-text", size=16, color=COLORS["primary"]),
                         background=COLORS["primary_soft"],
-                        padding="0.4em",
-                        border_radius="6px",
+                        padding="0.45em",
+                        border_radius="8px",
                     ),
                 ),
                 rx.vstack(
@@ -226,13 +227,13 @@ def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool) ->
                     rx.cond(
                         has_qp,
                         rx.hstack(
-                            rx.icon("circle-check", size=12, color="#027A48"),
+                            rx.icon("circle-check", size=13, color="#027A48"),
                             rx.text("QP: " + fname, font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
                             spacing="1",
                             align_items="center",
                         ),
                         rx.hstack(
-                            rx.icon("clock", size=12, color="#D97706"),
+                            rx.icon("clock", size=13, color="#D97706"),
                             rx.text("Question Paper Pending", font_family=FONT_BODY, size="1", color="#D97706"),
                             spacing="1",
                             align_items="center",
@@ -241,15 +242,36 @@ def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool) ->
                     spacing="0",
                     align_items="start",
                 ),
+                spacing="3",
+                align_items="center",
+                flex="1",
+            ),
+            # ── 2. Middle: Test-wise Date Column (Fixed Width & Position) 
+            rx.hstack(
+                rx.icon("calendar", size=16, color=COLORS["slate"]),
+                rx.vstack(
+                    rx.text("Test Date", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                    rx.text(
+                        test_date,
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="medium",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
                 spacing="2",
                 align_items="center",
+                width="160px",
+                min_width="160px",
             ),
-            rx.spacer(),
+            # ── 3. Right: Action Buttons (Fixed Width, Right-Aligned) ───
             rx.hstack(
                 rx.cond(
                     has_qp,
                     rx.button(
-                        rx.icon("eye", size=12),
+                        rx.icon("eye", size=13),
                         "View",
                         on_click=FacilitatorState.open_qp_preview(test_name, assessment_name),
                         size="1",
@@ -265,17 +287,24 @@ def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool) ->
                     size="1",
                     variant=rx.cond(has_qp, "outline", "solid"),
                     color_scheme=rx.cond(has_qp, "gray", "indigo"),
+                    background=rx.cond(has_qp, "transparent", COLORS["primary"]),
+                    color=rx.cond(has_qp, COLORS["ink"], "white"),
                     font_family=FONT_BODY,
+                    _hover={"background": rx.cond(has_qp, COLORS["canvas"], COLORS["primary_hover"])},
                 ),
                 spacing="2",
                 align_items="center",
+                justify="end",
+                width="190px",
+                min_width="190px",
             ),
             width="100%",
             align_items="center",
+            spacing="4",
         ),
-        padding="0.6em 0.8em",
+        padding="0.75em 1em",
         border=f"1px solid {COLORS['line']}",
-        border_radius="8px",
+        border_radius="10px",
         background=COLORS["canvas"],
         width="100%",
     )
@@ -286,7 +315,7 @@ def test_wise_section(a: dict) -> rx.Component:
     return rx.box(
         rx.vstack(
             rx.hstack(
-                rx.icon("layers", size=13, color=COLORS["slate"]),
+                rx.icon("layers", size=14, color=COLORS["slate"]),
                 rx.text(
                     "Test-Wise Question Papers",
                     font_family=FONT_BODY,
@@ -302,10 +331,14 @@ def test_wise_section(a: dict) -> rx.Component:
             ),
             rx.vstack(
                 rx.foreach(
-                    a["tests"],
-                    lambda t: dashboard_test_item(a["name"], t, False),
+                    a["test_items"],
+                    lambda item: dashboard_test_item(
+                        a["name"],
+                        item["name"],
+                        item["is_final"],
+                        item["date"],
+                    ),
                 ),
-                dashboard_test_item(a["name"], a["final_test"], True),
                 spacing="2",
                 width="100%",
             ),
@@ -328,28 +361,28 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                     rx.text(
                         a["name"],
                         font_family=FONT_BODY,
-                        size="3",
+                        size="4",
                         weight="bold",
                         color=COLORS["ink"],
                     ),
                     rx.hstack(
-                        rx.icon("calendar", size=13, color=COLORS["slate"]),
-                        rx.text(
-                            a["assessment_date"],
-                            font_family=FONT_BODY,
-                            size="2",
-                            color=COLORS["slate"],
-                        ),
-                        rx.icon("users", size=13, color=COLORS["slate"], margin_left="0.8em"),
+                        rx.icon("users", size=13, color=COLORS["slate"]),
                         rx.text(
                             a["candidate_details"].length().to_string() + " candidates",
                             font_family=FONT_BODY,
                             size="2",
                             color=COLORS["slate"],
                         ),
+                        rx.icon("user", size=13, color=COLORS["slate"], margin_left="0.8em"),
+                        rx.text(
+                            a["facilitator_name"] + " (Facilitator)",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
                         spacing="1",
                         align_items="center",
-                        padding_top="0.3em",
+                        padding_top="0.2em",
                     ),
                     rx.hstack(
                         rx.foreach(

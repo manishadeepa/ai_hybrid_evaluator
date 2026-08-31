@@ -127,10 +127,6 @@ def report_row(a: dict) -> rx.Component:
                     weight="bold", color=COLORS["ink"]),
         ),
         rx.table.cell(
-            rx.text(a["assessment_date"], font_family=FONT_BODY,
-                    size="2", color=COLORS["slate"]),
-        ),
-        rx.table.cell(
             rx.text(a["facilitator_name"], font_family=FONT_BODY,
                     size="2", color=COLORS["slate"]),
         ),
@@ -1171,7 +1167,6 @@ def reports_page() -> rx.Component:
                     rx.table.header(
                         rx.table.row(
                             rx.table.column_header_cell("Assessment"),
-                            rx.table.column_header_cell("Date"),
                             rx.table.column_header_cell("Facilitator"),
                             rx.table.column_header_cell("Candidates"),
                             rx.table.column_header_cell("Tests"),

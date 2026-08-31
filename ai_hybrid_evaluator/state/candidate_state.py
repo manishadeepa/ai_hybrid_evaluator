@@ -4,6 +4,7 @@ Includes mock questions, candidate answers, navigation, proctoring alerts, and s
 """
 
 import asyncio
+import base64
 from datetime import datetime
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
@@ -333,3 +334,110 @@ class CandidateState(rx.State):
         self.is_test_submitted = False
         self.is_time_expired = False
         return rx.redirect("/candidate/dashboard")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Candidate Profile State
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CandidateProfileState(rx.State):
+    """Candidate Profile state with photo upload and organization details."""
+
+    # 1. Employee Information
+    profile_photo_url: str = ""
+    full_name: str = "Priya Sharma"
+    emp_id: str = "CAND-2031"
+    email: str = "priya.sharma@genaievaluator.com"
+    phone: str = "+91 98765 43210"
+    location: str = "Bangalore, India"
+    date_of_joining: str = "2024-06-15"
+    employment_status: str = "Active"
+
+    # 2. Organization Details
+    company_bu: str = "TVS Motor Company"
+    department: str = "Quality Assurance & Testing"
+    designation: str = "Senior Quality Engineer"
+    grade_level: str = "L3 - Senior Associate"
+    reporting_manager: str = "Ravi Kumar (Lead Evaluator)"
+    work_location: str = "TVS Motor Plant, Hosur Facility, Block C"
+
+    # Option lists for selects
+    employment_status_options: list[str] = ["Active", "On Leave", "Inactive"]
+    department_options: list[str] = [
+        "Quality Assurance & Testing",
+        "Research & Development (R&D)",
+        "Manufacturing & Production",
+        "Supply Chain & Operations",
+        "IT & Digital Transformation",
+        "Product Design & Engineering",
+        "Human Resources",
+        "Other",
+    ]
+    designation_options: list[str] = [
+        "Graduate Engineering Trainee",
+        "Associate Quality Engineer",
+        "Senior Quality Engineer",
+        "Quality Lead / Specialist",
+        "Software Engineer",
+        "Senior Software Engineer",
+        "Manufacturing Specialist",
+        "Other",
+    ]
+    grade_options: list[str] = [
+        "E1 - Entry Level",
+        "E2 - Executive",
+        "L1 - Associate",
+        "L2 - Professional",
+        "L3 - Senior Associate",
+        "L4 - Principal / Lead",
+        "M1 - Managerial",
+    ]
+
+    # Setters
+    def set_full_name(self, v: str): self.full_name = v
+    def set_emp_id(self, v: str): self.emp_id = v
+    def set_email(self, v: str): self.email = v
+    def set_phone(self, v: str): self.phone = v
+    def set_location(self, v: str): self.location = v
+    def set_date_of_joining(self, v: str): self.date_of_joining = v
+    def set_employment_status(self, v: str): self.employment_status = v
+
+    def set_company_bu(self, v: str): self.company_bu = v
+    def set_department(self, v: str): self.department = v
+    def set_designation(self, v: str): self.designation = v
+    def set_grade_level(self, v: str): self.grade_level = v
+    def set_reporting_manager(self, v: str): self.reporting_manager = v
+    def set_work_location(self, v: str): self.work_location = v
+
+    async def handle_photo_upload(self, files: list[rx.UploadFile]):
+        """Upload and display the selected candidate profile image immediately."""
+        if not files:
+            return rx.toast.error("Please select an image file to upload.")
+
+        file = files[0]
+        upload_data = await file.read()
+
+        # Determine MIME type
+        ext = file.filename.lower().split(".")[-1] if "." in file.filename else "jpeg"
+        mime = "image/png" if ext == "png" else "image/webp" if ext == "webp" else "image/jpeg"
+
+        # Encode as Base64 Data URL so the photo renders immediately
+        b64 = base64.b64encode(upload_data).decode("utf-8")
+        self.profile_photo_url = f"data:{mime};base64,{b64}"
+
+        # Write to upload directory for persistence
+        try:
+            out_dir = rx.get_upload_dir()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            safe_filename = f"candidate_photo_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
+            with open(out_dir / safe_filename, "wb") as f:
+                f.write(upload_data)
+        except Exception:
+            pass
+
+        return rx.toast.success(f"Profile photo updated: {file.filename}")
+
+    async def save_profile(self):
+        """Save candidate profile changes."""
+        return rx.toast.success("Profile saved successfully!")
+

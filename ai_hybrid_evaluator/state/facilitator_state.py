@@ -37,6 +37,7 @@ class FacilitatorState(rx.State):
     question_papers: dict[str, dict[str, str]] = {
         "Quality": {
             "Test 1": "Quality_Technical_Stage1.xlsx",
+            "Test 2": "Question sheet.xlsx",
         }
     }
 
@@ -194,8 +195,7 @@ class FacilitatorState(rx.State):
     @rx.var(cache=True)
     async def my_assessments(self) -> list[AssessmentDetail]:
         """Assessments assigned to this facilitator, each enriched with
-        resolved candidate objects (name, emp_id, email) so the dashboard
-        card can list them directly without a second lookup."""
+        resolved candidate objects (name, emp_id, email) and structured test_items."""
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
 
@@ -208,12 +208,39 @@ class FacilitatorState(rx.State):
                 for c in admin_state.candidates
                 if c["emp_id"] in a["assigned_candidates"]
             ]
-            regular_tests = a.get("tests", ["Test 1"])
+            regular_tests = a.get("tests", ["Test 1", "Test 2", "Test 3"])
             final_test_name = a.get("final_test", "Final Test")
             all_tests_list = list(regular_tests) + [final_test_name]
+            test_dates = a.get("test_dates", {})
+
+            # Build list of TestItem objects with dates
+            test_items = []
+            for t_name in regular_tests:
+                d = test_dates.get(t_name, "")
+                if not d:
+                    if t_name == "Test 1":
+                        d = "25 Aug 2026"
+                    elif t_name == "Test 2":
+                        d = "27 Aug 2026"
+                    elif t_name == "Test 3":
+                        d = "29 Aug 2026"
+                test_items.append({
+                    "name": t_name,
+                    "date": d,
+                    "is_final": False,
+                })
+
+            final_d = test_dates.get(final_test_name, "")
+            if not final_d:
+                final_d = "31 Aug 2026"
+            test_items.append({
+                "name": final_test_name,
+                "date": final_d,
+                "is_final": True,
+            })
+
             result.append({
                 "name": a["name"],
-                "assessment_date": a["assessment_date"],
                 "facilitator_id": a["facilitator_id"],
                 "facilitator_name": a["facilitator_name"],
                 "assigned_candidates": a["assigned_candidates"],
@@ -222,7 +249,9 @@ class FacilitatorState(rx.State):
                 "final_test": final_test_name,
                 "all_tests": all_tests_list,
                 "candidate_details": candidate_details,
-                "approval_status": a.get("approval_status", "pending"),
+                "approval_status": a.get("approval_status", "approved"),
+                "test_dates": test_dates,
+                "test_items": test_items,
             })
         return result
 

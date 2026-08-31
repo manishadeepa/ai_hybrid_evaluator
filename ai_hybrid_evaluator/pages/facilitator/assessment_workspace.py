@@ -612,25 +612,6 @@ def evaluation_test_header() -> rx.Component:
             spacing="0",
             align_items="start",
         ),
-        rx.spacer(),
-        # Right: Workspace Title & Description
-        rx.vstack(
-            rx.text(
-                "Evaluation Workspace",
-                font_family=FONT_DISPLAY,
-                size="4",
-                weight="bold",
-                color=COLORS["ink"],
-            ),
-            rx.text(
-                "Evaluate candidate responses using Manual or AI evaluation methods.",
-                font_family=FONT_BODY,
-                size="2",
-                color=COLORS["slate"],
-            ),
-            spacing="0",
-            align_items="start",
-        ),
         width="100%",
         align_items="center",
         padding_bottom="1.5em",
@@ -1662,18 +1643,20 @@ def evaluation_tab() -> rx.Component:
     """Evaluation tab interface matching reference screenshot exactly."""
     return rx.vstack(
         evaluation_test_header(),
+        evaluation_candidate_selection_card(),
+        evaluation_files_card(),
         rx.hstack(
-            evaluation_left_column(),
-            evaluation_right_column(),
+            rx.box(evaluation_methods_card(), flex="1", margin_top="0"),
+            rx.box(evaluation_ai_results_card(), flex="1", margin_top="0"),
             spacing="5",
             width="100%",
-            align_items="start",
+            align_items="stretch",
         ),
         candidate_response_modal(),
         manual_evaluation_modal(),
         answer_key_upload_modal(),
         ai_evaluation_trigger_modal(),
-        spacing="0",
+        spacing="4",
         width="100%",
         align_items="stretch",
     )

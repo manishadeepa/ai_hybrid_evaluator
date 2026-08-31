@@ -19,6 +19,7 @@ from ai_hybrid_evaluator.state.candidate_state import CandidateState
 from ai_hybrid_evaluator.pages.candidate.candidate_login import candidate_login_page
 from ai_hybrid_evaluator.pages.candidate.dashboard import candidate_dashboard_page
 from ai_hybrid_evaluator.pages.candidate.candidate_test import candidate_test_page
+from ai_hybrid_evaluator.pages.candidate.profile import candidate_profile_page
 
 app = rx.App(
     stylesheets=FONT_STYLESHEETS,
@@ -56,4 +57,5 @@ app.add_page(facilitator_profile_page, route="/facilitator/profile", title="My P
 app.add_page(candidate_login_page, route="/candidate/login", title="Candidate Sign In")
 app.add_page(candidate_login_page, route="/candidate/signin", title="Candidate Sign In")
 app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard")
+app.add_page(candidate_profile_page, route="/candidate/profile", title="My Profile")
 app.add_page(candidate_test_page, route="/candidate/test", title="Test Environment", on_load=CandidateState.on_test_page_load)

@@ -47,9 +47,14 @@ SHARED_FACILITATORS: list[Facilitator] = [
 ]
 
 
+class TestItem(TypedDict):
+    name: str
+    date: str
+    is_final: bool
+
+
 class Assessment(TypedDict):
     name: str
-    assessment_date: str
     facilitator_id: str
     facilitator_name: str
     assigned_candidates: list[str]
@@ -58,6 +63,7 @@ class Assessment(TypedDict):
     final_test: str
     # "pending" | "approved" | "declined"  (set by facilitator)
     approval_status: str
+    test_dates: dict[str, str]
 
 
 class CandidateSummary(TypedDict):
@@ -69,7 +75,6 @@ class CandidateSummary(TypedDict):
 class AssessmentDetail(TypedDict):
     """Assessment enriched with resolved candidate objects (for Facilitator views)."""
     name: str
-    assessment_date: str
     facilitator_id: str
     facilitator_name: str
     assigned_candidates: list[str]
@@ -80,3 +85,5 @@ class AssessmentDetail(TypedDict):
     candidate_details: list[CandidateSummary]
     # "pending" | "approved" | "declined"  (set by facilitator)
     approval_status: str
+    test_dates: dict[str, str]
+    test_items: list[TestItem]

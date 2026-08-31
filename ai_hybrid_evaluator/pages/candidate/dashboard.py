@@ -170,12 +170,6 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                                 "Facilitator: ", a["facilitator_name"],
                                 font_family=FONT_BODY, size="1", color=COLORS["slate"],
                             ),
-                            rx.text("•", color=COLORS["placeholder"], size="1"),
-                            rx.icon("calendar", size=12, color=COLORS["slate"]),
-                            rx.text(
-                                a["assessment_date"],
-                                font_family=FONT_BODY, size="1", color=COLORS["slate"],
-                            ),
                             spacing="1",
                             align_items="center",
                         ),

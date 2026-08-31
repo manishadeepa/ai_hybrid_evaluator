@@ -377,14 +377,20 @@ class AdminState(rx.State):
     assessments: list[Assessment] = [
         {
             "name": "Quality",
-            "assessment_date": "2026-08-25",
             "facilitator_id": "F001",
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
             "status": "Scheduled",
-            "tests": ["Test 1"],
+            "tests": ["Test 1", "Test 2", "Test 3"],
             "final_test": "Final Test",
-            "approval_status": "pending",
+            "approval_status": "approved",
+            # Per-test dates (key = test name)
+            "test_dates": {
+                "Test 1": "25 Aug 2026",
+                "Test 2": "27 Aug 2026",
+                "Test 3": "29 Aug 2026",
+                "Final Test": "31 Aug 2026",
+            },
         }
     ]
 
@@ -504,8 +510,8 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def add_assessment(self):
-        if not self.new_assessment_name or not self.new_assessment_date or not self.new_assessment_facilitator_id:
-            self.assessment_form_error = "Please fill in name, date, and facilitator."
+        if not self.new_assessment_name or not self.new_assessment_facilitator_id:
+            self.assessment_form_error = "Please fill in name and facilitator."
             return
 
         facilitator = next(
@@ -518,7 +524,6 @@ class AdminState(rx.State):
 
         self.assessments.append({
             "name": self.new_assessment_name,
-            "assessment_date": self.new_assessment_date,
             "facilitator_id": self.new_assessment_facilitator_id,
             "facilitator_name": facilitator["name"],
             "assigned_candidates": list(self.new_assessment_candidate_ids),
@@ -526,6 +531,7 @@ class AdminState(rx.State):
             "tests": ["Test 1"],
             "final_test": "Final Test",
             "approval_status": "pending",
+            "test_dates": {"Test 1": "", "Final Test": ""},
         })
         self.set_show_add_assessment(False)
 
@@ -630,8 +636,8 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def save_edit_assessment(self):
-        if not self.edit_assessment_name or not self.edit_assessment_date or not self.edit_assessment_facilitator_id:
-            self.edit_assessment_error = "Please fill in name, date, and facilitator."
+        if not self.edit_assessment_name or not self.edit_assessment_facilitator_id:
+            self.edit_assessment_error = "Please fill in name and facilitator."
             return
 
         facilitator = next(
@@ -645,10 +651,10 @@ class AdminState(rx.State):
         existing_a = self.assessments[self.edit_assessment_index]
         existing_tests = existing_a.get("tests", ["Test 1"])
         existing_final_test = existing_a.get("final_test", "Final Test")
+        existing_test_dates = existing_a.get("test_dates", {})
 
         self.assessments[self.edit_assessment_index] = {
             "name": self.edit_assessment_name,
-            "assessment_date": self.edit_assessment_date,
             "facilitator_id": self.edit_assessment_facilitator_id,
             "facilitator_name": facilitator["name"],
             "assigned_candidates": list(self.edit_assessment_candidate_ids),
@@ -656,6 +662,7 @@ class AdminState(rx.State):
             "tests": existing_tests,
             "final_test": existing_final_test,
             "approval_status": "pending",
+            "test_dates": existing_test_dates,
         }
         self.set_show_edit_assessment(False)
 
@@ -714,14 +721,63 @@ class AdminState(rx.State):
     @rx.var
     def current_assessment_tests(self) -> list[str]:
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            return self.assessments[self.selected_tests_assessment_index].get("tests", ["Test 1"])
-        return ["Test 1"]
+            return self.assessments[self.selected_tests_assessment_index].get("tests", ["Test 1", "Test 2", "Test 3"])
+        return ["Test 1", "Test 2", "Test 3"]
+
+    @rx.var
+    def current_assessment_tests_with_dates(self) -> list[dict]:
+        """Returns list of regular test dicts with name and date for the open modal."""
+        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+            a = self.assessments[self.selected_tests_assessment_index]
+            tests = a.get("tests", ["Test 1", "Test 2", "Test 3"])
+            dates = a.get("test_dates", {})
+            items = []
+            for t in tests:
+                d = dates.get(t, "")
+                if not d:
+                    if t == "Test 1":
+                        d = "25 Aug 2026"
+                    elif t == "Test 2":
+                        d = "27 Aug 2026"
+                    elif t == "Test 3":
+                        d = "29 Aug 2026"
+                items.append({"name": t, "date": d})
+            return items
+        return [
+            {"name": "Test 1", "date": "25 Aug 2026"},
+            {"name": "Test 2", "date": "27 Aug 2026"},
+            {"name": "Test 3", "date": "29 Aug 2026"},
+        ]
 
     @rx.var
     def current_assessment_final_test(self) -> str:
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
             return self.assessments[self.selected_tests_assessment_index].get("final_test", "Final Test")
         return "Final Test"
+
+    @rx.var
+    def current_assessment_final_test_date(self) -> str:
+        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+            a = self.assessments[self.selected_tests_assessment_index]
+            final_name = a.get("final_test", "Final Test")
+            return a.get("test_dates", {}).get(final_name, "31 Aug 2026") or "31 Aug 2026"
+        return "31 Aug 2026"
+
+    @rx.var
+    def current_test_dates(self) -> dict:
+        """Returns the test_dates dict for the currently open Type-of-Test dialog."""
+        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+            return self.assessments[self.selected_tests_assessment_index].get("test_dates", {})
+        return {}
+
+    def set_test_date(self, test_name: str, value: str):
+        """Update the per-test conducted date."""
+        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+            a = dict(self.assessments[self.selected_tests_assessment_index])
+            dates = dict(a.get("test_dates", {}))
+            dates[test_name] = value
+            a["test_dates"] = dates
+            self.assessments[self.selected_tests_assessment_index] = a
 
     def add_test_to_selected_assessment(self):
         """Automatically increments test count: Test 1 -> Test 2 -> Test 3..."""
@@ -731,8 +787,13 @@ class AdminState(rx.State):
             if not current_list:
                 current_list = ["Test 1"]
             next_num = len(current_list) + 1
-            current_list.append(f"Test {next_num}")
+            new_test_name = f"Test {next_num}"
+            current_list.append(new_test_name)
             a["tests"] = current_list
+            # Initialise empty date for the new test
+            dates = dict(a.get("test_dates", {}))
+            dates[new_test_name] = ""
+            a["test_dates"] = dates
             self.assessments[self.selected_tests_assessment_index] = a
 
     def remove_test_from_selected_assessment(self, test_name: str):
@@ -745,6 +806,13 @@ class AdminState(rx.State):
                 # Re-number remaining tests nicely: Test 1, Test 2, ...
                 renumbered = [f"Test {i + 1}" for i in range(len(current_list))]
                 a["tests"] = renumbered
+                # Rebuild test_dates with new names
+                old_dates = dict(a.get("test_dates", {}))
+                final_test = a.get("final_test", "Final Test")
+                new_dates = {final_test: old_dates.get(final_test, "")}
+                for name in renumbered:
+                    new_dates[name] = old_dates.get(name, "")
+                a["test_dates"] = new_dates
                 self.assessments[self.selected_tests_assessment_index] = a
 
     # =========================================================
@@ -774,8 +842,22 @@ class AdminState(rx.State):
 
     @rx.var
     def viewing_test_date(self) -> str:
+        """Returns the per-test conducted date for the currently viewed test."""
         if 0 <= self.viewing_test_assessment_index < len(self.assessments):
-            return self.assessments[self.viewing_test_assessment_index]["assessment_date"]
+            a = self.assessments[self.viewing_test_assessment_index]
+            test_dates = a.get("test_dates", {})
+            t_name = self.viewing_test_name
+            d = test_dates.get(t_name, "")
+            if not d:
+                if t_name == "Test 1":
+                    d = "25 Aug 2026"
+                elif t_name == "Test 2":
+                    d = "27 Aug 2026"
+                elif t_name == "Test 3":
+                    d = "29 Aug 2026"
+                elif t_name == "Final Test":
+                    d = "31 Aug 2026"
+            return d
         return ""
 
     @rx.var
