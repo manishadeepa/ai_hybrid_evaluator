@@ -1,36 +1,59 @@
-"""Welcome to Reflex! This file outlines the steps to create a basic app."""
+"""Main entry point — registers every page and route."""
 
 import reflex as rx
 
-from rxconfig import config
+from ai_hybrid_evaluator.pages.auth.login import login_page
+from ai_hybrid_evaluator.pages.auth.signup import signup_page
+from ai_hybrid_evaluator.pages.admin.dashboard import admin_dashboard_page
+from ai_hybrid_evaluator.pages.admin.facilitators import facilitators_page
+from ai_hybrid_evaluator.pages.admin.candidates import candidates_page
+from ai_hybrid_evaluator.pages.admin.assessments import assessments_page
+from ai_hybrid_evaluator.pages.admin.reports import reports_page
+from ai_hybrid_evaluator.pages.admin.settings import settings_page
+from ai_hybrid_evaluator.theme import FONT_STYLESHEETS
+from ai_hybrid_evaluator.pages.auth.facilitator_login import facilitator_login_page
+from ai_hybrid_evaluator.pages.facilitator.dashboard import facilitator_dashboard_page
+from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import assessment_workspace_page
+from ai_hybrid_evaluator.pages.facilitator.profile import facilitator_profile_page
+from ai_hybrid_evaluator.state.candidate_state import CandidateState
+from ai_hybrid_evaluator.pages.candidate.candidate_login import candidate_login_page
+from ai_hybrid_evaluator.pages.candidate.dashboard import candidate_dashboard_page
+from ai_hybrid_evaluator.pages.candidate.candidate_test import candidate_test_page
 
-
-class State(rx.State):
-    """The app state."""
+app = rx.App(
+    stylesheets=FONT_STYLESHEETS,
+    theme=rx.theme(
+        appearance="light",
+        accent_color="indigo",
+        radius="large",
+    ),
+)
 
 
 def index() -> rx.Component:
-    # Welcome Page (Index)
-    return rx.container(
-        rx.color_mode.button(position="top-right"),
-        rx.vstack(
-            rx.heading("Welcome to Reflex!", size="9"),
-            rx.text(
-                "Get started by editing ",
-                rx.code(f"{config.app_name}/{config.app_name}.py"),
-                size="5",
-            ),
-            rx.link(
-                rx.button("Check out our docs!"),
-                href="https://reflex.dev/docs/getting-started/introduction/",
-                is_external=True,
-            ),
-            spacing="5",
-            justify="center",
-            min_height="85vh",
-        ),
-    )
+    return rx.fragment()
 
 
-app = rx.App()
-app.add_page(index)
+app.add_page(index, route="/", on_load=rx.redirect("/signin"))
+
+# Admin Routes
+app.add_page(login_page, route="/signin", title="Sign In")
+app.add_page(signup_page, route="/signup", title="Sign Up")
+app.add_page(admin_dashboard_page, route="/admin/dashboard", title="Admin Dashboard")
+app.add_page(facilitators_page, route="/admin/facilitators", title="Facilitators")
+app.add_page(candidates_page, route="/admin/candidates", title="Candidates")
+app.add_page(assessments_page, route="/admin/assessments", title="Assessments")
+app.add_page(reports_page, route="/admin/reports", title="Reports")
+app.add_page(settings_page, route="/admin/settings", title="Settings")
+
+# Facilitator Routes
+app.add_page(facilitator_login_page, route="/facilitator/signin", title="Facilitator Sign In")
+app.add_page(facilitator_dashboard_page, route="/facilitator/dashboard", title="My Assessments")
+app.add_page(assessment_workspace_page, route="/facilitator/assessment", title="Assessment Workspace")
+app.add_page(facilitator_profile_page, route="/facilitator/profile", title="My Profile")
+
+# Candidate Routes
+app.add_page(candidate_login_page, route="/candidate/login", title="Candidate Sign In")
+app.add_page(candidate_login_page, route="/candidate/signin", title="Candidate Sign In")
+app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard")
+app.add_page(candidate_test_page, route="/candidate/test", title="Test Environment", on_load=CandidateState.on_test_page_load)

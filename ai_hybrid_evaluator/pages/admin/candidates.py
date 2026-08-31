@@ -1,0 +1,252 @@
+"""Candidates page — list + Add / Edit / Delete Candidate (mock data)."""
+
+import reflex as rx
+from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
+from ai_hybrid_evaluator.state.admin_state import AdminState
+from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
+
+
+def candidate_row(c: dict, idx: int) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(c["emp_id"], font_family=FONT_BODY, color=COLORS["slate"]),
+        rx.table.cell(c["name"], font_family=FONT_BODY, color=COLORS["ink"]),
+        rx.table.cell(c["email"], font_family=FONT_BODY, color=COLORS["slate"]),
+        rx.table.cell(
+            rx.hstack(
+                rx.button(
+                    rx.icon("eye", size=14),
+                    "View Profile",
+                    # Not wired to anything yet — placeholder button only.
+                    size="1",
+                    variant="outline",
+                    color=COLORS["primary"],
+                    background=COLORS["surface"],
+                    border=f"1px solid {COLORS['primary']}",
+                    font_family=FONT_BODY,
+                    _hover={"background": COLORS["canvas"]},
+                ),
+                rx.button(
+                    rx.icon("pencil", size=14),
+                    "Edit",
+                    on_click=AdminState.open_edit_candidate(idx),
+                    size="1",
+                    variant="outline",
+                    color=COLORS["ink"],
+                    background=COLORS["surface"],
+                    border=f"1px solid {COLORS['line']}",
+                    font_family=FONT_BODY,
+                    _hover={"background": COLORS["canvas"]},
+                ),
+                rx.button(
+                    rx.icon("trash-2", size=14),
+                    "Delete",
+                    on_click=AdminState.open_delete_candidate(idx),
+                    size="1",
+                    color=COLORS["danger"],
+                    background="#FEE4E2",
+                    border="1px solid #FDA29B",
+                    font_family=FONT_BODY,
+                    _hover={"background": "#FECDCA"},
+                ),
+                spacing="2",
+            ),
+        ),
+    )
+
+
+def add_candidate_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.trigger(
+            rx.button(
+                rx.icon("plus", size=16),
+                "Add Candidate",
+                background=COLORS["primary"],
+                color="white",
+                border_radius="8px",
+                font_family=FONT_BODY,
+                _hover={"background": COLORS["primary_hover"]},
+            ),
+        ),
+        rx.dialog.content(
+            rx.dialog.title("Add Candidate", font_family=FONT_BODY, color=COLORS["ink"]),
+            rx.dialog.description(
+                "The candidate will be able to sign in once created.",
+                size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
+            ),
+            rx.vstack(
+                rx.text("Employee ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                rx.input(
+                    placeholder="e.g. CAND-2031",
+                    value=AdminState.new_candidate_id,
+                    on_change=AdminState.set_new_candidate_id,
+                    width="100%",
+                ),
+                rx.text("Name", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    placeholder="e.g. Priya Sharma",
+                    value=AdminState.new_candidate_name,
+                    on_change=AdminState.set_new_candidate_name,
+                    width="100%",
+                ),
+                rx.text("Email ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    placeholder="name@genaievaluator.com",
+                    value=AdminState.new_candidate_email,
+                    on_change=AdminState.set_new_candidate_email,
+                    width="100%",
+                ),
+                rx.text("Password", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    type="password",
+                    placeholder="Set a password for this candidate",
+                    value=AdminState.new_candidate_password,
+                    on_change=AdminState.set_new_candidate_password,
+                    width="100%",
+                ),
+                rx.cond(
+                    AdminState.candidate_form_error != "",
+                    rx.text(AdminState.candidate_form_error, color=COLORS["danger"], size="2", font_family=FONT_BODY, padding_top="0.7em"),
+                ),
+                spacing="1", width="100%", align_items="stretch",
+            ),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cancel", variant="outline", color=COLORS["slate"], font_family=FONT_BODY)),
+                rx.button(
+                    "Create", on_click=AdminState.add_candidate,
+                    background=COLORS["primary"], color="white", font_family=FONT_BODY,
+                    _hover={"background": COLORS["primary_hover"]},
+                ),
+                spacing="3", justify="end", padding_top="1.6em", width="100%",
+            ),
+            style={"maxWidth": "420px"},
+        ),
+        open=AdminState.show_add_candidate,
+        on_open_change=AdminState.set_show_add_candidate,
+    )
+
+
+def edit_candidate_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Edit Candidate", font_family=FONT_BODY, color=COLORS["ink"]),
+            rx.dialog.description(
+                "Update this candidate's details.",
+                size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
+            ),
+            rx.vstack(
+                rx.text("Employee ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                rx.input(
+                    value=AdminState.edit_candidate_id,
+                    on_change=AdminState.set_edit_candidate_id,
+                    width="100%",
+                ),
+                rx.text("Name", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    value=AdminState.edit_candidate_name,
+                    on_change=AdminState.set_edit_candidate_name,
+                    width="100%",
+                ),
+                rx.text("Email ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    value=AdminState.edit_candidate_email,
+                    on_change=AdminState.set_edit_candidate_email,
+                    width="100%",
+                ),
+                rx.text("Password", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    type="password",
+                    value=AdminState.edit_candidate_password,
+                    on_change=AdminState.set_edit_candidate_password,
+                    width="100%",
+                ),
+                rx.cond(
+                    AdminState.edit_candidate_error != "",
+                    rx.text(AdminState.edit_candidate_error, color=COLORS["danger"], size="2", font_family=FONT_BODY, padding_top="0.7em"),
+                ),
+                spacing="1", width="100%", align_items="stretch",
+            ),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cancel", variant="outline", color=COLORS["slate"], font_family=FONT_BODY)),
+                rx.button(
+                    "Save Changes", on_click=AdminState.save_edit_candidate,
+                    background=COLORS["primary"], color="white", font_family=FONT_BODY,
+                    _hover={"background": COLORS["primary_hover"]},
+                ),
+                spacing="3", justify="end", padding_top="1.6em", width="100%",
+            ),
+            style={"maxWidth": "420px"},
+        ),
+        open=AdminState.show_edit_candidate,
+        on_open_change=AdminState.set_show_edit_candidate,
+    )
+
+
+def delete_candidate_dialog() -> rx.Component:
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Remove candidate?", font_family=FONT_BODY, color=COLORS["ink"]),
+            rx.alert_dialog.description(
+                "Are you sure you want to remove " + AdminState.delete_candidate_name + "? This action cannot be undone.",
+                size="2", color=COLORS["slate"], font_family=FONT_BODY,
+            ),
+            rx.hstack(
+                rx.alert_dialog.cancel(
+                    rx.button("Cancel", variant="outline", color=COLORS["slate"], font_family=FONT_BODY),
+                ),
+                rx.alert_dialog.action(
+                    rx.button(
+                        "Remove", on_click=AdminState.confirm_delete_candidate,
+                        background=COLORS["danger"], color="white", font_family=FONT_BODY,
+                    ),
+                ),
+                spacing="3", justify="end", padding_top="1.4em", width="100%",
+            ),
+            style={"maxWidth": "380px"},
+        ),
+        open=AdminState.show_delete_candidate,
+        on_open_change=AdminState.set_show_delete_candidate,
+    )
+
+
+def candidates_page() -> rx.Component:
+    content = rx.vstack(
+        rx.hstack(
+            rx.text(
+                AdminState.total_candidates.to_string() + " candidates",
+                font_family=FONT_BODY, color=COLORS["slate"], size="2",
+            ),
+            rx.spacer(),
+            add_candidate_dialog(),
+            width="100%", align_items="center",
+        ),
+        rx.box(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("EID", width="15%"),
+                        rx.table.column_header_cell("Name", width="20%"),
+                        rx.table.column_header_cell("Email", width="35%"),
+                        rx.table.column_header_cell("Actions", width="30%"),
+                    ),
+                ),
+                rx.table.body(rx.foreach(AdminState.candidates, candidate_row)),
+                width="100%",
+                table_layout="fixed",
+            ),
+            background=COLORS["surface"],
+            border=f"1px solid {COLORS['line']}",
+            border_radius="12px",
+            padding="0.5em",
+            margin_top="1.2em",
+            width="100%",
+        ),
+        edit_candidate_dialog(),
+        delete_candidate_dialog(),
+        width="100%",
+    )
+    return admin_shell(
+        active="candidates",
+        title="Candidates",
+        subtitle="Manage candidate accounts.",
+        content=content,
+    )
