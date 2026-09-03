@@ -377,19 +377,30 @@ class AdminState(rx.State):
     assessments: list[Assessment] = [
         {
             "name": "Quality",
+            # Multi-facilitator (primary)
+            "facilitator_ids": ["F001", "F002"],
+            "facilitator_names": ["Ravi Kumar", "Meena Iyer"],
+            # Legacy aliases (first in list)
             "facilitator_id": "F001",
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
             "status": "Scheduled",
-            "tests": ["Test 1", "Test 2", "Test 3"],
-            "final_test": "Final Test",
+            "tests": ["Formative 1", "Formative 2", "Formative 3"],
+            "final_test": "Summative Test",
             "approval_status": "approved",
+            "facilitator_approvals": {
+                "F001": "approved",
+                "F002": "approved",
+            },
+            "question_papers": {
+                "Formative 1": "Quality_Technical_Stage1.xlsx",
+            },
             # Per-test dates (key = test name)
             "test_dates": {
-                "Test 1": "25 Aug 2026",
-                "Test 2": "27 Aug 2026",
-                "Test 3": "29 Aug 2026",
-                "Final Test": "31 Aug 2026",
+                "Formative 1": "25 Aug 2026",
+                "Formative 2": "27 Aug 2026",
+                "Formative 3": "29 Aug 2026",
+                "Summative Test": "31 Aug 2026",
             },
         }
     ]
@@ -418,7 +429,8 @@ class AdminState(rx.State):
     show_add_assessment: bool = False
     new_assessment_name: str = ""
     new_assessment_date: str = ""
-    new_assessment_facilitator_id: str = ""
+    # Multi-select: list of selected facilitator IDs
+    new_assessment_facilitator_ids: list[str] = []
     new_assessment_status: str = "Scheduled"
     new_assessment_candidate_ids: list[str] = []
     assessment_form_error: str = ""
@@ -433,7 +445,7 @@ class AdminState(rx.State):
         if not value:
             self.new_assessment_name = ""
             self.new_assessment_date = ""
-            self.new_assessment_facilitator_id = ""
+            self.new_assessment_facilitator_ids = []
             self.new_assessment_status = "Scheduled"
             self.new_assessment_candidate_ids = []
             self.assessment_form_error = ""
@@ -448,9 +460,6 @@ class AdminState(rx.State):
     def set_new_assessment_date(self, value: str):
         self.new_assessment_date = value
 
-    def set_new_assessment_facilitator_id(self, value: str):
-        self.new_assessment_facilitator_id = value
-
     def set_new_assessment_status(self, value: str):
         self.new_assessment_status = value
 
@@ -463,11 +472,14 @@ class AdminState(rx.State):
         if self.show_add_facilitator_dropdown:
             self.add_facilitator_search = ""
 
-    def select_add_facilitator(self, facilitator_id: str):
-        """Select a facilitator, close the dropdown, and clear search."""
-        self.new_assessment_facilitator_id = facilitator_id
-        self.show_add_facilitator_dropdown = False
-        self.add_facilitator_search = ""
+    def toggle_add_facilitator(self, facilitator_id: str):
+        """Toggle a facilitator's membership in the new-assessment selection list."""
+        ids = list(self.new_assessment_facilitator_ids)
+        if facilitator_id in ids:
+            ids.remove(facilitator_id)
+        else:
+            ids.append(facilitator_id)
+        self.new_assessment_facilitator_ids = ids
 
     # ---- Candidate multi-select search — Add form ----
     def set_add_candidate_search(self, value: str):
@@ -479,13 +491,13 @@ class AdminState(rx.State):
         if not self.show_add_candidate_dropdown:
             self.add_candidate_search = ""
 
-    def toggle_new_assessment_candidate(self, candidate_id: str, checked: bool):
-        if checked:
-            if candidate_id not in self.new_assessment_candidate_ids:
-                self.new_assessment_candidate_ids.append(candidate_id)
+    def toggle_new_assessment_candidate(self, candidate_id: str):
+        ids = list(self.new_assessment_candidate_ids)
+        if candidate_id in ids:
+            ids.remove(candidate_id)
         else:
-            if candidate_id in self.new_assessment_candidate_ids:
-                self.new_assessment_candidate_ids.remove(candidate_id)
+            ids.append(candidate_id)
+        self.new_assessment_candidate_ids = ids
 
     # ---- Computed filter vars — Add form ----
     @rx.var
@@ -496,11 +508,26 @@ class AdminState(rx.State):
         return [f for f in self.facilitators if q in f["name"].lower() or q in f["emp_id"].lower()]
 
     @rx.var
-    def selected_add_facilitator_name(self) -> str:
-        if not self.new_assessment_facilitator_id:
+    def selected_add_facilitator_names(self) -> list[str]:
+        """Names of all selected facilitators (Add form)."""
+        return [
+            f["name"] for f in self.facilitators
+            if f["emp_id"] in self.new_assessment_facilitator_ids
+        ]
+
+    @rx.var
+    def selected_add_facilitators_label(self) -> str:
+        """Display label for the Add form facilitator trigger row."""
+        count = len(self.new_assessment_facilitator_ids)
+        if count == 0:
             return ""
-        match = next((f for f in self.facilitators if f["emp_id"] == self.new_assessment_facilitator_id), None)
-        return match["name"] if match else ""
+        if count == 1:
+            names = [
+                f["name"] for f in self.facilitators
+                if f["emp_id"] in self.new_assessment_facilitator_ids
+            ]
+            return names[0] if names else ""
+        return f"{count} facilitators selected"
 
     @rx.var
     def filtered_add_candidates(self) -> list[Candidate]:
@@ -510,29 +537,36 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def add_assessment(self):
-        if not self.new_assessment_name or not self.new_assessment_facilitator_id:
-            self.assessment_form_error = "Please fill in name and facilitator."
+        if not self.new_assessment_name or len(self.new_assessment_facilitator_ids) == 0:
+            self.assessment_form_error = "Please fill in name and at least one facilitator."
             return
 
-        facilitator = next(
-            (f for f in self.facilitators if f["emp_id"] == self.new_assessment_facilitator_id),
-            None,
-        )
-        if facilitator is None:
-            self.assessment_form_error = "Selected facilitator not found."
+        selected_facilitators = [
+            f for f in self.facilitators
+            if f["emp_id"] in self.new_assessment_facilitator_ids
+        ]
+        if not selected_facilitators:
+            self.assessment_form_error = "Selected facilitator(s) not found."
             return
+
+        fac_ids = [f["emp_id"] for f in selected_facilitators]
+        fac_names = [f["name"] for f in selected_facilitators]
 
         self.assessments.append({
             "name": self.new_assessment_name,
             "assessment_date": self.new_assessment_date,
-            "facilitator_id": self.new_assessment_facilitator_id,
-            "facilitator_name": facilitator["name"],
+            # Multi-facilitator
+            "facilitator_ids": fac_ids,
+            "facilitator_names": fac_names,
+            # Legacy aliases
+            "facilitator_id": fac_ids[0],
+            "facilitator_name": fac_names[0],
             "assigned_candidates": list(self.new_assessment_candidate_ids),
             "status": self.new_assessment_status,
-            "tests": ["Test 1"],
-            "final_test": "Final Test",
+            "tests": [],
+            "final_test": "Summative Test",
             "approval_status": "pending",
-            "test_dates": {"Test 1": "", "Final Test": ""},
+            "test_dates": {"Summative Test": self.new_assessment_date or ""},
         })
         self.set_show_add_assessment(False)
 
@@ -543,7 +577,8 @@ class AdminState(rx.State):
     edit_assessment_index: int = -1
     edit_assessment_name: str = ""
     edit_assessment_date: str = ""
-    edit_assessment_facilitator_id: str = ""
+    # Multi-select: list of selected facilitator IDs
+    edit_assessment_facilitator_ids: list[str] = []
     edit_assessment_status: str = ""
     edit_assessment_candidate_ids: list[str] = []
     edit_assessment_error: str = ""
@@ -557,7 +592,11 @@ class AdminState(rx.State):
         self.edit_assessment_index = index
         self.edit_assessment_name = a["name"]
         self.edit_assessment_date = a.get("assessment_date", "")
-        self.edit_assessment_facilitator_id = a["facilitator_id"]
+        # Load existing multi-facilitator list; fall back to legacy single value
+        existing_ids = a.get("facilitator_ids", [])
+        if not existing_ids and a.get("facilitator_id"):
+            existing_ids = [a["facilitator_id"]]
+        self.edit_assessment_facilitator_ids = list(existing_ids)
         self.edit_assessment_status = a["status"]
         self.edit_assessment_candidate_ids = list(a["assigned_candidates"])
         self.edit_assessment_error = ""
@@ -581,9 +620,6 @@ class AdminState(rx.State):
     def set_edit_assessment_date(self, value: str):
         self.edit_assessment_date = value
 
-    def set_edit_assessment_facilitator_id(self, value: str):
-        self.edit_assessment_facilitator_id = value
-
     def set_edit_assessment_status(self, value: str):
         self.edit_assessment_status = value
 
@@ -596,23 +632,26 @@ class AdminState(rx.State):
         if self.show_edit_facilitator_dropdown:
             self.edit_facilitator_search = ""
 
-    def select_edit_facilitator(self, facilitator_id: str):
-        """Select a facilitator, close the dropdown, and clear search."""
-        self.edit_assessment_facilitator_id = facilitator_id
-        self.show_edit_facilitator_dropdown = False
-        self.edit_facilitator_search = ""
+    def toggle_edit_facilitator(self, facilitator_id: str):
+        """Toggle a facilitator's membership in the edit-assessment selection list."""
+        ids = list(self.edit_assessment_facilitator_ids)
+        if facilitator_id in ids:
+            ids.remove(facilitator_id)
+        else:
+            ids.append(facilitator_id)
+        self.edit_assessment_facilitator_ids = ids
 
     # ---- Candidate search — Edit form ----
     def set_edit_candidate_search(self, value: str):
         self.edit_candidate_search = value
 
-    def toggle_edit_assessment_candidate(self, candidate_id: str, checked: bool):
-        if checked:
-            if candidate_id not in self.edit_assessment_candidate_ids:
-                self.edit_assessment_candidate_ids.append(candidate_id)
+    def toggle_edit_assessment_candidate(self, candidate_id: str):
+        ids = list(self.edit_assessment_candidate_ids)
+        if candidate_id in ids:
+            ids.remove(candidate_id)
         else:
-            if candidate_id in self.edit_assessment_candidate_ids:
-                self.edit_assessment_candidate_ids.remove(candidate_id)
+            ids.append(candidate_id)
+        self.edit_assessment_candidate_ids = ids
 
     # ---- Computed filter vars — Edit form ----
     @rx.var
@@ -623,11 +662,26 @@ class AdminState(rx.State):
         return [f for f in self.facilitators if q in f["name"].lower() or q in f["emp_id"].lower()]
 
     @rx.var
-    def selected_edit_facilitator_name(self) -> str:
-        if not self.edit_assessment_facilitator_id:
+    def selected_edit_facilitator_names(self) -> list[str]:
+        """Names of all selected facilitators (Edit form)."""
+        return [
+            f["name"] for f in self.facilitators
+            if f["emp_id"] in self.edit_assessment_facilitator_ids
+        ]
+
+    @rx.var
+    def selected_edit_facilitators_label(self) -> str:
+        """Display label for the Edit form facilitator trigger row."""
+        count = len(self.edit_assessment_facilitator_ids)
+        if count == 0:
             return ""
-        match = next((f for f in self.facilitators if f["emp_id"] == self.edit_assessment_facilitator_id), None)
-        return match["name"] if match else ""
+        if count == 1:
+            names = [
+                f["name"] for f in self.facilitators
+                if f["emp_id"] in self.edit_assessment_facilitator_ids
+            ]
+            return names[0] if names else ""
+        return f"{count} facilitators selected"
 
     @rx.var
     def filtered_edit_candidates(self) -> list[Candidate]:
@@ -637,34 +691,43 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def save_edit_assessment(self):
-        if not self.edit_assessment_name or not self.edit_assessment_facilitator_id:
-            self.edit_assessment_error = "Please fill in name and facilitator."
+        if not self.edit_assessment_name or len(self.edit_assessment_facilitator_ids) == 0:
+            self.edit_assessment_error = "Please fill in name and at least one facilitator."
             return
 
-        facilitator = next(
-            (f for f in self.facilitators if f["emp_id"] == self.edit_assessment_facilitator_id),
-            None,
-        )
-        if facilitator is None:
-            self.edit_assessment_error = "Selected facilitator not found."
+        selected_facilitators = [
+            f for f in self.facilitators
+            if f["emp_id"] in self.edit_assessment_facilitator_ids
+        ]
+        if not selected_facilitators:
+            self.edit_assessment_error = "Selected facilitator(s) not found."
             return
+
+        fac_ids = [f["emp_id"] for f in selected_facilitators]
+        fac_names = [f["name"] for f in selected_facilitators]
 
         existing_a = self.assessments[self.edit_assessment_index]
-        existing_tests = existing_a.get("tests", ["Test 1"])
-        existing_final_test = existing_a.get("final_test", "Final Test")
+        existing_tests = existing_a.get("tests", ["Formative 1"])
+        existing_final_test = existing_a.get("final_test", "Summative Test")
         existing_test_dates = existing_a.get("test_dates", {})
+        existing_qps = existing_a.get("question_papers", {})
 
         self.assessments[self.edit_assessment_index] = {
             "name": self.edit_assessment_name,
             "assessment_date": self.edit_assessment_date,
-            "facilitator_id": self.edit_assessment_facilitator_id,
-            "facilitator_name": facilitator["name"],
+            # Multi-facilitator
+            "facilitator_ids": fac_ids,
+            "facilitator_names": fac_names,
+            # Legacy aliases
+            "facilitator_id": fac_ids[0],
+            "facilitator_name": fac_names[0],
             "assigned_candidates": list(self.edit_assessment_candidate_ids),
             "status": self.edit_assessment_status,
             "tests": existing_tests,
             "final_test": existing_final_test,
             "approval_status": "pending",
             "test_dates": existing_test_dates,
+            "question_papers": existing_qps,
         }
         self.set_show_edit_assessment(False)
 
@@ -702,10 +765,10 @@ class AdminState(rx.State):
         self.selected_tests_assessment_index = index
         if 0 <= index < len(self.assessments):
             a = dict(self.assessments[index])
-            if "tests" not in a or not a["tests"]:
-                a["tests"] = ["Test 1"]
+            if "tests" not in a:
+                a["tests"] = []
             if "final_test" not in a or not a["final_test"]:
-                a["final_test"] = "Final Test"
+                a["final_test"] = "Summative Test"
             self.assessments[index] = a
         self.show_assessment_tests_dialog = True
 
@@ -723,47 +786,36 @@ class AdminState(rx.State):
     @rx.var
     def current_assessment_tests(self) -> list[str]:
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            return self.assessments[self.selected_tests_assessment_index].get("tests", ["Test 1", "Test 2", "Test 3"])
-        return ["Test 1", "Test 2", "Test 3"]
+            return self.assessments[self.selected_tests_assessment_index].get("tests", [])
+        return []
 
     @rx.var
     def current_assessment_tests_with_dates(self) -> list[dict]:
-        """Returns list of regular test dicts with name and date for the open modal."""
+        """Returns list of formative test dicts with name and date for the open modal."""
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
             a = self.assessments[self.selected_tests_assessment_index]
-            tests = a.get("tests", ["Test 1", "Test 2", "Test 3"])
+            tests = a.get("tests", [])
             dates = a.get("test_dates", {})
             items = []
             for t in tests:
                 d = dates.get(t, "")
-                if not d:
-                    if t == "Test 1":
-                        d = "25 Aug 2026"
-                    elif t == "Test 2":
-                        d = "27 Aug 2026"
-                    elif t == "Test 3":
-                        d = "29 Aug 2026"
                 items.append({"name": t, "date": d})
             return items
-        return [
-            {"name": "Test 1", "date": "25 Aug 2026"},
-            {"name": "Test 2", "date": "27 Aug 2026"},
-            {"name": "Test 3", "date": "29 Aug 2026"},
-        ]
+        return []
 
     @rx.var
     def current_assessment_final_test(self) -> str:
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            return self.assessments[self.selected_tests_assessment_index].get("final_test", "Final Test")
-        return "Final Test"
+            return self.assessments[self.selected_tests_assessment_index].get("final_test", "Summative Test")
+        return "Summative Test"
 
     @rx.var
     def current_assessment_final_test_date(self) -> str:
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
             a = self.assessments[self.selected_tests_assessment_index]
-            final_name = a.get("final_test", "Final Test")
-            return a.get("test_dates", {}).get(final_name, "31 Aug 2026") or "31 Aug 2026"
-        return "31 Aug 2026"
+            final_name = a.get("final_test", "Summative Test")
+            return a.get("test_dates", {}).get(final_name, "") or ""
+        return ""
 
     @rx.var
     def current_test_dates(self) -> dict:
@@ -782,14 +834,12 @@ class AdminState(rx.State):
             self.assessments[self.selected_tests_assessment_index] = a
 
     def add_test_to_selected_assessment(self):
-        """Automatically increments test count: Test 1 -> Test 2 -> Test 3..."""
+        """Automatically increments formative test count: Formative 1 -> Formative 2 -> Formative N..."""
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
             a = dict(self.assessments[self.selected_tests_assessment_index])
             current_list = list(a.get("tests", []))
-            if not current_list:
-                current_list = ["Test 1"]
             next_num = len(current_list) + 1
-            new_test_name = f"Test {next_num}"
+            new_test_name = f"Formative {next_num}"
             current_list.append(new_test_name)
             a["tests"] = current_list
             # Initialise empty date for the new test
@@ -799,22 +849,34 @@ class AdminState(rx.State):
             self.assessments[self.selected_tests_assessment_index] = a
 
     def remove_test_from_selected_assessment(self, test_name: str):
-        """Removes a test (keeping at least Test 1)."""
+        """Removes a formative test (can delete down to 0 formative tests)."""
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
             a = dict(self.assessments[self.selected_tests_assessment_index])
             current_list = list(a.get("tests", []))
-            if len(current_list) > 1 and test_name in current_list:
+            if test_name in current_list:
                 current_list.remove(test_name)
-                # Re-number remaining tests nicely: Test 1, Test 2, ...
-                renumbered = [f"Test {i + 1}" for i in range(len(current_list))]
+                # Re-number remaining formative tests: Formative 1, Formative 2, ...
+                renumbered = [f"Formative {i + 1}" for i in range(len(current_list))]
                 a["tests"] = renumbered
                 # Rebuild test_dates with new names
                 old_dates = dict(a.get("test_dates", {}))
-                final_test = a.get("final_test", "Final Test")
+                final_test = a.get("final_test", "Summative Test")
                 new_dates = {final_test: old_dates.get(final_test, "")}
                 for name in renumbered:
                     new_dates[name] = old_dates.get(name, "")
                 a["test_dates"] = new_dates
+                # Clean up question paper for this test if present
+                assessment_name = a["name"]
+                test_id = f"{assessment_name}__{test_name}"
+                qps = dict(self.test_question_papers)
+                if test_id in qps:
+                    del qps[test_id]
+                    self.test_question_papers = qps
+                old_qps = dict(a.get("question_papers", {}))
+                if test_name in old_qps:
+                    del old_qps[test_name]
+                    a["question_papers"] = old_qps
+
                 self.assessments[self.selected_tests_assessment_index] = a
 
     # =========================================================
@@ -849,17 +911,7 @@ class AdminState(rx.State):
             a = self.assessments[self.viewing_test_assessment_index]
             test_dates = a.get("test_dates", {})
             t_name = self.viewing_test_name
-            d = test_dates.get(t_name, "")
-            if not d:
-                if t_name == "Test 1":
-                    d = "25 Aug 2026"
-                elif t_name == "Test 2":
-                    d = "27 Aug 2026"
-                elif t_name == "Test 3":
-                    d = "29 Aug 2026"
-                elif t_name == "Final Test":
-                    d = "31 Aug 2026"
-            return d
+            return test_dates.get(t_name, "")
         return ""
 
     @rx.var
@@ -883,15 +935,59 @@ class AdminState(rx.State):
         return ""
 
     @rx.var
+    def viewing_test_facilitators_list(self) -> list[Facilitator]:
+        """Returns list of facilitator dicts for all facilitators assigned to the viewed assessment."""
+        if 0 <= self.viewing_test_assessment_index < len(self.assessments):
+            a = self.assessments[self.viewing_test_assessment_index]
+            fac_ids = a.get("facilitator_ids", [])
+            if not fac_ids and a.get("facilitator_id"):
+                fac_ids = [a["facilitator_id"]]
+            result = []
+            for fid in fac_ids:
+                match = next((f for f in self.facilitators if f["emp_id"] == fid), None)
+                if match:
+                    result.append(dict(match))
+                else:
+                    result.append({
+                        "name": a.get("facilitator_name", "Facilitator"),
+                        "emp_id": fid,
+                        "email": f"{fid.lower()}@genaievaluator.com",
+                        "phone": "",
+                        "password": "",
+                    })
+            return result
+        return []
+
+    @rx.var
     def viewing_test_candidates_list(self) -> list[Candidate]:
         if 0 <= self.viewing_test_assessment_index < len(self.assessments):
             c_ids = self.assessments[self.viewing_test_assessment_index]["assigned_candidates"]
             return [c for c in self.candidates if c["emp_id"] in c_ids]
         return []
 
+    # Test-wise Question Papers shared across Admin and Facilitator
+    # Key: unique test ID (e.g. "Quality__Formative 1")
+    test_question_papers: dict[str, str] = {
+        "Quality__Formative 1": "Quality_Technical_Stage1.xlsx",
+    }
+
+    @rx.var
+    def viewing_test_id(self) -> str:
+        if 0 <= self.viewing_test_assessment_index < len(self.assessments):
+            return f"{self.assessments[self.viewing_test_assessment_index]['name']}__{self.viewing_test_name}"
+        return ""
+
+    @rx.var
+    def viewing_test_qp_filename(self) -> str:
+        return self.test_question_papers.get(self.viewing_test_id, "")
+
+    @rx.var
+    def viewing_test_has_qp(self) -> bool:
+        return bool(self.viewing_test_qp_filename)
+
     @rx.var
     def viewing_test_is_final(self) -> bool:
-        return self.viewing_test_name.lower() == "final test"
+        return self.viewing_test_name.lower() == "summative test"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -915,10 +1011,10 @@ ADMIN_SUBMITTED_REPORTS = [
         "status": "Submitted",
         # Test-level scores
         "test_scores": [
-            {"name": "Test 1", "score": 72, "is_final": False},
-            {"name": "Test 2", "score": 68, "is_final": False},
-            {"name": "Test 3", "score": 81, "is_final": False},
-            {"name": "Final Test", "score": 86, "is_final": True},
+            {"name": "Formative 1", "score": 72, "is_final": False},
+            {"name": "Formative 2", "score": 68, "is_final": False},
+            {"name": "Formative 3", "score": 81, "is_final": False},
+            {"name": "Summative Test", "score": 86, "is_final": True},
         ],
         # CO, LO, Knowledge, Domain, RBT scores (All Candidates cohort)
         "co": [
@@ -952,8 +1048,8 @@ ADMIN_SUBMITTED_REPORTS = [
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 68},
         ],
         "insight_diff": 14,
-        "insight_start": "Test 1 (72%)",
-        "insight_end": "Final Test (86%)",
+        "insight_start": "Formative 1 (72%)",
+        "insight_end": "Summative Test (86%)",
         # Candidate leaderboard (matches RESULTS_CANDIDATE_SUMMARY)
         "candidates": [
             {"rank": 1, "name": "Sneha Kulkarni", "emp_id": "EMP-104", "overall_score": 96, "final_test_score": 94, "result": "Passed"},

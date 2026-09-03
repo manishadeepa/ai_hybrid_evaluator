@@ -97,7 +97,7 @@ def test_header() -> rx.Component:
             # Column 2 (Center): Quality - Test 1 & 3 of 20
             rx.vstack(
                 rx.text(
-                    CandidateState.active_assessment_name + " - " + CandidateState.active_test_name,
+                    CandidateState.active_assessment_name + " - " + CandidateState.display_test_name,
                     font_family=FONT_DISPLAY,
                     size="4",
                     weight="bold",
@@ -196,6 +196,30 @@ def test_header() -> rx.Component:
 # Left Column: Question Card
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _meta_pill(label: str, value: str) -> rx.Component:
+    """Small metadata pill shown on the Question Card (CO, LO, RBT Level, Max Marks)."""
+    return rx.hstack(
+        rx.text(
+            label + ":",
+            font_family=FONT_BODY,
+            size="1",
+            weight="bold",
+            color="#6B7280",
+        ),
+        rx.text(
+            rx.cond(value != "", value, "—"),
+            font_family=FONT_BODY,
+            size="1",
+            color="#111827",
+        ),
+        spacing="1",
+        align_items="center",
+        background="#F3F4F6",
+        border_radius="6px",
+        padding="0.2em 0.6em",
+    )
+
+
 def question_card() -> rx.Component:
     q = CandidateState.current_question
 
@@ -203,7 +227,7 @@ def question_card() -> rx.Component:
         rx.vstack(
             # Top Section: Header + Text + Guidelines
             rx.vstack(
-                # Card Top Row: Question Title + Mark for Review
+                # Card Top Row: Question Number + Mark for Review
                 rx.hstack(
                     rx.text(
                         "Question " + CandidateState.current_question_number.to_string(),
@@ -220,7 +244,11 @@ def question_card() -> rx.Component:
                             color=rx.cond(CandidateState.is_current_marked, "#D97706", "#4B5563"),
                         ),
                         rx.text(
-                            "Mark for Review",
+                            rx.cond(
+                                CandidateState.is_current_marked,
+                                "Marked for Review",
+                                "Mark for Review",
+                            ),
                             font_family=FONT_BODY,
                             size="2",
                             weight="medium",
@@ -235,6 +263,17 @@ def question_card() -> rx.Component:
                     align_items="center",
                 ),
 
+                # Metadata row: CO / LO / RBT Level / Marks
+                rx.hstack(
+                    _meta_pill("CO", CandidateState.current_question_co),
+                    _meta_pill("LO", CandidateState.current_question_lo),
+                    _meta_pill("RBT Level", CandidateState.current_question_rbt),
+                    _meta_pill("Max Marks", CandidateState.current_question_marks),
+                    spacing="2",
+                    padding_top="0.8em",
+                    flex_wrap="wrap",
+                ),
+
                 # Question prompt
                 rx.text(
                     q["text"],
@@ -242,7 +281,7 @@ def question_card() -> rx.Component:
                     size="3",
                     color="#1F2937",
                     line_height="1.65",
-                    padding_top="1.4em",
+                    padding_top="1.2em",
                 ),
 
                 # Guidelines Heading
@@ -287,8 +326,9 @@ def question_card() -> rx.Component:
 
             rx.spacer(),
 
-            # Bottom Navigation Buttons: Previous / Next
+            # Bottom Navigation Buttons: Previous | Next (skip) | Save & Next / Save & Submit
             rx.hstack(
+                # Previous
                 rx.button(
                     rx.hstack(
                         rx.icon("arrow-left", size=14),
@@ -296,7 +336,10 @@ def question_card() -> rx.Component:
                         spacing="1",
                         align_items="center",
                     ),
-                    on_click=CandidateState.prev_question,
+                    on_click=[
+                        rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                        CandidateState.prev_question,
+                    ],
                     disabled=CandidateState.current_question_index == 0,
                     variant="outline",
                     color_scheme="gray",
@@ -307,25 +350,76 @@ def question_card() -> rx.Component:
                     background="white",
                 ),
                 rx.spacer(),
-                rx.button(
-                    rx.hstack(
-                        rx.text("Next", font_family=FONT_BODY, size="2", weight="medium"),
-                        rx.icon("arrow-right", size=14),
-                spacing="1",
-                        align_items="center",
+                # Next → (skip, only visible when not on last question)
+                rx.cond(
+                    ~CandidateState.is_last_question,
+                    rx.button(
+                        rx.hstack(
+                            rx.text("Next", font_family=FONT_BODY, size="2", weight="medium"),
+                            rx.icon("arrow-right", size=14),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        on_click=[
+                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                            CandidateState.next_question,
+                        ],
+                        size="2",
+                        variant="outline",
+                        color_scheme="gray",
+                        border="1px solid #D1D5DB",
+                        border_radius="8px",
+                        padding="0.5em 1.2em",
+                        background="white",
                     ),
-                    on_click=CandidateState.next_question,
-                    disabled=CandidateState.current_question_index == 19,
-                    size="2",
-                    background="#4338CA",
-                    color="white",
-                    border_radius="8px",
-                    padding="0.5em 1.5em",
-                    _hover={"background": "#3730A3"},
+                    rx.fragment(),
+                ),
+                # Save & Next (saves answer + advance) — only on non-last questions
+                # Save & Submit — on the final question
+                rx.cond(
+                    CandidateState.is_last_question,
+                    rx.button(
+                        rx.hstack(
+                            rx.text("Save & Submit", font_family=FONT_BODY, size="2", weight="medium"),
+                            rx.icon("send", size=14),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        on_click=[
+                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                            CandidateState.save_and_next_question,
+                            CandidateState.open_submit_dialog,
+                        ],
+                        size="2",
+                        background="#027A48",
+                        color="white",
+                        border_radius="8px",
+                        padding="0.5em 1.5em",
+                        _hover={"background": "#05603A"},
+                    ),
+                    rx.button(
+                        rx.hstack(
+                            rx.text("Save & Next", font_family=FONT_BODY, size="2", weight="medium"),
+                            rx.icon("arrow-right", size=14),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        on_click=[
+                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                            CandidateState.save_and_next_question,
+                        ],
+                        size="2",
+                        background="#4338CA",
+                        color="white",
+                        border_radius="8px",
+                        padding="0.5em 1.5em",
+                        _hover={"background": "#3730A3"},
+                    ),
                 ),
                 width="100%",
                 align_items="center",
                 padding_top="1.5em",
+                spacing="2",
             ),
 
             spacing="0",
@@ -349,20 +443,15 @@ def question_card() -> rx.Component:
 
 # ── Rich-Text Editor JS helpers ──────────────────────────────────────────────
 # Runs execCommand on the contenteditable editor, then syncs the updated HTML
-# back to the backend state via the hidden relay input.
+# back to the backend state and localStorage, and updates live word count.
 _EXEC_CMD_JS = """
 (function(cmd, arg) {
     var ed = document.getElementById('rte-editor');
     if (!ed) return;
     ed.focus();
     document.execCommand(cmd, false, arg || null);
-    // Sync updated HTML back to state via the hidden relay input
-    var relay = document.getElementById('rte-relay');
-    if (relay) {
-        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(relay, ed.innerHTML);
-        relay.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    if (window.__updateWordCount) window.__updateWordCount(ed.innerHTML);
+    if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();
 })('{cmd}', {arg});
 """
 
@@ -387,19 +476,25 @@ def _toolbar_btn(icon_name: str, cmd: str, arg: str = "null") -> rx.Component:
 
 def answer_card() -> rx.Component:
     return rx.box(
-        # ── Hidden relay input: bridges the contenteditable -> Reflex state ──
-        # The JS oninput handler writes editor.innerHTML into this input,
-        # which Reflex picks up as a normal on_change event.
-        rx.el.input(
+        # ── Hidden relay textarea: bridges the contenteditable -> Reflex state ──
+        # Uses textarea (not type="hidden" input) so React synthetic onChange fires correctly.
+        rx.el.textarea(
             id="rte-relay",
-            type="hidden",
-            value=CandidateState.current_answer_text,
             on_change=CandidateState.set_answer_html,
-            style={"display": "none"},
+            style={
+                "position": "fixed",
+                "top": "-9999px",
+                "left": "-9999px",
+                "width": "1px",
+                "height": "1px",
+                "opacity": "0",
+                "pointerEvents": "none",
+                "zIndex": "-1",
+            },
         ),
 
         rx.vstack(
-            # Top Header Row: Your Answer + Auto-saved badge + Words count
+            # Top Header Row: Your Answer + Auto-save status badge + Word count
             rx.hstack(
                 rx.text(
                     "Your Answer",
@@ -408,15 +503,39 @@ def answer_card() -> rx.Component:
                     weight="bold",
                     color="#111827",
                 ),
-                rx.hstack(
-                    rx.icon("circle-check", size=14, color="#16A34A"),
-                    rx.text("Auto-saved", font_family=FONT_BODY, size="1", weight="medium", color="#16A34A"),
-                    spacing="1",
-                    align_items="center",
+                # Dynamic auto-save status badge
+                rx.cond(
+                    CandidateState.auto_save_status == "Saving...",
+                    rx.hstack(
+                        rx.icon("loader", size=14, color="#D97706"),
+                        rx.text("Saving...", font_family=FONT_BODY, size="1", weight="medium", color="#D97706"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.cond(
+                        CandidateState.auto_save_status == "Save failed",
+                        rx.hstack(
+                            rx.icon("circle-x", size=14, color="#DC2626"),
+                            rx.text("Save failed", font_family=FONT_BODY, size="1", weight="medium", color="#DC2626"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        rx.cond(
+                            CandidateState.auto_save_status == "Auto-saved",
+                            rx.hstack(
+                                rx.icon("circle-check", size=14, color="#16A34A"),
+                                rx.text("Auto-saved", font_family=FONT_BODY, size="1", weight="medium", color="#16A34A"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            rx.fragment(),
+                        ),
+                    ),
                 ),
                 rx.spacer(),
                 rx.text(
                     "Words: " + CandidateState.current_word_count.to_string(),
+                    id="rte-word-count",
                     font_family=FONT_BODY,
                     size="1",
                     color="#6B7280",
@@ -461,8 +580,6 @@ def answer_card() -> rx.Component:
 
             # ── Rich-Text Editor (contenteditable div) ────────────────────
             rx.box(
-                # Script: hydrate editor content from state on mount/question-change,
-                # and wire the oninput sync to the relay.
                 rx.script(
                     """
                     (function() {
@@ -470,22 +587,11 @@ def answer_card() -> rx.Component:
                             var ed = document.getElementById('rte-editor');
                             var relay = document.getElementById('rte-relay');
                             if (!ed || !relay) { setTimeout(initRTE, 80); return; }
-
-                            // Sync relay value -> editor HTML (restores content on
-                            // question navigation or page hydration).
-                            if (ed.innerHTML !== relay.value) {
-                                ed.innerHTML = relay.value || '';
+                            if (window.bindRteInput) {
+                                window.bindRteInput(ed);
                             }
-
-                            // Attach oninput once (guard against double-attach).
-                            if (!ed.__rteAttached) {
-                                ed.__rteAttached = true;
-                                ed.addEventListener('input', function() {
-                                    var niv = Object.getOwnPropertyDescriptor(
-                                        window.HTMLInputElement.prototype, 'value').set;
-                                    niv.call(relay, ed.innerHTML);
-                                    relay.dispatchEvent(new Event('input', { bubbles: true }));
-                                });
+                            if (window.__updateWordCount) {
+                                window.__updateWordCount(ed.innerHTML);
                             }
                         }
                         initRTE();
@@ -643,7 +749,7 @@ def proctoring_warning_dialog() -> rx.Component:
                     rx.vstack(
                         rx.dialog.title("Proctoring Alert: Violation Detected"),
                         rx.text(
-                            "Warning #" + CandidateState.violation_count.to_string() + " of " + CandidateState.max_violations.to_string(),
+                            "Warning " + CandidateState.violation_count.to_string() + " of " + CandidateState.max_violations.to_string(),
                             font_family=FONT_BODY,
                             size="1",
                             color=COLORS["danger"],
@@ -670,16 +776,28 @@ def proctoring_warning_dialog() -> rx.Component:
                 ),
                 rx.hstack(
                     rx.spacer(),
-                    rx.button(
-                        "I Understand, Return to Test",
-                        on_click=[
-                            CandidateState.dismiss_violation_modal,
-                            rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
-                        ],
-                        background=COLORS["primary"],
-                        color="white",
-                        font_family=FONT_BODY,
-                        size="2",
+                    rx.cond(
+                        CandidateState.is_disqualified,
+                        rx.button(
+                            "Return to Dashboard",
+                            on_click=CandidateState.return_to_dashboard,
+                            background=COLORS["danger"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            size="2",
+                            _hover={"background": "#B91C1C"},
+                        ),
+                        rx.button(
+                            "I Understand, Return to Test",
+                            on_click=[
+                                CandidateState.dismiss_violation_modal,
+                                rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
+                            ],
+                            background=COLORS["primary"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            size="2",
+                        ),
                     ),
                     width="100%",
                 ),
@@ -708,7 +826,7 @@ def submit_confirmation_dialog() -> rx.Component:
                     rx.vstack(
                         rx.dialog.title("Submit Assessment Examination?"),
                         rx.text(
-                            CandidateState.active_assessment_name + " — " + CandidateState.active_test_name,
+                            CandidateState.active_assessment_name + " — " + CandidateState.display_test_name,
                             font_family=FONT_BODY,
                             size="1",
                             color=COLORS["slate"],
@@ -797,27 +915,41 @@ def test_submitted_screen() -> rx.Component:
             rx.box(
                 rx.vstack(
                     rx.cond(
-                        CandidateState.is_time_expired,
+                        CandidateState.is_disqualified,
                         rx.box(
-                            rx.icon("clock-alert", size=48, color="#DC2626"),
+                            rx.icon("shield-alert", size=48, color="#DC2626"),
                             background="#FEF2F2",
                             padding="1.2em",
                             border_radius="50%",
                             margin_bottom="0.5em",
                         ),
-                        rx.box(
-                            rx.icon("circle-check", size=48, color="#027A48"),
-                            background="#ECFDF3",
-                            padding="1.2em",
-                            border_radius="50%",
-                            margin_bottom="0.5em",
+                        rx.cond(
+                            CandidateState.is_time_expired,
+                            rx.box(
+                                rx.icon("clock-alert", size=48, color="#DC2626"),
+                                background="#FEF2F2",
+                                padding="1.2em",
+                                border_radius="50%",
+                                margin_bottom="0.5em",
+                            ),
+                            rx.box(
+                                rx.icon("circle-check", size=48, color="#027A48"),
+                                background="#ECFDF3",
+                                padding="1.2em",
+                                border_radius="50%",
+                                margin_bottom="0.5em",
+                            ),
                         ),
                     ),
                     rx.heading(
                         rx.cond(
-                            CandidateState.is_time_expired,
-                            "Time Expired — Test Automatically Submitted",
-                            "Test Submitted Successfully",
+                            CandidateState.is_disqualified,
+                            "Test Terminated — Proctoring Disqualification",
+                            rx.cond(
+                                CandidateState.is_time_expired,
+                                "Time Expired — Test Automatically Submitted",
+                                "Test Submitted Successfully",
+                            ),
                         ),
                         font_family=FONT_DISPLAY,
                         size="6",
@@ -827,9 +959,13 @@ def test_submitted_screen() -> rx.Component:
                     ),
                     rx.text(
                         rx.cond(
-                            CandidateState.is_time_expired,
-                            "The allotted test duration has elapsed (00:00:00). Your answers have been automatically saved and submitted for evaluation.",
-                            "Your examination answers have been securely submitted and logged for evaluation.",
+                            CandidateState.is_disqualified,
+                            "You have reached the maximum allowed proctoring violations (3 of 3). Your test session has been terminated and flagged as Disqualified.",
+                            rx.cond(
+                                CandidateState.is_time_expired,
+                                "The allotted test duration has elapsed (00:00:00). Your answers have been automatically saved and submitted for evaluation.",
+                                "Your examination answers have been securely submitted and logged for evaluation.",
+                            ),
                         ),
                         font_family=FONT_BODY,
                         size="2",
@@ -842,9 +978,13 @@ def test_submitted_screen() -> rx.Component:
                                 rx.text("Status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                                 rx.spacer(),
                                 rx.cond(
-                                    CandidateState.is_time_expired,
-                                    rx.badge("Time Expired (Auto-Submitted)", color_scheme="red", variant="soft", size="1"),
-                                    rx.badge("Submitted", color_scheme="green", variant="soft", size="1"),
+                                    CandidateState.is_disqualified,
+                                    rx.badge("Disqualified (Proctoring Violation)", color_scheme="red", variant="soft", size="1"),
+                                    rx.cond(
+                                        CandidateState.is_time_expired,
+                                        rx.badge("Time Expired (Auto-Submitted)", color_scheme="red", variant="soft", size="1"),
+                                        rx.badge("Submitted", color_scheme="green", variant="soft", size="1"),
+                                    ),
                                 ),
                                 width="100%",
                             ),
@@ -859,7 +999,7 @@ def test_submitted_screen() -> rx.Component:
                             rx.hstack(
                                 rx.text("Assessment", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                                 rx.spacer(),
-                                rx.text(CandidateState.active_assessment_name + " — " + CandidateState.active_test_name, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"]),
+                                rx.text(CandidateState.active_assessment_name + " — " + CandidateState.display_test_name, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"]),
                                 width="100%",
                             ),
                             rx.hstack(
@@ -924,101 +1064,196 @@ def test_submitted_screen() -> rx.Component:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def candidate_test_page() -> rx.Component:
-    return rx.cond(
-        CandidateState.is_test_submitted,
-        test_submitted_screen(),
-        rx.box(
-            rx.button(
-                id="fs-exit-btn",
-                on_click=CandidateState.handle_fullscreen_exited,
-                style={"display": "none"},
-            ),
-            rx.button(
-                id="fs-enter-btn",
-                on_click=CandidateState.handle_fullscreen_entered,
-                style={"display": "none"},
-            ),
-            rx.script(
-                """
-                (function() {
-                    // ── Fullscreen detection ──────────────────────────────────────
-                    function checkFS() {
-                        var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-                        if (!isFS) {
-                            var exitBtn = document.getElementById('fs-exit-btn');
-                            if (exitBtn) exitBtn.click();
-                        } else {
-                            var enterBtn = document.getElementById('fs-enter-btn');
-                            if (enterBtn) enterBtn.click();
-                        }
-                    }
-                    if (window.__candidate_fs_handler) {
-                        document.removeEventListener('fullscreenchange', window.__candidate_fs_handler);
-                        document.removeEventListener('webkitfullscreenchange', window.__candidate_fs_handler);
-                    }
-                    window.__candidate_fs_handler = checkFS;
-                    document.addEventListener('fullscreenchange', checkFS);
-                    document.addEventListener('webkitfullscreenchange', checkFS);
-
-                    // ── RTE relay watcher ─────────────────────────────────────────
-                    // When Reflex updates the relay input's value (e.g. question
-                    // navigation), push that HTML into the contenteditable editor.
-                    function watchRelay() {
-                        var relay = document.getElementById('rte-relay');
-                        var ed    = document.getElementById('rte-editor');
-                        if (!relay || !ed) { setTimeout(watchRelay, 100); return; }
-                        if (window.__rteRelayObserver) window.__rteRelayObserver.disconnect();
-                        window.__rteRelayObserver = new MutationObserver(function() {
-                            if (ed.innerHTML !== relay.value) {
-                                // Temporarily detach oninput to avoid feedback loop
-                                ed.__rteAttached = false;
-                                ed.innerHTML = relay.value || '';
-                                ed.__rteAttached = true;
-                                // Re-wire the input listener
-                                ed.addEventListener('input', function onInput() {
-                                    var niv = Object.getOwnPropertyDescriptor(
-                                        window.HTMLInputElement.prototype, 'value').set;
-                                    niv.call(relay, ed.innerHTML);
-                                    relay.dispatchEvent(new Event('input', { bubbles: true }));
-                                });
+    return rx.box(
+        proctoring_warning_dialog(),
+        rx.cond(
+            CandidateState.is_test_submitted,
+            test_submitted_screen(),
+            rx.box(
+                rx.button(
+                    id="fs-exit-btn",
+                    on_click=CandidateState.handle_fullscreen_exited,
+                    style={"display": "none"},
+                ),
+                rx.button(
+                    id="fs-enter-btn",
+                    on_click=CandidateState.handle_fullscreen_entered,
+                    style={"display": "none"},
+                ),
+                rx.script(
+                    r"""
+                    (function() {
+                        // ── Fullscreen detection ──────────────────────────────────────
+                        function checkFS() {
+                            var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+                            if (!isFS) {
+                                var exitBtn = document.getElementById('fs-exit-btn');
+                                if (exitBtn) exitBtn.click();
+                            } else {
+                                var enterBtn = document.getElementById('fs-enter-btn');
+                                if (enterBtn) enterBtn.click();
                             }
-                        });
-                        window.__rteRelayObserver.observe(relay, { attributes: true, attributeFilter: ['value'] });
-                    }
-                    if (document.readyState === 'loading') {
-                        document.addEventListener('DOMContentLoaded', watchRelay);
-                    } else {
-                        watchRelay();
-                    }
-                })();
-                """
-            ),
-            rx.vstack(
-                test_header(),
-                # Main Two-Column Body
-                rx.box(
-                    rx.hstack(
-                        question_card(),
-                        answer_card(),
-                        spacing="4",
+                        }
+                        if (window.__candidate_fs_handler) {
+                            document.removeEventListener('fullscreenchange', window.__candidate_fs_handler);
+                            document.removeEventListener('webkitfullscreenchange', window.__candidate_fs_handler);
+                        }
+                        window.__candidate_fs_handler = checkFS;
+                        document.addEventListener('fullscreenchange', checkFS);
+                        document.addEventListener('webkitfullscreenchange', checkFS);
+
+                        // ── localStorage helpers ──────────────────────────────────────
+                        // Key: candidate_id::assessment_name::test_name::question_id
+                        // Data attributes are written on #rte-relay by _restore_rte_script.
+                        window.__rteGetStorageKey = function(qidOverride) {
+                            var relay = document.getElementById('rte-relay');
+                            if (!relay) return null;
+                            var cid  = relay.dataset.candidateId || 'unknown';
+                            var asmn = relay.dataset.assessment   || 'unknown';
+                            var test = relay.dataset.testName     || 'unknown';
+                            var qid  = qidOverride || relay.dataset.questionId || '1';
+                            return cid + '::' + asmn + '::' + test + '::' + qid;
+                        };
+                        window.__rteSaveToStorage = function(html) {
+                            var key = window.__rteGetStorageKey();
+                            if (!key) return;
+                            try { localStorage.setItem(key, html); } catch(e) {}
+                        };
+                        window.__rteLoadFromStorage = function(qid) {
+                            var relay = document.getElementById('rte-relay');
+                            if (!relay) return null;
+                            var cid  = relay.dataset.candidateId || 'unknown';
+                            var asmn = relay.dataset.assessment   || 'unknown';
+                            var test = relay.dataset.testName     || 'unknown';
+                            var key  = cid + '::' + asmn + '::' + test + '::' + (qid || '1');
+                            try { return localStorage.getItem(key); } catch(e) { return null; }
+                        };
+
+                        // ── Word count helper ─────────────────────────────────────────
+                        function countWords(html) {
+                            if (!html) return 0;
+                            var text = html.replace(/<(br|\/div|\/p|\/li)\s*\/?>/gi, ' ');
+                            text = text.replace(/<[^>]+>/g, ' ');
+                            text = text.replace(/&nbsp;/gi, ' ');
+                            text = text.replace(/&[a-z0-9#]+;/gi, ' ');
+                            text = text.trim();
+                            if (!text) return 0;
+                            var words = text.split(/\s+/).filter(function(w) { return w.length > 0; });
+                            return words.length;
+                        }
+
+                        window.__updateWordCount = function(html) {
+                            var el = document.getElementById('rte-word-count');
+                            if (!el) return;
+                            var val = (html !== undefined && html !== null) ? html : (document.getElementById('rte-editor') ? document.getElementById('rte-editor').innerHTML : '');
+                            el.textContent = 'Words: ' + countWords(val);
+                        };
+
+                        // ── Relay sync helper ─────────────────────────────────────────
+                        function syncRelay(html) {
+                            var relay = document.getElementById('rte-relay');
+                            if (!relay) return;
+                            var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                            if (setter) {
+                                setter.call(relay, html);
+                            } else {
+                                relay.value = html;
+                            }
+                            if (relay._valueTracker) {
+                                relay._valueTracker.setValue(html + '_chg');
+                            }
+                            relay.dispatchEvent(new Event('input', { bubbles: true }));
+                            relay.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+
+                        window.__rteSaveCurrentAnswer = function() {
+                            var ed = document.getElementById('rte-editor');
+                            if (!ed) return;
+                            window.__rteSaveToStorage(ed.innerHTML);
+                            syncRelay(ed.innerHTML);
+                        };
+
+                        // ── Shared input binder (attaches once per editor lifetime) ────
+                        window.bindRteInput = function(ed) {
+                            if (ed.__rteInputBound) return;
+                            ed.__rteInputBound = true;
+                            function onInput() {
+                                window.__updateWordCount(ed.innerHTML);
+                                window.__rteSaveToStorage(ed.innerHTML);
+                                syncRelay(ed.innerHTML);
+                            }
+                            ed.addEventListener('input', onInput);
+                            ed.addEventListener('keyup', function() {
+                                window.__updateWordCount(ed.innerHTML);
+                            });
+                            ed.addEventListener('paste', function() {
+                                setTimeout(onInput, 15);
+                            });
+                        };
+
+                        // ── RTE restore (called via rx.call_script after navigation) ──
+                        window.__rteRestoreAnswer = function(savedHtml, qid) {
+                            var ed = document.getElementById('rte-editor');
+                            if (!ed) return;
+                            // localStorage is freshest; fall back to backend state
+                            var localHtml = qid ? window.__rteLoadFromStorage(qid) : null;
+                            var html = (localHtml !== null && localHtml !== '') ? localHtml : (savedHtml || '');
+                            ed.__rteAttached = false;
+                            ed.innerHTML = html;
+                            ed.__rteAttached = true;
+                            window.bindRteInput(ed);
+                            window.__updateWordCount(html);
+                        };
+
+                        // ── Seed editor on first page load ────────────────────────────
+                        (function seedOnLoad() {
+                            var ed = document.getElementById('rte-editor');
+                            var relay = document.getElementById('rte-relay');
+                            if (!ed || !relay) { setTimeout(seedOnLoad, 100); return; }
+                            window.bindRteInput(ed);
+                            var qid = relay.dataset.questionId || '1';
+                            var localHtml = window.__rteLoadFromStorage(qid);
+                            var html = (localHtml !== null) ? localHtml : (relay.dataset.saved || '');
+                            if (html && (!ed.innerHTML || ed.innerHTML === '<br>')) {
+                                ed.__rteAttached = false;
+                                ed.innerHTML = html;
+                                ed.__rteAttached = true;
+                            }
+                            window.__updateWordCount(ed.innerHTML);
+                        })();
+                    })();
+                    """
+                ),
+                rx.vstack(
+                    test_header(),
+                    # Main Two-Column Body
+                    rx.box(
+                        rx.hstack(
+                            question_card(),
+                            answer_card(),
+                            spacing="4",
+                            width="100%",
+                            align_items="stretch",
+                        ),
+                        padding="1.8em 2.5em",
                         width="100%",
-                        align_items="stretch",
+                        flex="1",
+                        background="#F9FAFB",
                     ),
-                    padding="1.8em 2.5em",
+                    bottom_status_bar(),
+                    submit_confirmation_dialog(),
+                    spacing="0",
                     width="100%",
-                    flex="1",
+                    min_height="100vh",
                     background="#F9FAFB",
                 ),
-                bottom_status_bar(),
-                proctoring_warning_dialog(),
-                submit_confirmation_dialog(),
-                spacing="0",
                 width="100%",
                 min_height="100vh",
                 background="#F9FAFB",
             ),
-            width="100%",
-            min_height="100vh",
-            background="#F9FAFB",
         ),
+        width="100%",
+        min_height="100vh",
+        background="#F9FAFB",
     )
+

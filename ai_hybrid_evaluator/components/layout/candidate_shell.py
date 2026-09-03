@@ -3,6 +3,7 @@
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.topbar import unified_topbar
 from ai_hybrid_evaluator.state.auth_state import AuthState
+from ai_hybrid_evaluator.state.candidate_state import CandidateProfileState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 
 
@@ -93,12 +94,26 @@ def candidate_sidebar(active: str) -> rx.Component:
 
 
 def candidate_shell(active: str, title: str, subtitle: str, content: rx.Component) -> rx.Component:
+    display_name = rx.cond(
+        AuthState.candidate_name != "",
+        AuthState.candidate_name,
+        CandidateProfileState.full_name,
+    )
+    display_initial = rx.cond(
+        AuthState.candidate_name != "",
+        AuthState.candidate_name[0],
+        rx.cond(
+            CandidateProfileState.full_name != "",
+            CandidateProfileState.full_name[0],
+            "C",
+        ),
+    )
     return rx.vstack(
         # Unified Header
         unified_topbar(
-            user_name="Candidate",
+            user_name=display_name,
             role_name="Candidate",
-            avatar_initial="C",
+            avatar_initial=display_initial,
         ),
         # Body: Sidebar + Main Content Area
         rx.hstack(

@@ -493,61 +493,6 @@ def recent_assessments_card() -> rx.Component:
 
 def admin_dashboard_page() -> rx.Component:
     content = rx.vstack(
-        # ── Welcome Header + Date Card ────────────────────────────────
-        rx.hstack(
-            rx.vstack(
-                rx.text(
-                    "Welcome back, Admin!",
-                    font_family=FONT_BODY,
-                    size="6",
-                    weight="bold",
-                    color=COLORS["ink"],
-                    line_height="1.2",
-                ),
-                rx.text(
-                    "Here's what's happening in your evaluation system today.",
-                    font_family=FONT_BODY,
-                    size="2",
-                    color=COLORS["slate"],
-                ),
-                spacing="1",
-                align_items="start",
-            ),
-            rx.spacer(),
-            rx.box(
-                rx.hstack(
-                    rx.icon("calendar", size=18, color=COLORS["slate"]),
-                    rx.vstack(
-                        rx.text(
-                            "Monday, 31 August 2026",
-                            font_family=FONT_BODY,
-                            size="1",
-                            weight="bold",
-                            color=COLORS["ink"],
-                        ),
-                        rx.text(
-                            "10:24 AM",
-                            font_family=FONT_BODY,
-                            size="1",
-                            color=COLORS["slate"],
-                        ),
-                        spacing="0",
-                        align_items="start",
-                    ),
-                    spacing="2",
-                    align_items="center",
-                ),
-                background=COLORS["surface"],
-                border=f"1px solid {COLORS['line']}",
-                border_radius="10px",
-                padding="0.6em 1em",
-                box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
-            ),
-            width="100%",
-            align_items="center",
-            padding_bottom="0.5em",
-        ),
-
         # ── 4 KPI Stat Cards ──────────────────────────────────────────
         rx.hstack(
             dashboard_kpi_card(

@@ -8,7 +8,7 @@ from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 
 
 def unified_topbar(
-    user_name: str = "Welcome, Admin",
+    user_name: str = "Admin",
     role_name: str = "Administrator",
     avatar_initial: str = "A",
 ) -> rx.Component:
@@ -17,7 +17,7 @@ def unified_topbar(
         rx.hstack(
             rx.image(
                 src="/tvs_logo.png",
-                height="34px",
+                height="48px",
                 width="auto",
                 object_fit="contain",
             ),
@@ -116,7 +116,7 @@ def unified_topbar(
 def topbar(title: str = "", subtitle: str = "") -> rx.Component:
     """Default Admin topbar wrapper for backward-compatibility."""
     return unified_topbar(
-        user_name="Welcome, Admin",
+        user_name="Admin",
         role_name="Administrator",
         avatar_initial="A",
     )

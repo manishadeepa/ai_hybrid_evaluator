@@ -7,9 +7,9 @@ from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 def auth_header(heading: str, subheading: str) -> rx.Component:
     return rx.vstack(
         rx.center(
-            rx.image(src="/tvs_logo.png", width="40px", height="40px", object_fit="contain"),
+            rx.image(src="/tvs_logo.png", height="48px", width="auto", object_fit="contain"),
             width="100%",
-            padding_bottom="0.6em",
+            padding_bottom="1em",
         ),
         rx.center(
             rx.text(

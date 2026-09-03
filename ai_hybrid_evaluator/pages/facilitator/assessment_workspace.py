@@ -81,24 +81,16 @@ def test_qp_status_pill(test_name: str, is_final: bool) -> rx.Component:
                 rx.icon("file-text", size=14, color=rx.cond(is_active, COLORS["primary"], COLORS["slate"])),
             ),
             rx.vstack(
-                rx.hstack(
-                    rx.text(
-                        test_name,
-                        font_family=FONT_BODY,
-                        size="2",
-                        weight=rx.cond(is_active, "bold", "medium"),
-                        color=rx.cond(
-                            is_active,
-                            rx.cond(is_final, "#92400E", COLORS["primary"]),
-                            COLORS["ink"],
-                        ),
+                rx.text(
+                    test_name,
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight=rx.cond(is_active, "bold", "medium"),
+                    color=rx.cond(
+                        is_active,
+                        rx.cond(is_final, "#92400E", COLORS["primary"]),
+                        COLORS["ink"],
                     ),
-                    rx.cond(
-                        is_final,
-                        rx.badge("Final", color_scheme="amber", variant="soft", size="1"),
-                    ),
-                    spacing="1",
-                    align_items="center",
                 ),
                 rx.cond(
                     has_file,
@@ -400,11 +392,6 @@ def question_paper_overview_row(test_name: str, is_final: bool) -> rx.Component:
                     rx.icon("file-text", size=15, color=COLORS["primary"]),
                 ),
                 rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                rx.cond(
-                    is_final,
-                    rx.badge("Final Evaluation", color_scheme="amber", variant="soft", size="1"),
-                    rx.badge("Regular Test", color_scheme="indigo", variant="soft", size="1"),
-                ),
                 spacing="2",
                 align_items="center",
             )
@@ -593,21 +580,12 @@ def evaluation_test_header() -> rx.Component:
         # Left: Test info
         rx.vstack(
             rx.text("Test:", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
-            rx.hstack(
-                rx.text(
-                    FacilitatorState.selected_test_name,
-                    font_family=FONT_DISPLAY,
-                    size="6",
-                    weight="bold",
-                    color=COLORS["ink"],
-                ),
-                rx.cond(
-                    FacilitatorState.selected_test_name.contains("Final") | FacilitatorState.selected_test_name.contains("final"),
-                    rx.badge("Final Evaluation", color_scheme="amber", variant="soft", size="1"),
-                    rx.badge("Regular Test", color_scheme="indigo", variant="soft", size="1"),
-                ),
-                spacing="2",
-                align_items="center",
+            rx.text(
+                FacilitatorState.selected_test_name,
+                font_family=FONT_DISPLAY,
+                size="6",
+                weight="bold",
+                color=COLORS["ink"],
             ),
             spacing="0",
             align_items="start",

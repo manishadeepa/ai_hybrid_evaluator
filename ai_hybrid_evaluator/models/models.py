@@ -47,14 +47,21 @@ SHARED_FACILITATORS: list[Facilitator] = [
 ]
 
 
-class TestItem(TypedDict):
+class TestItem(TypedDict, total=False):
     name: str
     date: str
     is_final: bool
+    test_id: str
+    has_qp: bool
+    qp_filename: str
 
 
-class Assessment(TypedDict):
+class Assessment(TypedDict, total=False):
     name: str
+    # Multi-facilitator fields (primary)
+    facilitator_ids: list[str]
+    facilitator_names: list[str]
+    # Legacy single-value aliases (kept for backward compat — always equals first in list)
     facilitator_id: str
     facilitator_name: str
     assigned_candidates: list[str]
@@ -63,7 +70,9 @@ class Assessment(TypedDict):
     final_test: str
     # "pending" | "approved" | "declined"  (set by facilitator)
     approval_status: str
+    facilitator_approvals: dict[str, str]
     test_dates: dict[str, str]
+    question_papers: dict[str, str]
 
 
 class CandidateSummary(TypedDict):
@@ -75,6 +84,10 @@ class CandidateSummary(TypedDict):
 class AssessmentDetail(TypedDict):
     """Assessment enriched with resolved candidate objects (for Facilitator views)."""
     name: str
+    # Multi-facilitator fields
+    facilitator_ids: list[str]
+    facilitator_names: list[str]
+    # Legacy aliases
     facilitator_id: str
     facilitator_name: str
     assigned_candidates: list[str]
@@ -85,5 +98,6 @@ class AssessmentDetail(TypedDict):
     candidate_details: list[CandidateSummary]
     # "pending" | "approved" | "declined"  (set by facilitator)
     approval_status: str
+    facilitator_approvals: dict[str, str]
     test_dates: dict[str, str]
-    test_items: list[TestItem]
+    test_items: list[TestItem]

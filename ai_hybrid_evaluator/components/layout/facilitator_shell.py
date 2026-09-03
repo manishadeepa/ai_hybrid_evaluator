@@ -212,12 +212,22 @@ def facilitator_sidebar(active: str) -> rx.Component:
 
 
 def facilitator_shell(active: str, title: str, subtitle: str, content: rx.Component) -> rx.Component:
+    display_name = rx.cond(
+        AuthState.facilitator_name != "",
+        AuthState.facilitator_name,
+        "Facilitator",
+    )
+    display_initial = rx.cond(
+        AuthState.facilitator_name != "",
+        AuthState.facilitator_name[0],
+        "F",
+    )
     return rx.vstack(
         # Unified Header
         unified_topbar(
-            user_name="Facilitator",
+            user_name=display_name,
             role_name="Facilitator",
-            avatar_initial="F",
+            avatar_initial=display_initial,
         ),
         # Body: Sidebar + Main Content Area
         rx.hstack(

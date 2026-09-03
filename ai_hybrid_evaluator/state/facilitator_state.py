@@ -199,17 +199,28 @@ class FacilitatorState(rx.State):
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
 
+        fac_id = auth_state.facilitator_emp_id
+        cur_fac_name = auth_state.facilitator_name
+        if not cur_fac_name and fac_id:
+            match = next((f for f in admin_state.facilitators if f["emp_id"].lower() == fac_id.lower()), None)
+            if match:
+                cur_fac_name = match["name"]
+
         result: list[AssessmentDetail] = []
         for a in admin_state.assessments:
-            if a["facilitator_id"] != auth_state.facilitator_emp_id:
+            # Support multi-facilitator: check facilitator_ids list first, fall back to legacy field
+            assigned_ids = a.get("facilitator_ids", [])
+            if not assigned_ids:
+                assigned_ids = [a.get("facilitator_id", "")]
+            if fac_id not in assigned_ids:
                 continue
             candidate_details = [
                 {"name": c["name"], "emp_id": c["emp_id"], "email": c["email"]}
                 for c in admin_state.candidates
                 if c["emp_id"] in a["assigned_candidates"]
             ]
-            regular_tests = a.get("tests", ["Test 1", "Test 2", "Test 3"])
-            final_test_name = a.get("final_test", "Final Test")
+            regular_tests = a.get("tests", [])
+            final_test_name = a.get("final_test", "Summative Test")
             all_tests_list = list(regular_tests) + [final_test_name]
             test_dates = a.get("test_dates", {})
 
@@ -217,13 +228,6 @@ class FacilitatorState(rx.State):
             test_items = []
             for t_name in regular_tests:
                 d = test_dates.get(t_name, "")
-                if not d:
-                    if t_name == "Test 1":
-                        d = "25 Aug 2026"
-                    elif t_name == "Test 2":
-                        d = "27 Aug 2026"
-                    elif t_name == "Test 3":
-                        d = "29 Aug 2026"
                 test_items.append({
                     "name": t_name,
                     "date": d,
@@ -231,25 +235,32 @@ class FacilitatorState(rx.State):
                 })
 
             final_d = test_dates.get(final_test_name, "")
-            if not final_d:
-                final_d = "31 Aug 2026"
             test_items.append({
                 "name": final_test_name,
                 "date": final_d,
                 "is_final": True,
             })
 
+            fac_ids = a.get("facilitator_ids", [a.get("facilitator_id", "")])
+            fac_names = a.get("facilitator_names", [a.get("facilitator_name", "")])
+            fac_approvals = a.get("facilitator_approvals", {})
+            my_approval = fac_approvals.get(fac_id, a.get("approval_status", "approved"))
+
             result.append({
                 "name": a["name"],
-                "facilitator_id": a["facilitator_id"],
-                "facilitator_name": a["facilitator_name"],
+                # Multi-facilitator
+                "facilitator_ids": fac_ids,
+                "facilitator_names": fac_names,
+                # Dynamically reflect the logged-in facilitator
+                "facilitator_id": fac_id if fac_id else (fac_ids[0] if fac_ids else ""),
+                "facilitator_name": cur_fac_name if cur_fac_name else (fac_names[0] if fac_names else "Facilitator"),
                 "assigned_candidates": a["assigned_candidates"],
                 "status": a["status"],
                 "tests": regular_tests,
                 "final_test": final_test_name,
                 "all_tests": all_tests_list,
                 "candidate_details": candidate_details,
-                "approval_status": a.get("approval_status", "approved"),
+                "approval_status": my_approval,
                 "test_dates": test_dates,
                 "test_items": test_items,
             })
@@ -261,9 +272,13 @@ class FacilitatorState(rx.State):
         this facilitator (deduplicated by emp_id)."""
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         unique_ids: set[str] = set()
         for a in admin_state.assessments:
-            if a["facilitator_id"] == auth_state.facilitator_emp_id:
+            assigned_ids = a.get("facilitator_ids", [])
+            if not assigned_ids:
+                assigned_ids = [a.get("facilitator_id", "")]
+            if fac_id in assigned_ids:
                 for cid in a["assigned_candidates"]:
                     unique_ids.add(cid)
         return len(unique_ids)
@@ -272,9 +287,10 @@ class FacilitatorState(rx.State):
         """Opens the Assessment Workspace for the clicked assessment."""
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         assessments = [
             a for a in admin_state.assessments
-            if a["facilitator_id"] == auth_state.facilitator_emp_id
+            if fac_id in a.get("facilitator_ids", [a.get("facilitator_id", "")])
         ]
         if 0 <= index < len(assessments):
             self.selected_assessment_index = index
@@ -289,9 +305,10 @@ class FacilitatorState(rx.State):
         """Opens the Assessment Workspace directly targeting a specific test."""
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         assessments = [
             a for a in admin_state.assessments
-            if a["facilitator_id"] == auth_state.facilitator_emp_id
+            if fac_id in a.get("facilitator_ids", [a.get("facilitator_id", "")])
         ]
         for i, a in enumerate(assessments):
             if a["name"] == assessment_name:
@@ -302,25 +319,37 @@ class FacilitatorState(rx.State):
         self.active_workspace_tab = "question_paper"
         return rx.redirect("/facilitator/assessment")
 
+
     async def approve_assessment(self, assessment_name: str):
-        """Mark the assessment as approved in AdminState.
-        Uses assessment name as a stable key (unique per facilitator)."""
+        """Mark the assessment as approved in AdminState for the currently logged-in facilitator."""
+        auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         for i, a in enumerate(admin_state.assessments):
             if a["name"] == assessment_name:
                 updated = dict(a)
+                approvals = dict(updated.get("facilitator_approvals", {}))
+                approvals[fac_id] = "approved"
+                updated["facilitator_approvals"] = approvals
                 updated["approval_status"] = "approved"
                 admin_state.assessments[i] = updated
                 break
         return rx.toast.success(f"Assessment '{assessment_name}' approved!")
 
     async def decline_assessment(self, assessment_name: str):
-        """Mark the assessment as declined in AdminState."""
+        """Mark the assessment as declined in AdminState for the currently logged-in facilitator."""
+        auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         for i, a in enumerate(admin_state.assessments):
             if a["name"] == assessment_name:
                 updated = dict(a)
-                updated["approval_status"] = "declined"
+                approvals = dict(updated.get("facilitator_approvals", {}))
+                approvals[fac_id] = "declined"
+                updated["facilitator_approvals"] = approvals
+                assigned_ids = updated.get("facilitator_ids", [updated.get("facilitator_id", "")])
+                if all(approvals.get(fid) == "declined" for fid in assigned_ids):
+                    updated["approval_status"] = "declined"
                 admin_state.assessments[i] = updated
                 break
         return rx.toast.info(f"Assessment '{assessment_name}' declined.")
@@ -336,9 +365,10 @@ class FacilitatorState(rx.State):
         Used by the sidebar so the index always maps to the full facilitator list."""
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
+        fac_id = auth_state.facilitator_emp_id
         assessments = [
             a for a in admin_state.assessments
-            if a["facilitator_id"] == auth_state.facilitator_emp_id
+            if fac_id in a.get("facilitator_ids", [a.get("facilitator_id", "")])
         ]
         for i, a in enumerate(assessments):
             if a["name"] == assessment_name:
@@ -575,11 +605,11 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def results_insight_start_val(self) -> str:
-        return str(self.current_results_data.get("insight_start", "Test 1 (72%)"))
+        return str(self.current_results_data.get("insight_start", "Formative 1 (72%)"))
 
     @rx.var
     def results_insight_end_val(self) -> str:
-        return str(self.current_results_data.get("insight_end", "Final Test (86%)"))
+        return str(self.current_results_data.get("insight_end", "Summative Test (86%)"))
 
     @rx.var
     def results_chart_title(self) -> str:
@@ -917,10 +947,10 @@ RESULTS_ANALYTICS_DATA = {
         "passing_rate": "100%",
         "passing_count": "4 of 4 Candidates Passed",
         "tests": [
-            {"name": "Test 1", "score": 72, "is_final": False},
-            {"name": "Test 2", "score": 68, "is_final": False},
-            {"name": "Test 3", "score": 81, "is_final": False},
-            {"name": "Final Test", "score": 86, "is_final": True},
+            {"name": "Formative 1", "score": 72, "is_final": False},
+            {"name": "Formative 2", "score": 68, "is_final": False},
+            {"name": "Formative 3", "score": 81, "is_final": False},
+            {"name": "Summative Test", "score": 86, "is_final": True},
         ],
         "co": [
             {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 82},
@@ -953,8 +983,8 @@ RESULTS_ANALYTICS_DATA = {
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 68},
         ],
         "insight_diff": 14,
-        "insight_start": "Test 1 (72%)",
-        "insight_end": "Final Test (86%)",
+        "insight_start": "Formative 1 (72%)",
+        "insight_end": "Summative Test (86%)",
     },
     "Sneha Kulkarni": {
         "emp_id": "EMP-104",
@@ -963,10 +993,10 @@ RESULTS_ANALYTICS_DATA = {
         "passing_rate": "100%",
         "passing_count": "All Tests Cleared",
         "tests": [
-            {"name": "Test 1", "score": 90, "is_final": False},
-            {"name": "Test 2", "score": 92, "is_final": False},
-            {"name": "Test 3", "score": 94, "is_final": False},
-            {"name": "Final Test", "score": 96, "is_final": True},
+            {"name": "Formative 1", "score": 90, "is_final": False},
+            {"name": "Formative 2", "score": 92, "is_final": False},
+            {"name": "Formative 3", "score": 94, "is_final": False},
+            {"name": "Summative Test", "score": 96, "is_final": True},
         ],
         "co": [
             {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 98},
@@ -999,8 +1029,8 @@ RESULTS_ANALYTICS_DATA = {
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 90},
         ],
         "insight_diff": 6,
-        "insight_start": "Test 1 (90%)",
-        "insight_end": "Final Test (96%)",
+        "insight_start": "Formative 1 (90%)",
+        "insight_end": "Summative Test (96%)",
     },
     "Rohan Sharma": {
         "emp_id": "EMP-101",
@@ -1009,10 +1039,10 @@ RESULTS_ANALYTICS_DATA = {
         "passing_rate": "100%",
         "passing_count": "All Tests Cleared",
         "tests": [
-            {"name": "Test 1", "score": 74, "is_final": False},
-            {"name": "Test 2", "score": 70, "is_final": False},
-            {"name": "Test 3", "score": 84, "is_final": False},
-            {"name": "Final Test", "score": 92, "is_final": True},
+            {"name": "Formative 1", "score": 74, "is_final": False},
+            {"name": "Formative 2", "score": 70, "is_final": False},
+            {"name": "Formative 3", "score": 84, "is_final": False},
+            {"name": "Summative Test", "score": 92, "is_final": True},
         ],
         "co": [
             {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 94},
@@ -1045,8 +1075,8 @@ RESULTS_ANALYTICS_DATA = {
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 78},
         ],
         "insight_diff": 18,
-        "insight_start": "Test 1 (74%)",
-        "insight_end": "Final Test (92%)",
+        "insight_start": "Formative 1 (74%)",
+        "insight_end": "Summative Test (92%)",
     },
     "Priya Nair": {
         "emp_id": "EMP-102",
@@ -1055,10 +1085,10 @@ RESULTS_ANALYTICS_DATA = {
         "passing_rate": "100%",
         "passing_count": "All Tests Cleared",
         "tests": [
-            {"name": "Test 1", "score": 80, "is_final": False},
-            {"name": "Test 2", "score": 76, "is_final": False},
-            {"name": "Test 3", "score": 82, "is_final": False},
-            {"name": "Final Test", "score": 86, "is_final": True},
+            {"name": "Formative 1", "score": 80, "is_final": False},
+            {"name": "Formative 2", "score": 76, "is_final": False},
+            {"name": "Formative 3", "score": 82, "is_final": False},
+            {"name": "Summative Test", "score": 86, "is_final": True},
         ],
         "co": [
             {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 88},
@@ -1091,8 +1121,8 @@ RESULTS_ANALYTICS_DATA = {
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 72},
         ],
         "insight_diff": 6,
-        "insight_start": "Test 1 (80%)",
-        "insight_end": "Final Test (86%)",
+        "insight_start": "Formative 1 (80%)",
+        "insight_end": "Summative Test (86%)",
     },
     "Amit Patel": {
         "emp_id": "EMP-103",
@@ -1101,10 +1131,10 @@ RESULTS_ANALYTICS_DATA = {
         "passing_rate": "100%",
         "passing_count": "All Tests Cleared",
         "tests": [
-            {"name": "Test 1", "score": 68, "is_final": False},
-            {"name": "Test 2", "score": 64, "is_final": False},
-            {"name": "Test 3", "score": 74, "is_final": False},
-            {"name": "Final Test", "score": 78, "is_final": True},
+            {"name": "Formative 1", "score": 68, "is_final": False},
+            {"name": "Formative 2", "score": 64, "is_final": False},
+            {"name": "Formative 3", "score": 74, "is_final": False},
+            {"name": "Summative Test", "score": 78, "is_final": True},
         ],
         "co": [
             {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 80},
@@ -1137,8 +1167,8 @@ RESULTS_ANALYTICS_DATA = {
             {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 62},
         ],
         "insight_diff": 10,
-        "insight_start": "Test 1 (68%)",
-        "insight_end": "Final Test (78%)",
+        "insight_start": "Formative 1 (68%)",
+        "insight_end": "Summative Test (78%)",
     },
 }
 

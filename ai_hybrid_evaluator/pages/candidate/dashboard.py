@@ -44,8 +44,10 @@ def _status_badge(status: str) -> rx.Component:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Component:
-    """A single test row showing availability and Start Test / Locked button."""
+    """A single test row showing availability, submission status, and Start Test / Submitted / Locked button."""
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
+    is_submitted = CandidateState.submitted_tests.get(assessment_name, {}).contains(test_name)
+    is_disqualified = CandidateState.disqualified_tests.get(assessment_name, {}).contains(test_name)
 
     return rx.box(
         rx.hstack(
@@ -67,30 +69,39 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                     ),
                 ),
                 rx.vstack(
-                    rx.hstack(
-                        rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                        rx.cond(
-                            is_final,
-                            rx.badge("Final Evaluation", color_scheme="amber", variant="soft", size="1"),
-                            rx.badge("Regular Test", color_scheme="indigo", variant="soft", size="1"),
-                        ),
-                        spacing="2",
-                        align_items="center",
-                    ),
+                    rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                     # Availability status text
                     rx.cond(
-                        has_qp,
+                        is_submitted,
                         rx.hstack(
                             rx.icon("circle-check", size=12, color="#027A48"),
-                            rx.text("Available", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
+                            rx.text("Submitted", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
                             spacing="1",
                             align_items="center",
                         ),
-                        rx.hstack(
-                            rx.icon("lock", size=12, color="#D97706"),
-                            rx.text("Locked — question paper not yet uploaded", font_family=FONT_BODY, size="1", color="#D97706"),
-                            spacing="1",
-                            align_items="center",
+                        rx.cond(
+                            is_disqualified,
+                            rx.hstack(
+                                rx.icon("shield-alert", size=12, color="#DC2626"),
+                                rx.text("Disqualified — Proctoring Policy Violation", font_family=FONT_BODY, size="1", color="#DC2626", weight="medium"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            rx.cond(
+                                has_qp,
+                                rx.hstack(
+                                    rx.icon("circle-check", size=12, color="#027A48"),
+                                    rx.text("Available", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
+                                    spacing="1",
+                                    align_items="center",
+                                ),
+                                rx.hstack(
+                                    rx.icon("lock", size=12, color="#D97706"),
+                                    rx.text("Locked — question paper not yet uploaded", font_family=FONT_BODY, size="1", color="#D97706"),
+                                    spacing="1",
+                                    align_items="center",
+                                ),
+                            ),
                         ),
                     ),
                     spacing="0",
@@ -100,34 +111,62 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                 align_items="center",
             ),
             rx.spacer(),
-            # Right: Start Test / Locked button
+            # Right: Start Test / Submitted / Disqualified / Locked button
             rx.cond(
-                has_qp,
+                is_submitted,
                 rx.button(
-                    rx.icon("play", size=13),
-                    "Start Test",
-                    on_click=[
-                        rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
-                        CandidateState.start_test(assessment_name, test_name),
-                    ],
-                    size="1",
-                    background=COLORS["primary"],
-                    color="white",
-                    font_family=FONT_BODY,
-                    border_radius="6px",
-                    _hover={"background": COLORS["primary_hover"]},
-                ),
-                rx.button(
-                    rx.icon("lock", size=13),
-                    "Locked",
+                    rx.icon("check", size=13),
+                    "Submitted",
                     size="1",
                     disabled=True,
-                    variant="outline",
-                    color_scheme="gray",
+                    variant="soft",
+                    color_scheme="green",
                     font_family=FONT_BODY,
                     border_radius="6px",
-                    cursor="not-allowed",
-                    opacity="0.5",
+                    cursor="default",
+                ),
+                rx.cond(
+                    is_disqualified,
+                    rx.button(
+                        rx.icon("shield-alert", size=13),
+                        "Disqualified",
+                        size="1",
+                        disabled=True,
+                        variant="soft",
+                        color_scheme="red",
+                        font_family=FONT_BODY,
+                        border_radius="6px",
+                        cursor="default",
+                    ),
+                    rx.cond(
+                        has_qp,
+                        rx.button(
+                            rx.icon("play", size=13),
+                            "Start Test",
+                            on_click=[
+                                rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
+                                CandidateState.start_test(assessment_name, test_name),
+                            ],
+                            size="1",
+                            background=COLORS["primary"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            border_radius="6px",
+                            _hover={"background": COLORS["primary_hover"]},
+                        ),
+                        rx.button(
+                            rx.icon("lock", size=13),
+                            "Locked",
+                            size="1",
+                            disabled=True,
+                            variant="outline",
+                            color_scheme="gray",
+                            font_family=FONT_BODY,
+                            border_radius="6px",
+                            cursor="not-allowed",
+                            opacity="0.5",
+                        ),
+                    ),
                 ),
             ),
             width="100%",
@@ -144,7 +183,8 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
 # ─────────────────────────────────────────────────────────────────────────────
 # Assessment Card — shows one assessment with its test list
 # The assessment dict from AdminState has:
-#   name, assessment_date, facilitator_name, status, tests (list), final_test
+#   name, assessment_date, status, tests (list), final_test
+# Facilitator details are intentionally hidden from the Candidate view.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def candidate_assessment_card(a: dict) -> rx.Component:
@@ -164,15 +204,6 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                     ),
                     rx.vstack(
                         rx.text(a["name"], font_family=FONT_DISPLAY, size="4", weight="bold", color=COLORS["ink"]),
-                        rx.hstack(
-                            rx.icon("user-check", size=12, color=COLORS["slate"]),
-                            rx.text(
-                                "Facilitator: ", a["facilitator_name"],
-                                font_family=FONT_BODY, size="1", color=COLORS["slate"],
-                            ),
-                            spacing="1",
-                            align_items="center",
-                        ),
                         spacing="0",
                         align_items="start",
                     ),
@@ -205,10 +236,11 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                 padding_bottom="0.4em",
             ),
 
-            # Test rows — one static row per test (Reflex can't foreach over runtime list items
-            # nested inside a foreach render fn without typed vars, so we render the known
-            # "Test 1" + "Final Test" pattern from the mock data)
-            _test_row(a["name"], "Test 1", False),
+            # Test rows — formative tests + built-in summative test
+            rx.foreach(
+                a["tests"],
+                lambda t: _test_row(a["name"], t, False),
+            ),
             _test_row(a["name"], a["final_test"], True),
 
             spacing="0",

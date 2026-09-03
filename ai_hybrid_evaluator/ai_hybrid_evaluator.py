@@ -56,6 +56,6 @@ app.add_page(facilitator_profile_page, route="/facilitator/profile", title="My P
 # Candidate Routes
 app.add_page(candidate_login_page, route="/candidate/login", title="Candidate Sign In")
 app.add_page(candidate_login_page, route="/candidate/signin", title="Candidate Sign In")
-app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard")
+app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard", on_load=CandidateState.on_dashboard_load)
 app.add_page(candidate_profile_page, route="/candidate/profile", title="My Profile")
 app.add_page(candidate_test_page, route="/candidate/test", title="Test Environment", on_load=CandidateState.on_test_page_load)

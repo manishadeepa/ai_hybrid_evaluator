@@ -236,6 +236,15 @@ class AuthState(rx.State):
         self.candidate_email = str(match.get("email", ""))
         self.candidate_emp_id = str(match.get("emp_id", ""))
 
+        try:
+            from ai_hybrid_evaluator.state.candidate_state import CandidateProfileState
+            profile = await self.get_state(CandidateProfileState)
+            profile.full_name = self.candidate_name
+            profile.email = self.candidate_email
+            profile.emp_id = self.candidate_emp_id
+        except Exception:
+            pass
+
         return rx.redirect("/candidate/dashboard")
 
     def candidate_logout(self):

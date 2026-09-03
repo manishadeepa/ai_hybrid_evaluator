@@ -104,13 +104,25 @@ def _strip_html(html: str) -> str:
     return text.strip()
 
 
+# ── Persistent test completion & violation store ──────────────────────────────
+# In-memory global store that persists across sessions, refreshes, and page navigation.
+# Key: f"{candidate_id}::{assessment_name}::{test_name}"
+# Value: dict with keys:
+#   "candidate_id", "assessment_name", "test_name", "status" ("In Progress"|"Submitted"|"Disqualified"),
+#   "violation_count" (0..3), "submitted_at", "submission_receipt", "answers", "marked_for_review"
+PERSISTED_CANDIDATE_TEST_DATA: dict[str, dict] = {}
+
+
 class CandidateState(rx.State):
+    # Candidate identity (emp_id or email)
+    candidate_id: str = "CAND-2031"
+
     # ── Active Test Session Metadata ─────────────────────────────────────
     active_assessment_name: str = "Quality"
-    active_test_name: str = "Test 1"
+    active_test_name: str = "Formative 1"
 
     # Test Session State
-    current_question_index: int = 2  # Question 3 (as shown in screenshot)
+    current_question_index: int = 0  # Always start at Question 1
     total_time_seconds: int = 5400  # 01:30:00 (90 minutes)
     time_display: str = "01:30:00"
     is_time_expired: bool = False
@@ -124,9 +136,15 @@ class CandidateState(rx.State):
     marked_for_review: list[int] = []
 
     # Auto-save indicator text
-    auto_save_status: str = "Auto-saved"
+    auto_save_status: str = ""
 
-    # ── Proctoring Mock State ───────────────────────────────────────────
+    # ── Test completion stores for dashboard reactivity ───────────────────
+    # Structure: { assessment_name: { test_name: timestamp } }
+    # Mirrors FacilitatorState.question_papers for seamless .contains() checks in Reflex
+    submitted_tests: dict[str, dict[str, str]] = {}
+    disqualified_tests: dict[str, dict[str, str]] = {}
+
+    # ── Proctoring State ────────────────────────────────────────────────
     is_fullscreen: bool = True
     is_tab_locked: bool = True
     camera_active: bool = True
@@ -141,6 +159,39 @@ class CandidateState(rx.State):
     is_test_submitted: bool = False
     submission_receipt: str = ""
     submitted_at: str = ""
+
+    # ── Candidate Identity Helper ───────────────────────────────────────
+    async def _get_current_candidate_id(self) -> str:
+        try:
+            auth = await self.get_state(AuthState)
+            cid = str(auth.candidate_emp_id or auth.candidate_email or "").strip()
+            if cid:
+                self.candidate_id = cid
+                return cid
+        except Exception:
+            pass
+        return self.candidate_id or "CAND-2031"
+
+    def _save_current_test_record(self, status: str = ""):
+        cand_id = self.candidate_id or "CAND-2031"
+        key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        existing = PERSISTED_CANDIDATE_TEST_DATA.get(key, {})
+
+        curr_status = status or existing.get("status", "In Progress")
+        if existing.get("status") in ("Submitted", "Disqualified") and not status:
+            curr_status = existing.get("status")
+
+        PERSISTED_CANDIDATE_TEST_DATA[key] = {
+            "candidate_id": cand_id,
+            "assessment_name": self.active_assessment_name,
+            "test_name": self.active_test_name,
+            "status": curr_status,
+            "violation_count": min(self.violation_count, self.max_violations),
+            "submitted_at": self.submitted_at or existing.get("submitted_at", ""),
+            "submission_receipt": self.submission_receipt or existing.get("submission_receipt", ""),
+            "answers": dict(self.answers),
+            "marked_for_review": list(self.marked_for_review),
+        }
 
     # ── Computed Variables ──────────────────────────────────────────────
     @rx.var
@@ -199,34 +250,162 @@ class CandidateState(rx.State):
             "Write in your own words.",
         ])
 
+    @rx.var
+    def active_test_key(self) -> str:
+        """Composite key for test lookup."""
+        return f"{self.active_assessment_name}__{self.active_test_name}"
+
+    @rx.var
+    def display_test_name(self) -> str:
+        """Dynamically return the active test name, replacing any legacy 'Test 1' with the assessment's configured test."""
+        name = self.active_test_name
+        if name and name != "Test 1":
+            return name
+        try:
+            for a in AdminState.assessments:
+                if a.get("name") == self.active_assessment_name:
+                    tests = a.get("tests", [])
+                    if tests:
+                        return str(tests[0])
+                    if a.get("final_test"):
+                        return str(a.get("final_test"))
+        except Exception:
+            pass
+        return "Formative 1"
+
+    @rx.var
+    def is_disqualified(self) -> bool:
+        """True when the current test session was terminated for violations."""
+        return self.active_test_name in self.disqualified_tests.get(self.active_assessment_name, {})
+
+    @rx.var
+    def is_last_question(self) -> bool:
+        """True when the candidate is on the final question."""
+        return self.current_question_index >= len(MOCK_SUBJECTIVE_QUESTIONS) - 1
+
+    # ── Question metadata computed vars (CO / LO / RBT / Marks) ───────
+    # Access MOCK_SUBJECTIVE_QUESTIONS directly (cannot chain .get() on an rx.var result)
+    @rx.var
+    def current_question_marks(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
+            v = MOCK_SUBJECTIVE_QUESTIONS[idx].get("marks", "")
+            return str(v) if v != "" else ""
+        return ""
+
+    @rx.var
+    def current_question_co(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
+            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("co", ""))
+        return ""
+
+    @rx.var
+    def current_question_lo(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
+            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("lo", ""))
+        return ""
+
+    @rx.var
+    def current_question_rbt(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
+            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("rbt_level", ""))
+        return ""
+
     # ── Timer & Actions ──────────────────────────────────────────────────
 
     @rx.event(background=True)
     async def run_timer(self):
-        """Live countdown timer running every second."""
         current_session = self.timer_session_id
         while True:
             await asyncio.sleep(1)
             async with self:
-                if self.timer_session_id != current_session or self.is_test_submitted or self.is_time_expired:
-                    break
-                if self.total_time_seconds <= 1:
-                    self.total_time_seconds = 0
-                    self.time_display = "00:00:00"
-                    self.is_time_expired = True
+                if self.timer_session_id != current_session:
+                    return
+                if self.is_test_submitted or self.is_time_expired:
+                    return
+                if self.total_time_seconds <= 0:
                     self.handle_time_expired()
-                    break
+                    return
                 self.total_time_seconds -= 1
                 h = self.total_time_seconds // 3600
                 m = (self.total_time_seconds % 3600) // 60
                 s = self.total_time_seconds % 60
                 self.time_display = f"{h:02d}:{m:02d}:{s:02d}"
 
-    def on_test_page_load(self):
-        """Called when candidate test page loads to ensure timer is active."""
+    async def on_dashboard_load(self):
+        """Called when candidate dashboard loads to sync persistent submission & violation records."""
+        cand_id = await self._get_current_candidate_id()
+        subs: dict[str, dict[str, str]] = {}
+        dqs: dict[str, dict[str, str]] = {}
+        for key, rec in PERSISTED_CANDIDATE_TEST_DATA.items():
+            if rec.get("candidate_id") == cand_id:
+                a_name = rec.get("assessment_name", "")
+                t_name = rec.get("test_name", "")
+                if rec.get("status") == "Submitted":
+                    if a_name not in subs:
+                        subs[a_name] = {}
+                    subs[a_name][t_name] = rec.get("submitted_at", "")
+                elif rec.get("status") == "Disqualified":
+                    if a_name not in dqs:
+                        dqs[a_name] = {}
+                    dqs[a_name][t_name] = rec.get("submitted_at", "")
+        self.submitted_tests = subs
+        self.disqualified_tests = dqs
+
+    async def on_test_page_load(self):
+        """Called when candidate test page loads to ensure timer is active or lock submitted/disqualified test."""
+        if self.active_test_name == "Test 1" or not self.active_test_name:
+            try:
+                admin_st = await self.get_state(AdminState)
+                for a in admin_st.assessments:
+                    if a.get("name") == self.active_assessment_name:
+                        t_list = a.get("tests", [])
+                        if t_list:
+                            self.active_test_name = t_list[0]
+                        elif a.get("final_test"):
+                            self.active_test_name = a.get("final_test")
+                        break
+            except Exception:
+                self.active_test_name = "Formative 1"
+
+        cand_id = await self._get_current_candidate_id()
+        key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
+
+        if record:
+            status = record.get("status")
+            if status == "Submitted":
+                self.is_test_submitted = True
+                self.submitted_at = record.get("submitted_at", "")
+                self.submission_receipt = record.get("submission_receipt", "")
+                self.show_submit_dialog = False
+                self.show_violation_modal = False
+                return
+            elif status == "Disqualified":
+                self.is_test_submitted = True
+                self.violation_count = self.max_violations
+                self.submitted_at = record.get("submitted_at", "")
+                self.submission_receipt = record.get("submission_receipt", "")
+                self.show_submit_dialog = False
+                self.show_violation_modal = False
+                return
+            else:
+                # In progress: restore violation count, answers, marked list
+                self.violation_count = min(record.get("violation_count", 0), self.max_violations)
+                if record.get("answers"):
+                    self.answers = dict(record.get("answers"))
+                if record.get("marked_for_review"):
+                    self.marked_for_review = list(record.get("marked_for_review"))
+
+        # Always start at Question 1 (index 0) — even for In Progress tests
+        self.current_question_index = 0
+
         if not self.is_test_submitted and not self.is_time_expired:
             self.timer_session_id += 1
-            return CandidateState.run_timer
+            return [CandidateState.run_timer, self._restore_rte_script()]
 
     def handle_time_expired(self):
         """Auto-submit the test when timer reaches 00:00:00."""
@@ -238,103 +417,234 @@ class CandidateState(rx.State):
         self.submitted_at = now.strftime("%B %d, %Y at %I:%M %p")
         self.submission_receipt = f"SUB-{now.strftime('%Y%m%d')}-{self.active_test_name.replace(' ', '')}-9841"
 
-    def start_test(self, assessment_name: str, test_name: str):
-        """Launch the test session and navigate to /candidate/test."""
+        subs = {k: dict(v) for k, v in self.submitted_tests.items()}
+        if self.active_assessment_name not in subs:
+            subs[self.active_assessment_name] = {}
+        subs[self.active_assessment_name][self.active_test_name] = now.isoformat()
+        self.submitted_tests = subs
+
+        self._save_current_test_record(status="Submitted")
+
+    async def start_test(self, assessment_name: str, test_name: str):
+        """Launch the test session and navigate to /candidate/test. Blocks already submitted tests."""
+        cand_id = await self._get_current_candidate_id()
+        key = f"{cand_id}::{assessment_name}::{test_name}"
+        record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
+
+        if record:
+            if record.get("status") == "Submitted":
+                return rx.toast.info("This test has already been submitted and cannot be retaken.")
+            if record.get("status") == "Disqualified":
+                return rx.toast.error("This test was terminated due to proctoring violations and cannot be retaken.")
+
         self.active_assessment_name = assessment_name
         self.active_test_name = test_name
-        self.current_question_index = 2  # Question 3
+        # Always start at Question 1 (index 0)
+        self.current_question_index = 0
         self.is_test_submitted = False
         self.is_time_expired = False
         self.show_submit_dialog = False
         self.show_violation_modal = False
-        self.violation_count = 0
         self.auto_save_status = "Auto-saved"
         self.total_time_seconds = 5400  # 01:30:00
         self.time_display = "01:30:00"
         self.is_fullscreen = True
+
+        if record:
+            self.violation_count = min(record.get("violation_count", 0), self.max_violations)
+            self.answers = dict(record.get("answers", {}))
+            self.marked_for_review = list(record.get("marked_for_review", []))
+        else:
+            self.violation_count = 0
+            self.answers = {}
+            self.marked_for_review = []
+            self._save_current_test_record(status="In Progress")
+
         self.timer_session_id += 1
         return [rx.redirect("/candidate/test"), CandidateState.run_timer]
+
+    def _restore_rte_script(self):
+        """Return a call_script that pushes the currently saved answer HTML
+        into the contenteditable editor AND sets the data-* attributes on the
+        relay input so the localStorage helpers know the current
+        candidate/assessment/test/question context.
+        Called after every question-navigation action."""
+        qid_str = str(self.current_question_number)
+        saved_html = self.answers.get(qid_str, "")
+        # Escape for safe JS string embedding
+        safe_html = (
+            saved_html
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+        )
+        safe_cid  = (self.candidate_id or "unknown").replace("'", "\\'")
+        safe_asmn = self.active_assessment_name.replace("'", "\\'")
+        safe_test = self.active_test_name.replace("'", "\\'")
+        js = f"""
+(function() {{
+    var relay = document.getElementById('rte-relay');
+    if (relay) {{
+        relay.dataset.candidateId = '{safe_cid}';
+        relay.dataset.assessment  = '{safe_asmn}';
+        relay.dataset.testName    = '{safe_test}';
+        relay.dataset.questionId  = '{qid_str}';
+        relay.dataset.saved       = '{safe_html}';
+    }}
+    if (window.__rteRestoreAnswer) {{
+        window.__rteRestoreAnswer('{safe_html}', '{qid_str}');
+    }}
+}})();
+"""
+        return rx.call_script(js)
 
     def set_question_index(self, index: int):
         if 0 <= index < len(MOCK_SUBJECTIVE_QUESTIONS):
             self.current_question_index = index
+            return self._restore_rte_script()
 
     def next_question(self):
         if self.current_question_index < len(MOCK_SUBJECTIVE_QUESTIONS) - 1:
             self.current_question_index += 1
+            return self._restore_rte_script()
 
     def prev_question(self):
         if self.current_question_index > 0:
             self.current_question_index -= 1
+            return self._restore_rte_script()
 
     def update_answer(self, text: str):
-        if self.is_test_submitted or self.is_time_expired:
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         qid_str = str(self.current_question_number)
         new_answers = dict(self.answers)
         new_answers[qid_str] = text
         self.answers = new_answers
         self.auto_save_status = "Auto-saved"
+        self._save_current_test_record()
 
     def set_answer_html(self, html: str):
-        """Save the rich-text HTML produced by the answer editor's
-        toolbar/typing for the currently active question. Mirrors
-        update_answer but stores markup instead of plain text so
-        Bold/Italic/Underline/Lists/etc. persist and redisplay correctly."""
-        if self.is_test_submitted or self.is_time_expired:
+        """Save the rich-text HTML produced by the answer editor's toolbar/typing
+        for the currently active question.
+        Guard: never overwrite a non-empty saved answer with an empty value
+        (prevents navigation/rerender clearing existing answers)."""
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         qid_str = str(self.current_question_number)
-        new_answers = dict(self.answers)
-        new_answers[qid_str] = html
-        self.answers = new_answers
-        self.auto_save_status = "Auto-saved"
+        # Guard: do not overwrite a non-empty saved answer with empty HTML
+        existing = self.answers.get(qid_str, "")
+        if not html.strip() and _strip_html(existing).strip():
+            return
+        self.auto_save_status = "Saving..."
+        try:
+            new_answers = dict(self.answers)
+            new_answers[qid_str] = html
+            self.answers = new_answers
+            self._save_current_test_record()
+            self.auto_save_status = "Auto-saved"
+        except Exception:
+            self.auto_save_status = "Save failed"
 
     def toggle_mark_for_review(self):
-        if self.is_test_submitted or self.is_time_expired:
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         qid = self.current_question_number
-        if qid in self.marked_for_review:
-            self.marked_for_review = [q for q in self.marked_for_review if q != qid]
+        current_list = list(self.marked_for_review)
+        if qid in current_list:
+            # Unmark: remove only this question
+            self.marked_for_review = [q for q in current_list if q != qid]
         else:
-            self.marked_for_review = self.marked_for_review + [qid]
+            # Mark: add only if not already present
+            if qid not in current_list:
+                self.marked_for_review = current_list + [qid]
+        self._save_current_test_record()
 
-    # ── Proctoring Mock Actions ─────────────────────────────────────────
+    def save_and_next_question(self):
+        """Explicitly save the current answer then advance to the next question.
+        Used by the 'Save & Next' button. Never deletes existing answers."""
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
+            return
+        # Persist current answers (already in state via set_answer_html)
+        self._save_current_test_record()
+        self.auto_save_status = "Auto-saved"
+        if self.current_question_index < len(MOCK_SUBJECTIVE_QUESTIONS) - 1:
+            self.current_question_index += 1
+            return self._restore_rte_script()
+
+    def _record_violation(self, reason: str) -> bool:
+        """Increment violation counter (strictly capped at max_violations = 3).
+        Returns True if the test must now be terminated (reached 3/3)."""
+        if self.violation_count >= self.max_violations:
+            self.violation_count = self.max_violations
+            return True
+
+        self.violation_count += 1
+        self.violation_warning_msg = (
+            f"Warning {self.violation_count} of {self.max_violations}: {reason} "
+            f"Your assessment session is monitored."
+        )
+        self._save_current_test_record()
+        return self.violation_count >= self.max_violations
 
     def trigger_proctoring_warning(self):
         """Simulate a tab switch or screen unfocus violation."""
-        if not self.is_test_submitted and not self.is_time_expired:
-            self.violation_count += 1
-            self.violation_warning_msg = (
-                f"Warning #{self.violation_count}: Tab switching or window unfocus detected! "
-                f"Your assessment session is monitored. Total violations allowed: {self.max_violations}."
-            )
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
+            return
+        terminated = self._record_violation("Tab switching or window unfocus detected!")
+        if terminated:
+            self._terminate_for_violations()
+        else:
             self.show_violation_modal = True
 
     def dismiss_violation_modal(self):
-        self.show_violation_modal = False
+        if not self.is_disqualified:
+            self.show_violation_modal = False
 
     def exit_fullscreen(self):
         self.is_fullscreen = False
-        if not self.is_test_submitted and not self.is_time_expired:
-            self.violation_count += 1
-            self.violation_warning_msg = (
-                f"Warning #{self.violation_count}: Fullscreen exit detected! "
-                f"You must remain in fullscreen mode during the examination. Total violations allowed: {self.max_violations}."
-            )
-            self.show_violation_modal = True
+        if not self.is_test_submitted and not self.is_time_expired and not self.is_disqualified:
+            terminated = self._record_violation("Fullscreen exit detected! You must remain in fullscreen mode during the examination.")
+            if terminated:
+                self._terminate_for_violations()
+            else:
+                self.show_violation_modal = True
         return rx.call_script("if (document.fullscreenElement) { document.exitFullscreen().catch(function(e){console.warn(e);}); }")
 
     def handle_fullscreen_exited(self):
         """Detected when browser exits fullscreen."""
-        if not self.is_test_submitted and not self.is_time_expired:
+        if not self.is_test_submitted and not self.is_time_expired and not self.is_disqualified:
             if self.is_fullscreen:
                 self.is_fullscreen = False
-                self.violation_count += 1
-                self.violation_warning_msg = (
-                    f"Warning #{self.violation_count}: Fullscreen exit detected! "
-                    f"You must remain in fullscreen mode during the examination. Total violations allowed: {self.max_violations}."
-                )
-                self.show_violation_modal = True
+                terminated = self._record_violation("Fullscreen exit detected! You must remain in fullscreen mode during the examination.")
+                if terminated:
+                    self._terminate_for_violations()
+                else:
+                    self.show_violation_modal = True
+
+    def _terminate_for_violations(self):
+        """Auto-terminate the test when max violations (3/3) are reached."""
+        now = datetime.now()
+        self.violation_count = self.max_violations
+        now_str = now.isoformat()
+
+        # Update disqualified_tests nested dict
+        dqs = {k: dict(v) for k, v in self.disqualified_tests.items()}
+        if self.active_assessment_name not in dqs:
+            dqs[self.active_assessment_name] = {}
+        dqs[self.active_assessment_name][self.active_test_name] = now_str
+        self.disqualified_tests = dqs
+
+        self.is_test_submitted = True
+        self.show_violation_modal = True
+        self.submitted_at = now.strftime("%B %d, %Y at %I:%M %p")
+        self.submission_receipt = f"DQ-{now.strftime('%Y%m%d')}-{self.active_test_name.replace(' ', '')}-VIOLATION"
+        self.violation_warning_msg = (
+            f"Warning {self.max_violations} of {self.max_violations}: "
+            f"You have reached the maximum allowed proctoring violations ({self.max_violations} of {self.max_violations}). "
+            "Your test has been terminated and flagged as Disqualified."
+        )
+        self._save_current_test_record(status="Disqualified")
 
     def handle_fullscreen_entered(self):
         """Detected when browser enters fullscreen."""
@@ -343,25 +653,34 @@ class CandidateState(rx.State):
     # ── Submission Flow ─────────────────────────────────────────────────
 
     def open_submit_dialog(self):
-        if not self.is_test_submitted and not self.is_time_expired:
+        if not self.is_test_submitted and not self.is_time_expired and not self.is_disqualified:
             self.show_submit_dialog = True
 
     def close_submit_dialog(self):
         self.show_submit_dialog = False
 
     def confirm_submit_test(self):
-        """Submit the assessment test session."""
+        """Submit the assessment test session and persist the completed status."""
         now = datetime.now()
         self.is_test_submitted = True
         self.show_submit_dialog = False
+        self.show_violation_modal = False
         self.submitted_at = now.strftime("%B %d, %Y at %I:%M %p")
         self.submission_receipt = f"SUB-{now.strftime('%Y%m%d')}-{self.active_test_name.replace(' ', '')}-9841"
+
+        subs = {k: dict(v) for k, v in self.submitted_tests.items()}
+        if self.active_assessment_name not in subs:
+            subs[self.active_assessment_name] = {}
+        subs[self.active_assessment_name][self.active_test_name] = now.isoformat()
+        self.submitted_tests = subs
+
+        self._save_current_test_record(status="Submitted")
         return rx.toast.success("Assessment submitted successfully!", duration=4000)
 
     def return_to_dashboard(self):
         """Navigate back to the candidate dashboard."""
-        self.is_test_submitted = False
-        self.is_time_expired = False
+        self.show_submit_dialog = False
+        self.show_violation_modal = False
         return rx.redirect("/candidate/dashboard")
 
 

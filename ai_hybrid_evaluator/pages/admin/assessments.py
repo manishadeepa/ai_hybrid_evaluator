@@ -103,7 +103,16 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
             )
         ),
         # 2. Facilitator
-        rx.table.cell(a["facilitator_name"], font_family=FONT_BODY, color=COLORS["slate"]),
+        rx.table.cell(
+            rx.cond(
+                a["facilitator_names"].length() > 0,
+                rx.text(
+                    a["facilitator_names"].join(", "),
+                    font_family=FONT_BODY, color=COLORS["slate"], size="2",
+                ),
+                rx.text(a["facilitator_name"], font_family=FONT_BODY, color=COLORS["slate"]),
+            )
+        ),
         # 3. Candidates
         rx.table.cell(
             rx.text(
@@ -114,7 +123,7 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
         # 4. Tests count
         rx.table.cell(
             rx.text(
-                a["tests"].length().to_string() + " + Final",
+                a["tests"].length().to_string() + " + Summative",
                 font_family=FONT_BODY, color=COLORS["slate"], size="2",
             ),
         ),
@@ -173,67 +182,81 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
 # ─────────────────────────────────────────────────────────────
 
 def add_facilitator_item(f: Facilitator) -> rx.Component:
-    is_selected = AdminState.new_assessment_facilitator_id == f["emp_id"]
+    is_selected = AdminState.new_assessment_facilitator_ids.contains(f["emp_id"])
     return rx.box(
         rx.hstack(
+            rx.box(
+                rx.checkbox(
+                    checked=is_selected,
+                    on_change=AdminState.toggle_add_facilitator(f["emp_id"]),
+                    color_scheme="indigo",
+                    size="2",
+                ),
+                on_click=rx.stop_propagation,
+            ),
             rx.vstack(
                 rx.text(f["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
                 rx.text(f["emp_id"] + " · " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
-            ),
-            rx.spacer(),
-            rx.cond(
-                is_selected,
-                rx.icon("check", size=15, color=COLORS["primary"]),
+                flex="1",
+                width="100%",
             ),
             width="100%",
             align_items="center",
+            spacing="3",
         ),
         padding="0.5em 0.6em",
         border_radius="6px",
         cursor="pointer",
         background=rx.cond(is_selected, COLORS["primary_soft"], "transparent"),
         _hover={"background": rx.cond(is_selected, COLORS["primary_soft"], COLORS["canvas"])},
-        on_click=AdminState.select_add_facilitator(f["emp_id"]),
+        on_click=AdminState.toggle_add_facilitator(f["emp_id"]),
         width="100%",
     )
 
 
 def edit_facilitator_item(f: Facilitator) -> rx.Component:
-    is_selected = AdminState.edit_assessment_facilitator_id == f["emp_id"]
+    is_selected = AdminState.edit_assessment_facilitator_ids.contains(f["emp_id"])
     return rx.box(
         rx.hstack(
+            rx.box(
+                rx.checkbox(
+                    checked=is_selected,
+                    on_change=AdminState.toggle_edit_facilitator(f["emp_id"]),
+                    color_scheme="indigo",
+                    size="2",
+                ),
+                on_click=rx.stop_propagation,
+            ),
             rx.vstack(
                 rx.text(f["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
                 rx.text(f["emp_id"] + " · " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
-            ),
-            rx.spacer(),
-            rx.cond(
-                is_selected,
-                rx.icon("check", size=15, color=COLORS["primary"]),
+                flex="1",
+                width="100%",
             ),
             width="100%",
             align_items="center",
+            spacing="3",
         ),
         padding="0.5em 0.6em",
         border_radius="6px",
         cursor="pointer",
         background=rx.cond(is_selected, COLORS["primary_soft"], "transparent"),
         _hover={"background": rx.cond(is_selected, COLORS["primary_soft"], COLORS["canvas"])},
-        on_click=AdminState.select_edit_facilitator(f["emp_id"]),
+        on_click=AdminState.toggle_edit_facilitator(f["emp_id"]),
         width="100%",
     )
 
 
 def add_facilitator_select() -> rx.Component:
-    """Searchable facilitator selection control for Create Assessment."""
+    """Searchable multi-select facilitator control for Create Assessment."""
     return rx.vstack(
         rx.hstack(
             rx.cond(
-                AdminState.new_assessment_facilitator_id == "",
-                rx.text("Select Facilitator", font_family=FONT_BODY, size="2", color=COLORS["placeholder"]),
-                rx.text(AdminState.selected_add_facilitator_name, font_family=FONT_BODY, size="2", color=COLORS["ink"], weight="medium"),
+                AdminState.new_assessment_facilitator_ids.length() == 0,
+                rx.text("Select Facilitators", font_family=FONT_BODY, size="2", color=COLORS["placeholder"]),
+                rx.text(AdminState.selected_add_facilitators_label, font_family=FONT_BODY, size="2", color=COLORS["ink"], weight="medium"),
             ),
             rx.spacer(),
             rx.icon(
@@ -257,7 +280,7 @@ def add_facilitator_select() -> rx.Component:
                     rx.hstack(
                         rx.icon("search", size=14, color=COLORS["slate"]),
                         rx.input(
-                            placeholder="Search facilitator...",
+                            placeholder="Search facilitators...",
                             value=AdminState.add_facilitator_search,
                             on_change=AdminState.set_add_facilitator_search,
                             size="1",
@@ -299,13 +322,13 @@ def add_facilitator_select() -> rx.Component:
 
 
 def edit_facilitator_select() -> rx.Component:
-    """Searchable facilitator selection control for Edit Assessment."""
+    """Searchable multi-select facilitator control for Edit Assessment."""
     return rx.vstack(
         rx.hstack(
             rx.cond(
-                AdminState.edit_assessment_facilitator_id == "",
-                rx.text("Select Facilitator", font_family=FONT_BODY, size="2", color=COLORS["placeholder"]),
-                rx.text(AdminState.selected_edit_facilitator_name, font_family=FONT_BODY, size="2", color=COLORS["ink"], weight="medium"),
+                AdminState.edit_assessment_facilitator_ids.length() == 0,
+                rx.text("Select Facilitators", font_family=FONT_BODY, size="2", color=COLORS["placeholder"]),
+                rx.text(AdminState.selected_edit_facilitators_label, font_family=FONT_BODY, size="2", color=COLORS["ink"], weight="medium"),
             ),
             rx.spacer(),
             rx.icon(
@@ -329,7 +352,7 @@ def edit_facilitator_select() -> rx.Component:
                     rx.hstack(
                         rx.icon("search", size=14, color=COLORS["slate"]),
                         rx.input(
-                            placeholder="Search facilitator...",
+                            placeholder="Search facilitators...",
                             value=AdminState.edit_facilitator_search,
                             on_change=AdminState.set_edit_facilitator_search,
                             size="1",
@@ -375,41 +398,67 @@ def edit_facilitator_select() -> rx.Component:
 # ─────────────────────────────────────────────────────────────
 
 def add_candidate_checkbox_row(c: Candidate) -> rx.Component:
+    is_selected = AdminState.new_assessment_candidate_ids.contains(c["emp_id"])
     return rx.box(
         rx.hstack(
-            rx.checkbox(
-                checked=AdminState.new_assessment_candidate_ids.contains(c["emp_id"]),
-                on_change=lambda checked: AdminState.toggle_new_assessment_candidate(c["emp_id"], checked),
+            rx.box(
+                rx.checkbox(
+                    checked=is_selected,
+                    on_change=AdminState.toggle_new_assessment_candidate(c["emp_id"]),
+                    color_scheme="indigo",
+                    size="2",
+                ),
+                on_click=rx.stop_propagation,
             ),
             rx.vstack(
                 rx.text(c["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
                 rx.text(c["emp_id"] + " · " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
+                flex="1",
+                width="100%",
             ),
             spacing="3", align_items="center", width="100%",
         ),
-        padding="0.5em 0.4em",
+        padding="0.5em 0.5em",
+        border_radius="6px",
         border_bottom=f"1px solid {COLORS['line']}",
+        cursor="pointer",
+        background=rx.cond(is_selected, COLORS["primary_soft"], "transparent"),
+        _hover={"background": rx.cond(is_selected, COLORS["primary_soft"], COLORS["canvas"])},
+        on_click=AdminState.toggle_new_assessment_candidate(c["emp_id"]),
         width="100%",
     )
 
 
 def edit_candidate_checkbox_row(c: Candidate) -> rx.Component:
+    is_selected = AdminState.edit_assessment_candidate_ids.contains(c["emp_id"])
     return rx.box(
         rx.hstack(
-            rx.checkbox(
-                checked=AdminState.edit_assessment_candidate_ids.contains(c["emp_id"]),
-                on_change=lambda checked: AdminState.toggle_edit_assessment_candidate(c["emp_id"], checked),
+            rx.box(
+                rx.checkbox(
+                    checked=is_selected,
+                    on_change=AdminState.toggle_edit_assessment_candidate(c["emp_id"]),
+                    color_scheme="indigo",
+                    size="2",
+                ),
+                on_click=rx.stop_propagation,
             ),
             rx.vstack(
                 rx.text(c["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
                 rx.text(c["emp_id"] + " · " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
+                flex="1",
+                width="100%",
             ),
             spacing="3", align_items="center", width="100%",
         ),
-        padding="0.5em 0.4em",
+        padding="0.5em 0.5em",
+        border_radius="6px",
         border_bottom=f"1px solid {COLORS['line']}",
+        cursor="pointer",
+        background=rx.cond(is_selected, COLORS["primary_soft"], "transparent"),
+        _hover={"background": rx.cond(is_selected, COLORS["primary_soft"], COLORS["canvas"])},
+        on_click=AdminState.toggle_edit_assessment_candidate(c["emp_id"]),
         width="100%",
     )
 
@@ -432,16 +481,12 @@ def test_card(item: dict) -> rx.Component:
                 align_items="center",
                 justify_content="center",
             ),
-            rx.vstack(
-                rx.hstack(
-                    rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                    rx.badge("Regular", color_scheme="indigo", variant="soft", size="1"),
-                    spacing="2",
-                    align_items="center",
-                ),
-                rx.text("Regular Assessment Stage", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                spacing="0",
-                align_items="start",
+            rx.text(
+                test_name,
+                font_family=FONT_BODY,
+                size="2",
+                weight="bold",
+                color=COLORS["ink"],
             ),
             rx.spacer(),
             # Date picker
@@ -458,16 +503,13 @@ def test_card(item: dict) -> rx.Component:
                 spacing="1",
                 align_items="start",
             ),
-            rx.cond(
-                test_name != "Test 1",
-                rx.button(
-                    rx.icon("trash-2", size=13),
-                    on_click=AdminState.remove_test_from_selected_assessment(test_name),
-                    size="1",
-                    variant="ghost",
-                    color=COLORS["danger"],
-                    _hover={"background": "#FEE4E2"},
-                ),
+            rx.button(
+                rx.icon("trash-2", size=13),
+                on_click=AdminState.remove_test_from_selected_assessment(test_name),
+                size="1",
+                variant="ghost",
+                color=COLORS["danger"],
+                _hover={"background": "#FEE4E2"},
             ),
             width="100%",
             align_items="center",
@@ -496,15 +538,15 @@ def assessment_tests_dialog() -> rx.Component:
                 )
             ),
             rx.dialog.description(
-                "Configure multiple regular tests and the main final test for this assessment.",
+                "Configure formative tests and the main summative test for this assessment.",
                 size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
             ),
             rx.vstack(
-                # ── Regular Tests Section ─────────────────────────────
+                # ── Formative Tests Section ───────────────────────────
                 rx.hstack(
                     rx.vstack(
-                        rx.text("Regular Tests", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                        rx.text("Tests administered progressively before the final evaluation.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                        rx.text("Formative Tests", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("Tests administered progressively before the summative evaluation.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                         spacing="0",
                         align_items="start",
                     ),
@@ -523,22 +565,32 @@ def assessment_tests_dialog() -> rx.Component:
                     align_items="center",
                     padding_bottom="0.5em",
                 ),
-                rx.vstack(
-                    rx.foreach(AdminState.current_assessment_tests_with_dates, test_card),
-                    spacing="2",
-                    width="100%",
-                    max_height="220px",
-                    overflow_y="auto",
-                    padding_right="0.2em",
+                rx.cond(
+                    AdminState.current_assessment_tests_with_dates.length() == 0,
+                    rx.box(
+                        rx.text("No formative tests added yet. Click '+ Add Test' to add Formative 1.", font_family=FONT_BODY, size="1", color=COLORS["slate"], text_align="center", padding="1em"),
+                        border=f"1px dashed {COLORS['line']}",
+                        border_radius="8px",
+                        width="100%",
+                        margin_y="0.4em",
+                    ),
+                    rx.vstack(
+                        rx.foreach(AdminState.current_assessment_tests_with_dates, test_card),
+                        spacing="2",
+                        width="100%",
+                        max_height="220px",
+                        overflow_y="auto",
+                        padding_right="0.2em",
+                    ),
                 ),
 
                 # ── Divider ───────────────────────────────────────────
                 rx.box(height="1px", background=COLORS["line"], width="100%", margin="0.8em 0"),
 
-                # ── Final Test Section ────────────────────────────────
+                # ── Summative Test Section ────────────────────────────
                 rx.vstack(
-                    rx.text("Final Test", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                    rx.text("The one main comprehensive final evaluation test.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                    rx.text("Summative Test", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                    rx.text("The one main comprehensive summative evaluation test.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                     spacing="0",
                     align_items="start",
                     padding_bottom="0.5em",
@@ -555,25 +607,15 @@ def assessment_tests_dialog() -> rx.Component:
                             align_items="center",
                             justify_content="center",
                         ),
-                        rx.vstack(
-                            rx.hstack(
-                                rx.text(
-                                    AdminState.current_assessment_final_test,
-                                    font_family=FONT_BODY,
-                                    size="2",
-                                    weight="bold",
-                                    color=COLORS["ink"],
-                                ),
-                                rx.badge("Main Final Evaluation", color_scheme="amber", variant="soft", size="1"),
-                                spacing="2",
-                                align_items="center",
-                            ),
-                            rx.text("Mandatory cumulative assessment stage", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                            spacing="0",
-                            align_items="start",
+                        rx.text(
+                            AdminState.current_assessment_final_test,
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
                         ),
                         rx.spacer(),
-                        # Date picker for Final Test
+                        # Date picker for Summative Test
                         rx.vstack(
                             rx.text("Date", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
                             rx.input(
@@ -652,6 +694,45 @@ def test_details_candidate_row(c: Candidate) -> rx.Component:
     )
 
 
+def test_details_facilitator_row(f: dict) -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            rx.box(
+                rx.icon("user-cog", size=18, color=COLORS["primary"]),
+                background=COLORS["primary_soft"],
+                padding="0.6em",
+                border_radius="8px",
+            ),
+            rx.vstack(
+                rx.text(
+                    f["name"],
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.text(
+                    f["emp_id"].to(str) + " · " + f["email"].to(str),
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                ),
+                spacing="0",
+                align_items="start",
+            ),
+            rx.spacer(),
+            rx.badge("Active Facilitator", color_scheme="indigo", variant="soft", size="1"),
+            width="100%",
+            align_items="center",
+        ),
+        padding="0.75em 0.9em",
+        border=f"1px solid {COLORS['line']}",
+        border_radius="10px",
+        background=COLORS["surface"],
+        width="100%",
+    )
+
+
 def test_details_dialog() -> rx.Component:
     """Shows real-time updates and assignment details when clicking a test badge."""
     return rx.dialog.root(
@@ -671,8 +752,8 @@ def test_details_dialog() -> rx.Component:
                     ),
                     rx.cond(
                         AdminState.viewing_test_is_final,
-                        rx.badge("Final Test", color_scheme="amber", variant="soft", size="1"),
-                        rx.badge("Regular Test", color_scheme="indigo", variant="soft", size="1"),
+                        rx.badge("Summative", color_scheme="amber", variant="soft", size="1"),
+                        rx.badge("Formative", color_scheme="indigo", variant="soft", size="1"),
                     ),
                     spacing="2",
                     align_items="center",
@@ -683,42 +764,11 @@ def test_details_dialog() -> rx.Component:
                 size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
             ),
             rx.vstack(
-                # ── Handling Facilitator Card ─────────────────────────
+                # ── Handling Facilitator Card(s) ───────────────────────
                 rx.text("Facilitator Handling", size="2", weight="bold", color=COLORS["ink"], font_family=FONT_BODY),
-                rx.box(
-                    rx.hstack(
-                        rx.box(
-                            rx.icon("user-cog", size=18, color=COLORS["primary"]),
-                            background=COLORS["primary_soft"],
-                            padding="0.6em",
-                            border_radius="8px",
-                        ),
-                        rx.vstack(
-                            rx.text(
-                                AdminState.viewing_test_facilitator_name,
-                                font_family=FONT_BODY,
-                                size="2",
-                                weight="bold",
-                                color=COLORS["ink"],
-                            ),
-                            rx.text(
-                                AdminState.viewing_test_facilitator_id + " · " + AdminState.viewing_test_facilitator_email,
-                                font_family=FONT_BODY,
-                                size="1",
-                                color=COLORS["slate"],
-                            ),
-                            spacing="0",
-                            align_items="start",
-                        ),
-                        rx.spacer(),
-                        rx.badge("Active Facilitator", color_scheme="indigo", variant="soft", size="1"),
-                        width="100%",
-                        align_items="center",
-                    ),
-                    padding="0.75em 0.9em",
-                    border=f"1px solid {COLORS['line']}",
-                    border_radius="10px",
-                    background=COLORS["surface"],
+                rx.vstack(
+                    rx.foreach(AdminState.viewing_test_facilitators_list, test_details_facilitator_row),
+                    spacing="2",
                     width="100%",
                 ),
 
@@ -741,8 +791,8 @@ def test_details_dialog() -> rx.Component:
                             rx.text("Stage Type", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                             rx.cond(
                                 AdminState.viewing_test_is_final,
-                                rx.text("Main Evaluation", font_family=FONT_BODY, size="2", weight="medium", color="#B45309"),
-                                rx.text("Progressive Assessment", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                                rx.text("Summative Evaluation", font_family=FONT_BODY, size="2", weight="medium", color="#B45309"),
+                                rx.text("Formative Assessment", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
                             ),
                             spacing="0",
                         ),
@@ -751,6 +801,32 @@ def test_details_dialog() -> rx.Component:
                         border_radius="8px",
                         background=COLORS["surface"],
                         flex="1",
+                    ),
+                    rx.box(
+                        rx.vstack(
+                            rx.text("Question Paper", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                            rx.cond(
+                                AdminState.viewing_test_has_qp,
+                                rx.hstack(
+                                    rx.icon("circle-check", size=13, color="#027A48"),
+                                    rx.text(AdminState.viewing_test_qp_filename, font_family=FONT_BODY, size="2", weight="medium", color="#027A48", no_of_lines=1),
+                                    spacing="1",
+                                    align_items="center",
+                                ),
+                                rx.hstack(
+                                    rx.icon("clock", size=13, color="#D97706"),
+                                    rx.text("Question Paper Pending", font_family=FONT_BODY, size="2", weight="medium", color="#D97706"),
+                                    spacing="1",
+                                    align_items="center",
+                                ),
+                            ),
+                            spacing="0",
+                        ),
+                        padding="0.6em 0.8em",
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        background=COLORS["surface"],
+                        flex="1.2",
                     ),
                     width="100%",
                     spacing="2",
@@ -963,7 +1039,17 @@ def edit_assessment_dialog() -> rx.Component:
                 ),
                 rx.text("Facilitator", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 edit_facilitator_select(),
-                rx.text("Candidates", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.hstack(
+                    rx.text("Candidates", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                    rx.spacer(),
+                    rx.text(
+                        AdminState.edit_assessment_candidate_ids.length().to_string() + " candidate(s) selected",
+                        font_family=FONT_BODY, size="1", color=COLORS["slate"],
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_top="0.9em",
+                ),
                 rx.vstack(
                     rx.hstack(
                         rx.icon("search", size=14, color=COLORS["slate"]),

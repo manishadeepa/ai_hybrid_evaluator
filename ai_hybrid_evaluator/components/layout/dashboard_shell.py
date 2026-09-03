@@ -10,7 +10,7 @@ def admin_shell(active: str, title: str, subtitle: str, content: rx.Component) -
     return rx.vstack(
         # Full-width Top Header
         unified_topbar(
-            user_name="Welcome, Admin",
+            user_name="Admin",
             role_name="Administrator",
             avatar_initial="A",
         ),

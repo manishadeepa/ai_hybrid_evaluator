@@ -7,6 +7,7 @@ facilitator, each expanded with the list of assigned candidates.
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.facilitator_shell import facilitator_shell
 from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import qp_preview_dialog
+from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 
@@ -214,16 +215,7 @@ def dashboard_test_item(assessment_name: str, test_name: str, is_final: bool, te
                     ),
                 ),
                 rx.vstack(
-                    rx.hstack(
-                        rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                        rx.cond(
-                            is_final,
-                            rx.badge("Final Evaluation", color_scheme="amber", variant="soft", size="1"),
-                            rx.badge("Regular Test", color_scheme="indigo", variant="soft", size="1"),
-                        ),
-                        spacing="2",
-                        align_items="center",
-                    ),
+                    rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                     rx.cond(
                         has_qp,
                         rx.hstack(
@@ -375,7 +367,11 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                         ),
                         rx.icon("user", size=13, color=COLORS["slate"], margin_left="0.8em"),
                         rx.text(
-                            a["facilitator_name"] + " (Facilitator)",
+                            rx.cond(
+                                AuthState.facilitator_name != "",
+                                AuthState.facilitator_name + " (Facilitator)",
+                                a["facilitator_name"] + " (Facilitator)",
+                            ),
                             font_family=FONT_BODY,
                             size="2",
                             color=COLORS["slate"],
