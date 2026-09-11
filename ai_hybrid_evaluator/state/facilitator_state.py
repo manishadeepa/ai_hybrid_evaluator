@@ -232,9 +232,17 @@ class FacilitatorState(rx.State):
     excel_total_cols_count: int = 0
 
     def load_excel_preview_data(self, filename: str, test_name: str):
-        """Parse the actual uploaded Excel file from disk or populate standard Excel table data."""
+        """Parse the actual uploaded Excel file from disk. Resets to empty if no file exists."""
+        self.excel_headers = []
+        self.excel_rows = []
+        self.excel_sheet_name = ""
+        self.excel_total_rows_count = 0
+        self.excel_total_cols_count = 0
+
         if filename:
             filepath = rx.get_upload_dir() / filename
+            if not filepath.exists():
+                filepath = Path("uploaded_files") / filename
             if filepath.exists() and filename.lower().endswith((".xlsx", ".xls")):
                 try:
                     import openpyxl
@@ -245,45 +253,31 @@ class FacilitatorState(rx.State):
                         if any(v is not None for v in row):
                             data.append([str(v) if v is not None else "" for v in row])
                     if data and len(data) >= 1:
-                        self.excel_headers = data[0]
+                        self.excel_headers = [str(h) for h in data[0]]
                         self.excel_rows = data[1:]
                         self.excel_sheet_name = f"{sheet.title or 'Questions'}"
                         self.excel_total_rows_count = len(self.excel_rows)
                         self.excel_total_cols_count = len(self.excel_headers)
-                        return
                 except Exception:
                     pass
 
-        # Fallback to authentic Excel question paper dataset
-        is_final = "final" in test_name.lower()
-        self.excel_headers = [
-            "Q_No", "Question_Text", "Option_A", "Option_B", "Option_C", "Option_D", "Correct_Answer", "Marks", "Domain_Topic"
-        ]
-        if is_final:
-            self.excel_sheet_name = "Final_Evaluation_Questions"
-            self.excel_rows = [
-                ["1", "Design an end-to-end battery telemetry & health monitoring architecture with fault tolerance.", "N/A (Descriptive)", "N/A", "N/A", "N/A", "Rubric Evaluation", "30", "System Architecture"],
-                ["2", "Identify failure modes in thermal management units and define containment response protocols.", "N/A (Case Study)", "N/A", "N/A", "N/A", "Rubric Evaluation", "35", "Quality Assurance & FMEA"],
-                ["3", "Implement a real-time anomaly detection routine operating under 50ms latency on edge controllers.", "N/A (Coding Task)", "N/A", "N/A", "N/A", "Test Suite Evaluation", "35", "Software & Algorithms"],
-            ]
-        else:
-            self.excel_sheet_name = "Stage1_Questions"
-            self.excel_rows = [
-                ["1", "Which international standard specifies quality management systems for automotive production parts?", "ISO 9001", "IATF 16949", "ISO 14001", "ISO 45001", "B", "20", "Quality Standards"],
-                ["2", "In statistical quality control, what does a Cpk value > 1.33 indicate?", "Process not capable", "Process capable & centered", "Variation too high", "Limits too tight", "B", "20", "SPC Analysis"],
-                ["3", "What is the primary objective of Failure Mode and Effects Analysis (FMEA)?", "Financial audit", "Proactive defect mitigation", "Finished goods audit", "Machine maintenance", "B", "20", "Risk & FMEA"],
-                ["4", "Which quality tool is most effective for identifying the vital few causes (80/20 rule)?", "Scatter Plot", "Pareto Chart", "Histogram", "Fishbone Chart", "B", "20", "Quality Tools"],
-                ["5", "What initial action should be taken when critical torque threshold fails on the inline station?", "Discard entire batch", "Quarantine suspect units & contain line", "Recalibrate after 100 cycles", "Widen test limits", "B", "20", "Troubleshooting"],
-            ]
-        self.excel_total_rows_count = len(self.excel_rows)
-        self.excel_total_cols_count = len(self.excel_headers)
-
     def open_qp_preview(self, test_name: str, assessment_name: str = ""):
-        """Opens the Question Paper preview dialog for the given test."""
+        """Opens the Question Paper preview dialog for the given test only if actual file exists."""
+        asmn_name = assessment_name or self.selected_assessment_name
+        qp_fn = self.question_papers.get(asmn_name, {}).get(test_name, "")
+        if not qp_fn:
+            return rx.toast.warning(f"No question paper uploaded for {test_name}.")
+
+        filepath = rx.get_upload_dir() / qp_fn
+        if not filepath.exists():
+            filepath = Path("uploaded_files") / qp_fn
+        if not filepath.exists():
+            return rx.toast.warning(f"Question paper file '{qp_fn}' not found on server.")
+
         self.viewing_qp_test_name = test_name
-        self.viewing_qp_assessment_name = assessment_name or self.selected_assessment_name
-        self.viewing_qp_filename = self.question_papers.get(self.viewing_qp_assessment_name, {}).get(test_name, "")
-        self.load_excel_preview_data(self.viewing_qp_filename, test_name)
+        self.viewing_qp_assessment_name = asmn_name
+        self.viewing_qp_filename = qp_fn
+        self.load_excel_preview_data(qp_fn, test_name)
         self.show_qp_preview_dialog = True
 
     def set_show_qp_preview_dialog(self, value: bool):
@@ -301,7 +295,7 @@ class FacilitatorState(rx.State):
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
 
-        fac_id = auth_state.facilitator_emp_id
+        fac_id = auth_state.facilitator_emp_id or "F001"
         cur_fac_name = auth_state.facilitator_name
         if not cur_fac_name and fac_id:
             match = next((f for f in admin_state.facilitators if f["emp_id"].lower() == fac_id.lower()), None)
@@ -829,12 +823,21 @@ class FacilitatorState(rx.State):
             if _evaluate_candidate is None:
                 raise ImportError("ai_evaluation_service not available")
 
-            # Determine question paper path
+            # Determine question paper path - strictly from uploaded question paper for this assessment + test
             qp_filename = self.question_papers.get(self.selected_assessment_name, {}).get(self.selected_test_name, "")
             if not qp_filename:
-                qp_path = Path("uploaded_files") / "Question sheet.xlsx"
-            else:
-                qp_path = Path(rx.get_upload_dir()) / qp_filename
+                raise FileNotFoundError(
+                    f"No question paper uploaded for assessment '{self.selected_assessment_name}' "
+                    f"and test '{self.selected_test_name}'. Please upload a question paper first."
+                )
+
+            qp_path = Path(rx.get_upload_dir()) / qp_filename
+            if not qp_path.exists():
+                qp_path = Path("uploaded_files") / qp_filename
+            if not qp_path.exists():
+                raise FileNotFoundError(
+                    f"Uploaded question paper file '{qp_filename}' not found on server."
+                )
 
             # Find candidate response file filtered by selected candidate + assessment + test
             raw = self.selected_evaluation_candidate
@@ -1019,19 +1022,53 @@ class FacilitatorState(rx.State):
     def set_results_dimension_tab(self, tab_key: str):
         self.results_active_dimension_tab = tab_key
 
-    @rx.var
-    def results_candidate_options(self) -> list[str]:
-        """Build candidate dropdown from the cached sync assessment candidate list."""
+    @rx.var(cache=True)
+    async def results_candidate_options(self) -> list[str]:
+        """Derive Results candidate dropdown dynamically from the actual candidates assigned to the currently selected assessment."""
         options = ["All Candidates"]
-        for cand in self._current_assessment_candidates:
-            label = f"{cand['name']} ({cand['emp_id']})"
-            if label not in options:
-                options.append(label)
+        admin_state = await self.get_state(AdminState)
+
+        # 1. Match assessment by selected_assessment_name, or fall back to first assessment in admin_state
+        target_name = self.selected_assessment_name.strip().lower()
+        target_a = None
+        for a in admin_state.assessments:
+            if target_name and a.get("name", "").strip().lower() == target_name:
+                target_a = a
+                break
+        if target_a is None and admin_state.assessments:
+            target_a = admin_state.assessments[0]
+
+        if target_a:
+            # Candidate IDs assigned to this assessment
+            assigned_ids = target_a.get("assigned_candidates", [])
+
+            # Map of candidate ID -> Candidate Name from admin_state.candidates
+            cand_map = {c["emp_id"]: c["name"] for c in admin_state.candidates if "emp_id" in c and "name" in c}
+
+            # Fallback to SHARED_CANDIDATES
+            from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
+            for c in SHARED_CANDIDATES:
+                if c["emp_id"] not in cand_map:
+                    cand_map[c["emp_id"]] = c["name"]
+
+            for cid in assigned_ids:
+                cname = cand_map.get(cid, cid)
+                label = f"{cname} ({cid})"
+                if label not in options:
+                    options.append(label)
+
+            # Also check if target_a has candidate_details or candidates dicts directly
+            for c in target_a.get("candidate_details", []):
+                label = f"{c['name']} ({c['emp_id']})"
+                if label not in options:
+                    options.append(label)
+
         # Also include any evaluated candidates from real_ai_results_per_candidate
         for key in self.real_ai_results_per_candidate.keys():
             cand_part = key.split(":")[0].strip()
             if cand_part and cand_part not in options:
                 options.append(cand_part)
+
         return options
 
     @rx.var
@@ -1041,7 +1078,7 @@ class FacilitatorState(rx.State):
         cand = self.results_selected_candidate
 
         if cand == "All Candidates":
-            # Aggregate across all real results for this assessment+test
+            # Aggregate across all real results for this assessment + selected test
             all_scores = []
             test_scores: dict[str, list] = {}
             co_agg: dict[str, list] = {}
@@ -1050,16 +1087,20 @@ class FacilitatorState(rx.State):
             domain_agg: dict[str, list] = {}
             kt_agg: dict[str, list] = {}
 
+            target_test = self.selected_test_name.strip()
             for key, res in self.real_ai_results_per_candidate.items():
                 parts = key.split(":")
-                test_name = parts[1] if len(parts) > 1 else ""
+                test_name = parts[1].strip() if len(parts) > 1 else ""
+                # Filter by selected test if test is selected
+                if target_test and test_name and target_test != test_name:
+                    continue
                 pct_str = res.get("percentage", "0%").replace("%", "").strip()
                 try:
                     score_val = int(float(pct_str))
                 except Exception:
                     score_val = 0
                 all_scores.append(score_val)
-                test_scores.setdefault(test_name, []).append(score_val)
+                test_scores.setdefault(test_name or (target_test or "Test"), []).append(score_val)
 
                 for item in res.get("co", []):
                     co_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
@@ -1102,14 +1143,30 @@ class FacilitatorState(rx.State):
                 "insight_end": f"Cohort Average ({avg}%)",
             }
         else:
-            # Per-candidate: find the most recent real result for this candidate
+            # Per-candidate: find actual evaluation result for this candidate + selected assessment + test
+            target_test = self.selected_test_name.strip()
+            cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+            cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+
             matched: dict = {}
             for key, res in self.real_ai_results_per_candidate.items():
-                cand_part = key.split(":")[0]
-                if cand_part.strip() == cand.strip() or cand.strip() in cand_part.strip():
+                parts = key.split(":")
+                cand_part = parts[0].strip()
+                test_part = parts[1].strip() if len(parts) > 1 else ""
+
+                # When a test is selected, match test strictly
+                if target_test and test_part and target_test != test_part:
+                    continue
+
+                part_id = cand_part.split("(")[-1].rstrip(")").strip() if "(" in cand_part else cand_part
+                part_name = cand_part.split("(")[0].strip() if "(" in cand_part else cand_part
+
+                if (cand_id and cand_id == part_id) or (cand_name and cand_name.lower() == part_name.lower()) or (cand.strip() == cand_part):
                     matched = res
+                    break
+
             if not matched:
-                return {}  # No real data for this candidate
+                return {}  # Candidate has no evaluation result for this test -> show No Results Available
             pct_str = matched.get("percentage", "0%").replace("%", "").strip()
             try:
                 score_val = int(float(pct_str))
@@ -1264,7 +1321,7 @@ class FacilitatorState(rx.State):
     }
 
     answer_key_uploaded: bool = False
-    answer_key_filename: str = "Quality_Technical_Stage1_AnswerKey.xlsx"
+    answer_key_filename: str = ""
 
     # Per-candidate real AI results (keyed by "Name (EMP-ID)" + ":" + test_name)
     real_ai_results_per_candidate: dict[str, dict] = {}
@@ -1385,7 +1442,17 @@ class FacilitatorState(rx.State):
     @rx.var
     def eval_qp_filename(self) -> str:
         qp = self.question_papers.get(self.selected_assessment_name, {}).get(self.selected_test_name, "")
-        return qp if qp else "Quality_Technical_Stage1.xlsx"
+        return qp if qp else "No question paper available"
+
+    @rx.var
+    def has_eval_qp(self) -> bool:
+        """True if an actual question paper file is uploaded for the current assessment + test."""
+        qp = self.question_papers.get(self.selected_assessment_name, {}).get(self.selected_test_name, "")
+        if not qp:
+            return False
+        p1 = Path(rx.get_upload_dir()) / qp
+        p2 = Path("uploaded_files") / qp
+        return p1.exists() or p2.exists()
 
     # Manual Evaluation Navigation & Input computed vars
     @rx.var

@@ -1279,7 +1279,11 @@ def evaluation_files_card() -> rx.Component:
                     align_items="start",
                 ),
                 rx.spacer(),
-                rx.badge("Available", color_scheme="green", variant="soft", size="1"),
+                rx.cond(
+                    FacilitatorState.has_eval_qp,
+                    rx.badge("Available", color_scheme="green", variant="soft", size="1"),
+                    rx.badge("Not Uploaded", color_scheme="gray", variant="soft", size="1"),
+                ),
                 rx.button(
                     rx.icon("eye", size=13),
                     "View File",
@@ -1288,6 +1292,7 @@ def evaluation_files_card() -> rx.Component:
                     variant="soft",
                     color_scheme="indigo",
                     font_family=FONT_BODY,
+                    disabled=~FacilitatorState.has_eval_qp,
                 ),
                 spacing="3",
                 align_items="center",
