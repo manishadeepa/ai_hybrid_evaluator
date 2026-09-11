@@ -224,6 +224,10 @@ class TestItem(TypedDict, total=False):
     test_id: str
     has_qp: bool
     qp_filename: str
+    weightage: str
+    has_score: bool
+    norm_score_str: str
+    weighted_score_str: str
 
 
 class Assessment(TypedDict, total=False):
