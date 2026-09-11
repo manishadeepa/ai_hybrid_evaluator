@@ -1093,7 +1093,7 @@ ADMIN_SUBMITTED_REPORTS = [
         "insight_diff": 14,
         "insight_start": "Formative 1 (72%)",
         "insight_end": "Summative Test (86%)",
-        # Candidate leaderboard (matches RESULTS_CANDIDATE_SUMMARY)
+        # Candidate leaderboard
         "candidates": [
             {"rank": 1, "name": "Sneha Kulkarni", "emp_id": "EMP-104", "overall_score": 96, "final_test_score": 94, "result": "Passed"},
             {"rank": 2, "name": "Rohan Sharma", "emp_id": "EMP-101", "overall_score": 92, "final_test_score": 90, "result": "Passed"},

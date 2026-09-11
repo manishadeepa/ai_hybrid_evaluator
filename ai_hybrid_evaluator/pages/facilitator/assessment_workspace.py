@@ -2294,6 +2294,215 @@ def ai_evaluation_trigger_modal() -> rx.Component:
     )
 
 
+def ai_eval_progress_modal() -> rx.Component:
+    """Fullscreen overlay showing per-question AI evaluation progress."""
+    total = FacilitatorState.eval_progress_questions.length()
+    completed = FacilitatorState.eval_progress_current
+    pct = rx.cond(
+        total > 0,
+        (completed * 100 // total),
+        0,
+    )
+
+    def question_row(q: dict) -> rx.Component:
+        is_completed = q["status"] == "completed"
+        is_evaluating = q["status"] == "evaluating"
+        return rx.hstack(
+            # Number badge
+            rx.box(
+                rx.cond(
+                    is_completed,
+                    rx.icon("check", size=12, color="white"),
+                    rx.cond(
+                        is_evaluating,
+                        rx.icon("loader", size=12, color="white"),
+                        rx.text("·", color="#94A3B8", size="2", font_weight="700"),
+                    ),
+                ),
+                width="24px",
+                height="24px",
+                border_radius="50%",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                background=rx.cond(
+                    is_completed,
+                    "#027A48",
+                    rx.cond(is_evaluating, "#6C3FF4", "#E2E8F0"),
+                ),
+                flex_shrink="0",
+            ),
+            rx.text(
+                q["label"],
+                font_family=FONT_BODY,
+                size="2",
+                font_weight=rx.cond(is_evaluating, "600", "400"),
+                color=rx.cond(
+                    is_completed,
+                    "#027A48",
+                    rx.cond(is_evaluating, "#6C3FF4", "#64748B"),
+                ),
+            ),
+            rx.spacer(),
+            rx.cond(
+                is_completed,
+                rx.hstack(
+                    rx.icon("circle-check", size=14, color="#027A48"),
+                    rx.text("Completed", size="2", color="#027A48", font_family=FONT_BODY, font_weight="500"),
+                    spacing="1",
+                    align_items="center",
+                ),
+                rx.cond(
+                    is_evaluating,
+                    rx.hstack(
+                        rx.spinner(size="1", color="#6C3FF4"),
+                        rx.text("Evaluating...", size="2", color="#6C3FF4", font_family=FONT_BODY, font_weight="500"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.icon("clock", size=14, color="#94A3B8"),
+                        rx.text("Pending", size="2", color="#94A3B8", font_family=FONT_BODY),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                ),
+            ),
+            width="100%",
+            padding="0.65em 0.9em",
+            border_radius="8px",
+            background=rx.cond(
+                is_evaluating,
+                "rgba(108,63,244,0.07)",
+                rx.cond(is_completed, "rgba(2,122,72,0.05)", "transparent"),
+            ),
+            border=rx.cond(
+                is_evaluating,
+                "1px solid rgba(108,63,244,0.2)",
+                rx.cond(is_completed, "1px solid rgba(2,122,72,0.15)", "1px solid #F1F5F9"),
+            ),
+            align_items="center",
+            spacing="3",
+        )
+
+    return rx.cond(
+        FacilitatorState.show_eval_progress_modal,
+        rx.box(
+            rx.box(
+                rx.vstack(
+                    # Header
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("sparkles", size=18, color="#6C3FF4"),
+                            background="#EDE9FE",
+                            padding="0.5em",
+                            border_radius="8px",
+                            flex_shrink="0",
+                        ),
+                        rx.text(
+                            "AI Evaluation in Progress",
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            font_weight="700",
+                            color="#1E293B",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                        width="100%",
+                    ),
+                    # Description
+                    rx.vstack(
+                        rx.text(
+                            "AI is evaluating the candidate response question by question.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#475569",
+                        ),
+                        rx.text(
+                            "Please do not close this window. This may take a few minutes.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#94A3B8",
+                        ),
+                        spacing="1",
+                        width="100%",
+                    ),
+                    # Progress bar + text
+                    rx.vstack(
+                        rx.hstack(
+                            rx.box(
+                                rx.box(
+                                    height="8px",
+                                    border_radius="99px",
+                                    background="linear-gradient(90deg, #6C3FF4, #9B6DFA)",
+                                    width=pct.to_string() + "%",
+                                    transition="width 0.5s ease",
+                                ),
+                                background="#EDE9FE",
+                                border_radius="99px",
+                                height="8px",
+                                flex="1",
+                                overflow="hidden",
+                            ),
+                            rx.text(
+                                completed.to_string() + " of " + total.to_string() + " questions evaluated",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color="#64748B",
+                                white_space="nowrap",
+                            ),
+                            rx.text(
+                                pct.to_string() + "%",
+                                font_family=FONT_BODY,
+                                size="1",
+                                font_weight="600",
+                                color="#6C3FF4",
+                                white_space="nowrap",
+                            ),
+                            spacing="3",
+                            align_items="center",
+                            width="100%",
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                    # Question list
+                    rx.vstack(
+                        rx.foreach(
+                            FacilitatorState.eval_progress_questions,
+                            question_row,
+                        ),
+                        spacing="2",
+                        width="100%",
+                        max_height="320px",
+                        overflow_y="auto",
+                    ),
+                    spacing="4",
+                    width="100%",
+                    padding="1.8em",
+                ),
+                background="white",
+                border_radius="16px",
+                box_shadow="0 24px 64px rgba(0,0,0,0.22)",
+                max_width="520px",
+                width="92vw",
+            ),
+            position="fixed",
+            top="0",
+            left="0",
+            width="100vw",
+            height="100vh",
+            background="rgba(15,23,42,0.55)",
+            display="flex",
+            align_items="center",
+            justify_content="center",
+            z_index="9999",
+            backdrop_filter="blur(2px)",
+        ),
+        rx.fragment(),
+    )
+
+
 def evaluation_tab() -> rx.Component:
     """Evaluation tab interface matching reference screenshot exactly."""
     return rx.vstack(
@@ -2311,6 +2520,7 @@ def evaluation_tab() -> rx.Component:
         manual_evaluation_modal(),
         answer_key_upload_modal(),
         ai_evaluation_trigger_modal(),
+        ai_eval_progress_modal(),
         spacing="4",
         width="100%",
         align_items="stretch",

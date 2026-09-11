@@ -673,6 +673,11 @@ class FacilitatorState(rx.State):
     selected_ai_candidate_id: str = "EMP-101"
     show_ai_detail_modal: bool = False
 
+    # ── AI Evaluation Progress Modal State ──────────────────────────────
+    show_eval_progress_modal: bool = False
+    eval_progress_questions: list[dict] = []  # [{label, status}] status: pending|evaluating|completed
+    eval_progress_current: int = 0  # number completed so far
+
     # ── Real AI Evaluation display vars (populated after run_ai_evaluation) ──
     real_ai_score_display: str = "—"
     real_ai_max_score_display: str = "—"
@@ -811,12 +816,27 @@ class FacilitatorState(rx.State):
         },
     }
 
+    def _get_question_count_from_qp(self, qp_path: Path) -> int:
+        """Read the question paper Excel and return the number of question rows."""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(qp_path, data_only=True)
+            sheet = wb.active
+            rows = [r for r in sheet.iter_rows(values_only=True) if any(v is not None for v in r)]
+            # First row is header, rest are questions
+            return max(0, len(rows) - 1)
+        except Exception:
+            return 0
+
     async def run_ai_evaluation(self):
         """Run the real AI Evaluation Engine using Azure OpenAI.
         Reads the uploaded Question Paper and the latest candidate response file.
         Falls back gracefully to mock data if files or API credentials are missing.
         """
         self.is_ai_evaluating = True
+        self.show_eval_progress_modal = False
+        self.eval_progress_questions = []
+        self.eval_progress_current = 0
         yield
 
         try:
@@ -851,11 +871,70 @@ class FacilitatorState(rx.State):
                     f"Please ensure the candidate has submitted their test."
                 )
 
+            # ── Build progress question list from actual QP ──────────────
+            q_count = await asyncio.to_thread(self._get_question_count_from_qp, qp_path)
+            if q_count == 0:
+                q_count = 1  # fallback: at least show 1
+            self.eval_progress_questions = [
+                {"label": f"Question {i + 1}", "status": "pending"}
+                for i in range(q_count)
+            ]
+            self.eval_progress_current = 0
+            self.show_eval_progress_modal = True
+            yield  # show modal immediately
+
             # Check if separate answer key was uploaded
             ak_path = self.answer_key_uploaded_path if self.answer_key_uploaded and self.answer_key_uploaded_path else None
 
-            # Run blocking AI evaluation in a thread
-            result = await asyncio.to_thread(_evaluate_candidate, str(qp_path), str(candidate_response_path), ak_path)
+            # Run blocking AI evaluation in a background thread while
+            # streaming per-question progress updates to the UI.
+            import concurrent.futures
+            loop = asyncio.get_event_loop()
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = loop.run_in_executor(executor, _evaluate_candidate, str(qp_path), str(candidate_response_path), ak_path)
+
+            # Animate progress question-by-question while waiting for the real result
+            per_q_delay = max(1.0, 4.0)  # seconds per question step shown (min 1s)
+            for qi in range(q_count):
+                # Mark current question as evaluating
+                updated = list(self.eval_progress_questions)
+                updated[qi] = {"label": updated[qi]["label"], "status": "evaluating"}
+                self.eval_progress_questions = updated
+                self.eval_progress_current = qi
+                yield
+
+                # Wait up to per_q_delay seconds, but stop as soon as future is done
+                elapsed = 0.0
+                step = 0.3
+                while elapsed < per_q_delay:
+                    if future.done():
+                        break
+                    await asyncio.sleep(step)
+                    elapsed += step
+
+                # Mark as completed
+                updated = list(self.eval_progress_questions)
+                updated[qi] = {"label": updated[qi]["label"], "status": "completed"}
+                self.eval_progress_questions = updated
+                self.eval_progress_current = qi + 1
+                yield
+
+                if future.done():
+                    # Fast-complete remaining questions visually
+                    remaining = list(self.eval_progress_questions)
+                    for rj in range(qi + 1, q_count):
+                        remaining[rj] = {"label": remaining[rj]["label"], "status": "completed"}
+                    self.eval_progress_questions = remaining
+                    self.eval_progress_current = q_count
+                    yield
+                    break
+
+            # Close progress modal as soon as all questions are visually complete
+            self.show_eval_progress_modal = False
+            yield
+
+            # Await the actual result (already done or still running)
+            result = await asyncio.wrap_future(future)
 
             # Parse summary from results
             results_list = result.get("results", [])
@@ -968,10 +1047,12 @@ class FacilitatorState(rx.State):
             yield rx.toast.success(f"AI Evaluation completed! Score: {self.real_ai_score_display} ({self.real_ai_percentage_display})")
 
         except FileNotFoundError as e:
+            self.show_eval_progress_modal = False
             self.is_ai_evaluating = False
             self.ai_evaluation_done = True
             yield rx.toast.warning(f"File not found — using mock data. ({e})")
         except Exception as e:
+            self.show_eval_progress_modal = False
             self.is_ai_evaluating = False
             self.ai_evaluation_done = True
             err_msg = str(e)[:120]
@@ -1569,405 +1650,6 @@ class FacilitatorState(rx.State):
     def download_ai_eval_report(self):
         return rx.toast.info("AI Evaluation Results Report downloaded (Mock PDF/Excel)!")
 
-
-CANDIDATE_EVALUATION_DATA = {
-    "Priya Sharma (CAND-2031)": {
-        "emp_id": "CAND-2031",
-        "name": "Priya Sharma",
-        "submitted_on": "29 Aug 2026, 10:24 AM",
-        "excel_file": "Priya_Sharma_Test1_Response.xlsx",
-        "ai_score": "38 / 50",
-        "percentage": "76%",
-        "eval_date": "29 Aug 2026, 11:30 AM",
-        "responses": [
-            {
-                "q_no": "Q1",
-                "question": "Why is safety important in the workplace?",
-                "response": "Safety is important because it helps in protecting employees from accidents and injuries. It also ensures a healthy work environment and increases productivity.",
-                "ai_score": "4",
-                "max_marks": "5",
-                "justification": "Good explanation of workplace safety and its importance.",
-            },
-            {
-                "q_no": "Q2",
-                "question": "Name three common hazards in electrical systems.",
-                "response": "Three common hazards are electrical shock, short circuit, and overloading.",
-                "ai_score": "3",
-                "max_marks": "5",
-                "justification": "Listed 2 correct hazards, one minor additional hazard mentioned.",
-            },
-            {
-                "q_no": "Q3",
-                "question": "What standards regulate electrical safety?",
-                "response": "Some common standards are IEC 60364, NFPA 70E, and ISO 45001.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Correctly mentioned standard examples.",
-            },
-            {
-                "q_no": "Q4",
-                "question": "What are basic electrical hazards?",
-                "response": "The basic electrical hazards include electric shock, arc flash, fire hazard, and equipment damage.",
-                "ai_score": "4",
-                "max_marks": "5",
-                "justification": "Explained most basic hazards clearly.",
-            },
-        ],
-    },
-    "Arjun Rao (CAND-2054)": {
-        "emp_id": "CAND-2054",
-        "name": "Arjun Rao",
-        "submitted_on": "29 Aug 2026, 10:48 AM",
-        "excel_file": "Arjun_Rao_Test1_Response.xlsx",
-        "ai_score": "42 / 50",
-        "percentage": "84%",
-        "eval_date": "29 Aug 2026, 11:35 AM",
-        "responses": [
-            {
-                "q_no": "Q1",
-                "question": "Why is safety important in the workplace?",
-                "response": "Workplace safety prevents industrial downtime, preserves operator wellbeing, and ensures compliance with occupational health regulations.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Comprehensive regulatory and operational safety rationale provided.",
-            },
-            {
-                "q_no": "Q2",
-                "question": "Name three common hazards in electrical systems.",
-                "response": "Ground fault leakage, insulation degradation, and arc blast flashover.",
-                "ai_score": "4",
-                "max_marks": "5",
-                "justification": "Accurately detailed advanced electrical hazard types.",
-            },
-            {
-                "q_no": "Q3",
-                "question": "What standards regulate electrical safety?",
-                "response": "Some common standards are IEC 60364, NFPA 70E, and ISO 45001.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Exact standards and industry references identified.",
-            },
-            {
-                "q_no": "Q4",
-                "question": "What are basic electrical hazards?",
-                "response": "Direct contact shock, electrical burns from arc flash, thermal ignition, and secondary blast injuries.",
-                "ai_score": "4",
-                "max_marks": "5",
-                "justification": "Well-structured categorization of direct and secondary electrical risks.",
-            },
-        ],
-    },
-    "Divya Nair (CAND-2061)": {
-        "emp_id": "CAND-2061",
-        "name": "Divya Nair",
-        "submitted_on": "29 Aug 2026, 11:15 AM",
-        "excel_file": "Divya_Nair_Test1_Response.xlsx",
-        "ai_score": "45 / 50",
-        "percentage": "90%",
-        "eval_date": "29 Aug 2026, 11:40 AM",
-        "responses": [
-            {
-                "q_no": "Q1",
-                "question": "Why is safety important in the workplace?",
-                "response": "Safety establishes zero-harm manufacturing culture, mitigates liability, and upholds high assembly line ergonomics and reliability.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Exemplary understanding of zero-harm safety culture.",
-            },
-            {
-                "q_no": "Q2",
-                "question": "Name three common hazards in electrical systems.",
-                "response": "Short-circuit overcurrent, thermal cable breakdown, and ungrounded chassis voltage.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Flawless identification of critical hazards.",
-            },
-            {
-                "q_no": "Q3",
-                "question": "What standards regulate electrical safety?",
-                "response": "Some common standards are IEC 60364, NFPA 70E, and ISO 45001.",
-                "ai_score": "5",
-                "max_marks": "5",
-                "justification": "Precise identification of global electrical safety codes.",
-            },
-            {
-                "q_no": "Q4",
-                "question": "What are basic electrical hazards?",
-                "response": "Shock voltage gradients, arc flash plasma bursts, cable insulation breakdown, and electrical fire propagation.",
-                "ai_score": "4",
-                "max_marks": "5",
-                "justification": "Detailed and accurate technical descriptions.",
-            },
-        ],
-    },
-}
-
-RESULTS_ANALYTICS_DATA = {
-    "All Candidates": {
-        "overall_score": 78,
-        "final_test_score": 86,
-        "passing_rate": "100%",
-        "passing_count": "4 of 4 Candidates Passed",
-        "tests": [
-            {"name": "Formative 1", "score": 72, "is_final": False},
-            {"name": "Formative 2", "score": 68, "is_final": False},
-            {"name": "Formative 3", "score": 81, "is_final": False},
-            {"name": "Summative Test", "score": 86, "is_final": True},
-        ],
-        "co": [
-            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 82},
-            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 76},
-            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 91},
-            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 68},
-        ],
-        "lo": [
-            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 88},
-            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 74},
-            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 82},
-            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 79},
-            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 90},
-        ],
-        "knowledge_type": [
-            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 84},
-            {"name": "Procedural Knowledge", "code": "Procedural", "score": 78},
-            {"name": "Application Knowledge", "code": "Application", "score": 72},
-        ],
-        "domain": [
-            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 86},
-            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 79},
-            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 74},
-            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 88},
-        ],
-        "rbt_level": [
-            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 91},
-            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 84},
-            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 76},
-            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 68},
-        ],
-        "insight_diff": 14,
-        "insight_start": "Formative 1 (72%)",
-        "insight_end": "Summative Test (86%)",
-    },
-    "Sneha Kulkarni": {
-        "emp_id": "EMP-104",
-        "overall_score": 96,
-        "final_test_score": 94,
-        "passing_rate": "100%",
-        "passing_count": "All Tests Cleared",
-        "tests": [
-            {"name": "Formative 1", "score": 90, "is_final": False},
-            {"name": "Formative 2", "score": 92, "is_final": False},
-            {"name": "Formative 3", "score": 94, "is_final": False},
-            {"name": "Summative Test", "score": 96, "is_final": True},
-        ],
-        "co": [
-            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 98},
-            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 94},
-            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 96},
-            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 92},
-        ],
-        "lo": [
-            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 100},
-            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 95},
-            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 92},
-            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 94},
-            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 98},
-        ],
-        "knowledge_type": [
-            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 96},
-            {"name": "Procedural Knowledge", "code": "Procedural", "score": 94},
-            {"name": "Application Knowledge", "code": "Application", "score": 92},
-        ],
-        "domain": [
-            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 98},
-            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 94},
-            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 92},
-            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 96},
-        ],
-        "rbt_level": [
-            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 98},
-            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 96},
-            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 94},
-            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 90},
-        ],
-        "insight_diff": 6,
-        "insight_start": "Formative 1 (90%)",
-        "insight_end": "Summative Test (96%)",
-    },
-    "Rohan Sharma": {
-        "emp_id": "EMP-101",
-        "overall_score": 92,
-        "final_test_score": 90,
-        "passing_rate": "100%",
-        "passing_count": "All Tests Cleared",
-        "tests": [
-            {"name": "Formative 1", "score": 74, "is_final": False},
-            {"name": "Formative 2", "score": 70, "is_final": False},
-            {"name": "Formative 3", "score": 84, "is_final": False},
-            {"name": "Summative Test", "score": 92, "is_final": True},
-        ],
-        "co": [
-            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 94},
-            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 88},
-            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 92},
-            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 85},
-        ],
-        "lo": [
-            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 95},
-            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 86},
-            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 88},
-            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 90},
-            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 92},
-        ],
-        "knowledge_type": [
-            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 92},
-            {"name": "Procedural Knowledge", "code": "Procedural", "score": 86},
-            {"name": "Application Knowledge", "code": "Application", "score": 84},
-        ],
-        "domain": [
-            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 92},
-            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 88},
-            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 82},
-            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 90},
-        ],
-        "rbt_level": [
-            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 96},
-            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 90},
-            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 84},
-            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 78},
-        ],
-        "insight_diff": 18,
-        "insight_start": "Formative 1 (74%)",
-        "insight_end": "Summative Test (92%)",
-    },
-    "Priya Nair": {
-        "emp_id": "EMP-102",
-        "overall_score": 86,
-        "final_test_score": 84,
-        "passing_rate": "100%",
-        "passing_count": "All Tests Cleared",
-        "tests": [
-            {"name": "Formative 1", "score": 80, "is_final": False},
-            {"name": "Formative 2", "score": 76, "is_final": False},
-            {"name": "Formative 3", "score": 82, "is_final": False},
-            {"name": "Summative Test", "score": 86, "is_final": True},
-        ],
-        "co": [
-            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 88},
-            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 82},
-            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 86},
-            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 78},
-        ],
-        "lo": [
-            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 90},
-            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 80},
-            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 84},
-            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 82},
-            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 88},
-        ],
-        "knowledge_type": [
-            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 88},
-            {"name": "Procedural Knowledge", "code": "Procedural", "score": 82},
-            {"name": "Application Knowledge", "code": "Application", "score": 76},
-        ],
-        "domain": [
-            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 88},
-            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 82},
-            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 78},
-            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 86},
-        ],
-        "rbt_level": [
-            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 92},
-            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 86},
-            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 78},
-            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 72},
-        ],
-        "insight_diff": 6,
-        "insight_start": "Formative 1 (80%)",
-        "insight_end": "Summative Test (86%)",
-    },
-    "Amit Patel": {
-        "emp_id": "EMP-103",
-        "overall_score": 78,
-        "final_test_score": 76,
-        "passing_rate": "100%",
-        "passing_count": "All Tests Cleared",
-        "tests": [
-            {"name": "Formative 1", "score": 68, "is_final": False},
-            {"name": "Formative 2", "score": 64, "is_final": False},
-            {"name": "Formative 3", "score": 74, "is_final": False},
-            {"name": "Summative Test", "score": 78, "is_final": True},
-        ],
-        "co": [
-            {"name": "CO1 - Engineering Fundamentals & Standards", "code": "CO1", "score": 80},
-            {"name": "CO2 - Statistical Process Control (SPC)", "code": "CO2", "score": 70},
-            {"name": "CO3 - Defect Prevention & FMEA Mitigation", "code": "CO3", "score": 82},
-            {"name": "CO4 - Production Line Containment Protocols", "code": "CO4", "score": 64},
-        ],
-        "lo": [
-            {"name": "LO1 - Identify IATF 16949 Standards", "code": "LO1", "score": 82},
-            {"name": "LO2 - Calculate Process Capability Cpk", "code": "LO2", "score": 68},
-            {"name": "LO3 - Prioritize Root Causes with Pareto", "code": "LO3", "score": 76},
-            {"name": "LO4 - Execute Immediate Containment SOP", "code": "LO4", "score": 70},
-            {"name": "LO5 - Formulate Corrective Action Plans", "code": "LO5", "score": 80},
-        ],
-        "knowledge_type": [
-            {"name": "Conceptual Knowledge", "code": "Conceptual", "score": 80},
-            {"name": "Procedural Knowledge", "code": "Procedural", "score": 72},
-            {"name": "Application Knowledge", "code": "Application", "score": 68},
-        ],
-        "domain": [
-            {"name": "EV Safety & High Voltage Standards", "code": "EV Safety", "score": 80},
-            {"name": "Battery Systems & Telemetry Monitoring", "code": "Battery Systems", "score": 74},
-            {"name": "Charging Architecture & Thermal Control", "code": "Charging", "score": 68},
-            {"name": "Quality Control & Inline Troubleshooting", "code": "Quality Control", "score": 78},
-        ],
-        "rbt_level": [
-            {"name": "Remember (Recall Facts & Definitions)", "code": "Remember", "score": 86},
-            {"name": "Understand (Explain Concepts & Principles)", "code": "Understand", "score": 78},
-            {"name": "Apply (Execute Operational Procedures)", "code": "Apply", "score": 70},
-            {"name": "Analyze (Diagnose Faults & Root Causes)", "code": "Analyze", "score": 62},
-        ],
-        "insight_diff": 10,
-        "insight_start": "Formative 1 (68%)",
-        "insight_end": "Summative Test (78%)",
-    },
-}
-
-RESULTS_CANDIDATE_SUMMARY = [
-    {
-        "rank": 1,
-        "name": "Sneha Kulkarni",
-        "emp_id": "EMP-104",
-        "overall_score": 96,
-        "final_test_score": 94,
-        "result": "Passed",
-    },
-    {
-        "rank": 2,
-        "name": "Rohan Sharma",
-        "emp_id": "EMP-101",
-        "overall_score": 92,
-        "final_test_score": 90,
-        "result": "Passed",
-    },
-    {
-        "rank": 3,
-        "name": "Priya Nair",
-        "emp_id": "EMP-102",
-        "overall_score": 86,
-        "final_test_score": 84,
-        "result": "Passed",
-    },
-    {
-        "rank": 4,
-        "name": "Amit Patel",
-        "emp_id": "EMP-103",
-        "overall_score": 78,
-        "final_test_score": 76,
-        "result": "Passed",
-    },
-]
 
 
 class FacilitatorProfileState(rx.State):
