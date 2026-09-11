@@ -2666,43 +2666,93 @@ def results_key_insight_card() -> rx.Component:
                 align_items="center",
                 padding_bottom="1.2em",
             ),
-            rx.text(
-                "Performance improved by",
-                font_family=FONT_BODY,
-                size="2",
-                weight="bold",
-                color=COLORS["ink"],
-            ),
-            rx.hstack(
-                rx.text(
-                    FacilitatorState.results_insight_diff_val.to_string(),
-                    font_family=FONT_DISPLAY,
-                    size="9",
-                    weight="bold",
-                    color="#059669",
-                    line_height="1",
+            rx.cond(
+                FacilitatorState.results_insight_start_val != "",
+                rx.vstack(
+                    rx.text(
+                        "Performance improved by",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.hstack(
+                        rx.text(
+                            FacilitatorState.results_insight_diff_val.to_string(),
+                            font_family=FONT_DISPLAY,
+                            size="9",
+                            weight="bold",
+                            color="#059669",
+                            line_height="1",
+                        ),
+                        rx.text(
+                            "percentage points",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="2",
+                        align_items="baseline",
+                        margin_y="0.3em",
+                    ),
+                    rx.text(
+                        "from ",
+                        FacilitatorState.results_insight_start_val,
+                        " to ",
+                        FacilitatorState.results_insight_end_val,
+                        ".",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["ink"],
+                        weight="bold",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
                 ),
-                rx.text(
-                    "percentage points",
-                    font_family=FONT_BODY,
-                    size="2",
-                    weight="bold",
-                    color=COLORS["ink"],
+                rx.vstack(
+                    rx.text(
+                        "Overall Score Attainment",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.hstack(
+                        rx.text(
+                            FacilitatorState.results_overall_score_val,
+                            font_family=FONT_DISPLAY,
+                            size="9",
+                            weight="bold",
+                            color=rx.cond(FacilitatorState.results_is_passing, "#059669", "#DC2626"),
+                            line_height="1",
+                        ),
+                        rx.text(
+                            "%",
+                            font_family=FONT_DISPLAY,
+                            size="6",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="1",
+                        align_items="baseline",
+                        margin_y="0.3em",
+                    ),
+                    rx.text(
+                        rx.cond(
+                            FacilitatorState.results_selected_candidate == "All Candidates",
+                            "Average across all evaluated candidates in this cohort.",
+                            "Evaluated score for " + FacilitatorState.results_selected_candidate + ".",
+                        ),
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
                 ),
-                spacing="2",
-                align_items="baseline",
-                margin_y="0.3em",
-            ),
-            rx.text(
-                "from ",
-                FacilitatorState.results_insight_start_val,
-                " to ",
-                FacilitatorState.results_insight_end_val,
-                ".",
-                font_family=FONT_BODY,
-                size="2",
-                color=COLORS["ink"],
-                weight="bold",
             ),
             spacing="1",
             align_items="start",
@@ -3126,44 +3176,11 @@ def results_tab() -> rx.Component:
                 border=f"1px solid {COLORS['primary']}",
                 font_family=FONT_BODY,
                 _hover={"background": COLORS["primary_soft"]},
+                disabled=~FacilitatorState.results_has_data,
             ),
             width="100%",
             align_items="center",
             padding_bottom="1.5em",
-        ),
-
-        # ── 1. Summary Cards (Row of 3) ─────────────────────────────────
-        rx.hstack(
-            results_summary_card(
-                "trending-up",
-                "OVERALL SCORE",
-                FacilitatorState.results_overall_score_val + "%",
-                "Overall Assessment Score",
-                "#EEF2FF",
-                "#4F46E5",
-                "#2563EB",
-            ),
-            results_summary_card(
-                "star",
-                "FINAL TEST SCORE",
-                FacilitatorState.results_final_test_score_val + "%",
-                "Final Test Score",
-                "#ECFDF3",
-                "#059669",
-                "#059669",
-            ),
-            results_summary_card(
-                "shield-check",
-                "PASSING RATE",
-                FacilitatorState.results_passing_rate_val,
-                FacilitatorState.results_passing_count_val,
-                "#EFF6FF",
-                "#2563EB",
-                "#2563EB",
-            ),
-            spacing="3",
-            width="100%",
-            wrap="wrap",
         ),
 
         # ── 2. Candidate Filter ─────────────────────────────────────────
@@ -3196,17 +3213,118 @@ def results_tab() -> rx.Component:
             padding_y="1.2em",
         ),
 
-        # ── 3. Main Performance Analysis Card ───────────────────────────
-        results_performance_analysis_card(),
+        # ── Analytics — shown only when real data exists ─────────────────
+        rx.cond(
+            FacilitatorState.results_has_data,
 
-        # ── 4. Candidate Summary & How to Read Dashboard ───────────────
-        rx.hstack(
-            results_candidate_summary_card(),
-            results_how_to_read_card(),
-            spacing="4",
-            width="100%",
-            align_items="stretch",
-            margin_top="1.5em",
+            # ── Has real data: show all analytics ──────────────────────
+            rx.vstack(
+                # 1. Summary Cards (Row of 3)
+                rx.hstack(
+                    results_summary_card(
+                        "trending-up",
+                        "OVERALL SCORE",
+                        FacilitatorState.results_overall_score_val + "%",
+                        "Overall Assessment Score",
+                        "#EEF2FF",
+                        "#4F46E5",
+                        "#2563EB",
+                    ),
+                    results_summary_card(
+                        "star",
+                        "FINAL TEST SCORE",
+                        FacilitatorState.results_final_test_score_val + "%",
+                        "Final Test Score",
+                        "#ECFDF3",
+                        "#059669",
+                        "#059669",
+                    ),
+                    results_summary_card(
+                        "shield-check",
+                        "PASSING RATE",
+                        FacilitatorState.results_passing_rate_val,
+                        FacilitatorState.results_passing_count_val,
+                        "#EFF6FF",
+                        "#2563EB",
+                        "#2563EB",
+                    ),
+                    spacing="3",
+                    width="100%",
+                    wrap="wrap",
+                ),
+
+                # 3. Main Performance Analysis Card
+                results_performance_analysis_card(),
+
+                # 4. Candidate Summary & How to Read Dashboard
+                rx.hstack(
+                    results_candidate_summary_card(),
+                    results_how_to_read_card(),
+                    spacing="4",
+                    width="100%",
+                    align_items="stretch",
+                    margin_top="1.5em",
+                ),
+
+                spacing="4",
+                width="100%",
+                align_items="stretch",
+            ),
+
+            # ── No real data: empty state ──────────────────────────────
+            rx.center(
+                rx.vstack(
+                    rx.box(
+                        rx.icon("bar-chart-2", size=40, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"],
+                        padding="1.2em",
+                        border_radius="50%",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.text(
+                        "No Results Available",
+                        font_family=FONT_DISPLAY,
+                        size="5",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        "AI evaluation has not been run yet for the selected candidate and test.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                        text_align="center",
+                    ),
+                    rx.text(
+                        "Go to the Evaluation tab, select a candidate, and run AI Evaluation to see results here.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["placeholder"],
+                        text_align="center",
+                    ),
+                    rx.button(
+                        rx.icon("pencil-line", size=14),
+                        "Go to Evaluation",
+                        on_click=FacilitatorState.set_workspace_tab("evaluation"),
+                        size="2",
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        _hover={"background": COLORS["primary_hover"]},
+                        margin_top="0.5em",
+                    ),
+                    align_items="center",
+                    spacing="2",
+                    padding="4em 2em",
+                ),
+                width="100%",
+                background=COLORS["surface"],
+                border=f"1px solid {COLORS['line']}",
+                border_radius="14px",
+            ),
         ),
 
         spacing="0",

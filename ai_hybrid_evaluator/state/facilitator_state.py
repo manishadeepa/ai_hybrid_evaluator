@@ -100,6 +100,20 @@ class FacilitatorState(rx.State):
         """Select a test to view/upload question paper for in the workspace."""
         self.selected_test_name = test_name
         self.is_replacing_qp = False
+        key = f"{self.selected_evaluation_candidate}:{test_name}"
+        if key in self.real_ai_results_per_candidate:
+            saved = self.real_ai_results_per_candidate[key]
+            self.real_ai_score_display = saved.get("score", "—")
+            self.real_ai_max_score_display = saved.get("max_score", "—")
+            self.real_ai_percentage_display = saved.get("percentage", "—")
+            self.real_ai_evaluation_date = saved.get("eval_date", "Not evaluated")
+            self.real_ai_eval_questions = saved.get("questions", [])
+        else:
+            self.real_ai_score_display = "—"
+            self.real_ai_max_score_display = "—"
+            self.real_ai_percentage_display = "—"
+            self.real_ai_evaluation_date = "Not evaluated"
+            self.real_ai_eval_questions = []
 
     def start_replacing_qp(self, test_name: str = ""):
         """Switch active view to the upload dropzone to replace the existing question paper."""
@@ -397,6 +411,12 @@ class FacilitatorState(rx.State):
             final_test = assessments[index].get("final_test", "")
             all_t = list(tests) + ([final_test] if final_test else [])
             self.selected_test_name = all_t[0] if all_t else ""
+            # Cache candidate details for sync vars (e.g. results_candidate_options)
+            self._current_assessment_candidates = [
+                {"name": c["name"], "emp_id": c["emp_id"]}
+                for c in admin_state.candidates
+                if c["emp_id"] in assessments[index].get("assigned_candidates", [])
+            ]
         # Always land on the Question Paper tab when opening a workspace
         self.active_workspace_tab = "question_paper"
         return rx.redirect("/facilitator/assessment")
@@ -415,6 +435,12 @@ class FacilitatorState(rx.State):
                 self.selected_assessment_index = i
                 self.selected_assessment_name = assessment_name
                 self.selected_test_name = test_name
+                # Cache candidate details for sync vars
+                self._current_assessment_candidates = [
+                    {"name": c["name"], "emp_id": c["emp_id"]}
+                    for c in admin_state.candidates
+                    if c["emp_id"] in a.get("assigned_candidates", [])
+                ]
                 break
         self.active_workspace_tab = "question_paper"
         return rx.redirect("/facilitator/assessment")
@@ -488,6 +514,12 @@ class FacilitatorState(rx.State):
                 final_test = assessments[i].get("final_test", "")
                 all_t = list(tests) + ([final_test] if final_test else [])
                 self.selected_test_name = all_t[0] if all_t else ""
+                # Cache candidate details for sync vars
+                self._current_assessment_candidates = [
+                    {"name": c["name"], "emp_id": c["emp_id"]}
+                    for c in admin_state.candidates
+                    if c["emp_id"] in a.get("assigned_candidates", [])
+                ]
                 break
         self.active_workspace_tab = "question_paper"
         return rx.redirect("/facilitator/assessment")
@@ -857,6 +889,50 @@ class FacilitatorState(rx.State):
                 })
             self.real_ai_eval_questions = breakdown
 
+            # Extract CO, LO, RBT analysis if available
+            co_items = []
+            co_df = result.get("co_analysis_df", None)
+            if co_df is not None and not getattr(co_df, "empty", True):
+                for _, row in co_df.iterrows():
+                    val = str(row.get("co", ""))
+                    pct = int(round(float(row.get("attainment_percentage", 0))))
+                    co_items.append({"name": f"CO - {val}", "code": val, "score": pct})
+
+            lo_items = []
+            lo_df = result.get("lo_analysis_df", None)
+            if lo_df is not None and not getattr(lo_df, "empty", True):
+                for _, row in lo_df.iterrows():
+                    val = str(row.get("lo", ""))
+                    pct = int(round(float(row.get("attainment_percentage", 0))))
+                    lo_items.append({"name": f"LO - {val}", "code": val, "score": pct})
+
+            rbt_items = []
+            rbt_df = result.get("rbt_analysis_df", None)
+            if rbt_df is not None and not getattr(rbt_df, "empty", True):
+                for _, row in rbt_df.iterrows():
+                    val = str(row.get("rbt_level", ""))
+                    pct = int(round(float(row.get("attainment_percentage", 0))))
+                    rbt_items.append({"name": val, "code": val, "score": pct})
+
+            results_df = result.get("results_df", None)
+            domain_items = []
+            kt_items = []
+            if results_df is not None and not getattr(results_df, "empty", True):
+                if "domain" in results_df.columns:
+                    for d_val, grp in results_df.groupby("domain"):
+                        if d_val is not None and str(d_val).strip() and str(d_val).lower() != "nan":
+                            awd = float(grp["awarded_marks"].sum())
+                            mx = float(grp["maximum_marks"].sum())
+                            pct = int(round((awd / mx) * 100)) if mx > 0 else 0
+                            domain_items.append({"name": str(d_val), "code": str(d_val), "score": pct})
+                if "knowledge_type" in results_df.columns:
+                    for kt_val, grp in results_df.groupby("knowledge_type"):
+                        if kt_val is not None and str(kt_val).strip() and str(kt_val).lower() != "nan":
+                            awd = float(grp["awarded_marks"].sum())
+                            mx = float(grp["maximum_marks"].sum())
+                            pct = int(round((awd / mx) * 100)) if mx > 0 else 0
+                            kt_items.append({"name": str(kt_val), "code": str(kt_val), "score": pct})
+
             # Persist real result per candidate+test key
             key = f"{self.selected_evaluation_candidate}:{self.selected_test_name}"
             saved_results = dict(self.real_ai_results_per_candidate)
@@ -866,6 +942,11 @@ class FacilitatorState(rx.State):
                 "percentage": self.real_ai_percentage_display,
                 "eval_date": self.real_ai_evaluation_date,
                 "questions": breakdown,
+                "co": co_items,
+                "lo": lo_items,
+                "rbt_level": rbt_items,
+                "domain": domain_items,
+                "knowledge_type": kt_items,
             }
             self.real_ai_results_per_candidate = saved_results
 
@@ -929,14 +1010,8 @@ class FacilitatorState(rx.State):
     # ── Results Tab Analytics State ────────────────────────────────────
     results_selected_candidate: str = "All Candidates"
     results_active_dimension_tab: str = "overall"  # "overall", "co", "lo", "knowledge_type", "domain", "rbt_level"
-
-    results_candidate_options: list[str] = [
-        "All Candidates",
-        "Sneha Kulkarni",
-        "Rohan Sharma",
-        "Priya Nair",
-        "Amit Patel",
-    ]
+    # Sync cache of the current assessment's candidates — populated in open_assessment handlers
+    _current_assessment_candidates: list[dict] = []
 
     def set_results_selected_candidate(self, candidate_name: str):
         self.results_selected_candidate = candidate_name
@@ -945,53 +1020,154 @@ class FacilitatorState(rx.State):
         self.results_active_dimension_tab = tab_key
 
     @rx.var
+    def results_candidate_options(self) -> list[str]:
+        """Build candidate dropdown from the cached sync assessment candidate list."""
+        options = ["All Candidates"]
+        for cand in self._current_assessment_candidates:
+            label = f"{cand['name']} ({cand['emp_id']})"
+            if label not in options:
+                options.append(label)
+        # Also include any evaluated candidates from real_ai_results_per_candidate
+        for key in self.real_ai_results_per_candidate.keys():
+            cand_part = key.split(":")[0].strip()
+            if cand_part and cand_part not in options:
+                options.append(cand_part)
+        return options
+
+    @rx.var
     def current_results_data(self) -> dict:
-        base = RESULTS_ANALYTICS_DATA.get(
-            self.results_selected_candidate,
-            RESULTS_ANALYTICS_DATA["All Candidates"]
-        )
-        data = dict(base)
+        """Build results data exclusively from real AI evaluation results.
+        Returns an empty dict if no real data exists for the selection."""
         cand = self.results_selected_candidate
-        # Overlay real AI score if candidate has one
-        for key, res in self.real_ai_results_per_candidate.items():
-            if cand != "All Candidates" and cand in key:
+
+        if cand == "All Candidates":
+            # Aggregate across all real results for this assessment+test
+            all_scores = []
+            test_scores: dict[str, list] = {}
+            co_agg: dict[str, list] = {}
+            lo_agg: dict[str, list] = {}
+            rbt_agg: dict[str, list] = {}
+            domain_agg: dict[str, list] = {}
+            kt_agg: dict[str, list] = {}
+
+            for key, res in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                test_name = parts[1] if len(parts) > 1 else ""
                 pct_str = res.get("percentage", "0%").replace("%", "").strip()
                 try:
                     score_val = int(float(pct_str))
-                    data["overall_score"] = score_val
-                    data["final_test_score"] = score_val
-                    data["passing_rate"] = "100%" if score_val >= 50 else "0%"
                 except Exception:
-                    pass
-        return data
+                    score_val = 0
+                all_scores.append(score_val)
+                test_scores.setdefault(test_name, []).append(score_val)
+
+                for item in res.get("co", []):
+                    co_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+                for item in res.get("lo", []):
+                    lo_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+                for item in res.get("rbt_level", []):
+                    rbt_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+                for item in res.get("domain", []):
+                    domain_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+                for item in res.get("knowledge_type", []):
+                    kt_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+
+            if not all_scores:
+                return {}  # No real data — UI will show empty state
+            avg = int(sum(all_scores) / len(all_scores))
+            passed = sum(1 for s in all_scores if s >= 50)
+            tests_bar = [
+                {"name": t, "score": int(sum(v) / len(v)), "is_final": False}
+                for t, v in test_scores.items()
+            ]
+            co_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in co_agg.items()]
+            lo_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in lo_agg.items()]
+            rbt_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in rbt_agg.items()]
+            domain_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in domain_agg.items()]
+            kt_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in kt_agg.items()]
+
+            return {
+                "overall_score": avg,
+                "final_test_score": avg,
+                "passing_rate": f"{int(passed / len(all_scores) * 100)}%",
+                "passing_count": f"{passed} of {len(all_scores)} Candidate(s) Passed",
+                "tests": tests_bar,
+                "co": co_items,
+                "lo": lo_items,
+                "knowledge_type": kt_items,
+                "domain": domain_items,
+                "rbt_level": rbt_items,
+                "insight_diff": 0,
+                "insight_start": "",
+                "insight_end": f"Cohort Average ({avg}%)",
+            }
+        else:
+            # Per-candidate: find the most recent real result for this candidate
+            matched: dict = {}
+            for key, res in self.real_ai_results_per_candidate.items():
+                cand_part = key.split(":")[0]
+                if cand_part.strip() == cand.strip() or cand.strip() in cand_part.strip():
+                    matched = res
+            if not matched:
+                return {}  # No real data for this candidate
+            pct_str = matched.get("percentage", "0%").replace("%", "").strip()
+            try:
+                score_val = int(float(pct_str))
+            except Exception:
+                score_val = 0
+            test_name = self.selected_test_name or "Test"
+            return {
+                "overall_score": score_val,
+                "final_test_score": score_val,
+                "passing_rate": "100%" if score_val >= 50 else "0%",
+                "passing_count": "Passed" if score_val >= 50 else "Failed",
+                "tests": [{"name": test_name, "score": score_val, "is_final": True}],
+                "co": matched.get("co", []),
+                "lo": matched.get("lo", []),
+                "knowledge_type": matched.get("knowledge_type", []),
+                "domain": matched.get("domain", []),
+                "rbt_level": matched.get("rbt_level", []),
+                "insight_diff": 0,
+                "insight_start": "",
+                "insight_end": test_name + f" ({score_val}%)",
+            }
+
+    @rx.var
+    def results_is_passing(self) -> bool:
+        return self.current_results_data.get("overall_score", 0) >= 50
+
+    @rx.var
+    def results_has_data(self) -> bool:
+        """True only when real evaluation data exists for the current selection."""
+        return bool(self.current_results_data)
 
     @rx.var
     def results_overall_score_val(self) -> str:
-        return str(self.current_results_data.get("overall_score", 78))
+        return str(self.current_results_data.get("overall_score", 0))
 
     @rx.var
     def results_final_test_score_val(self) -> str:
-        return str(self.current_results_data.get("final_test_score", 86))
+        return str(self.current_results_data.get("final_test_score", 0))
 
     @rx.var
     def results_passing_rate_val(self) -> str:
-        return str(self.current_results_data.get("passing_rate", "100%"))
+        return str(self.current_results_data.get("passing_rate", "N/A"))
 
     @rx.var
     def results_passing_count_val(self) -> str:
-        return str(self.current_results_data.get("passing_count", "4 of 4 Candidates Passed"))
+        return str(self.current_results_data.get("passing_count", "No results yet"))
 
     @rx.var
     def results_insight_diff_val(self) -> int:
-        return int(self.current_results_data.get("insight_diff", 14))
+        return int(self.current_results_data.get("insight_diff", 0))
 
     @rx.var
     def results_insight_start_val(self) -> str:
-        return str(self.current_results_data.get("insight_start", "Formative 1 (72%)"))
+        return str(self.current_results_data.get("insight_start", ""))
 
     @rx.var
     def results_insight_end_val(self) -> str:
-        return str(self.current_results_data.get("insight_end", "Summative Test (86%)"))
+        return str(self.current_results_data.get("insight_end", ""))
 
     @rx.var
     def results_chart_title(self) -> str:
@@ -1033,7 +1209,10 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def results_candidate_summary_rows(self) -> list[dict]:
-        base = [dict(r) for r in RESULTS_CANDIDATE_SUMMARY]
+        """Build the candidate summary table exclusively from real AI results.
+        Falls back to an empty list (no mock data) when no evaluations have run."""
+        rows: list[dict] = []
+        seen: set[str] = set()
         for key, res in self.real_ai_results_per_candidate.items():
             cand_part = key.split(":")[0]
             cand_name = cand_part.split("(")[0].strip() if "(" in cand_part else cand_part.strip()
@@ -1043,24 +1222,29 @@ class FacilitatorState(rx.State):
                 score_val = int(float(pct_str))
             except Exception:
                 score_val = 0
-            found = False
-            for r in base:
-                if (cand_name and cand_name.lower() in r.get("name", "").lower()) or (cand_id and cand_id == r.get("emp_id")):
-                    r["overall_score"] = score_val
-                    r["final_test_score"] = score_val
-                    r["result"] = "Passed" if score_val >= 50 else "Failed"
-                    found = True
-                    break
-            if not found and cand_name:
-                base.append({
-                    "rank": len(base) + 1,
-                    "name": cand_name,
-                    "emp_id": cand_id or "CAND-2031",
-                    "overall_score": score_val,
-                    "final_test_score": score_val,
-                    "result": "Passed" if score_val >= 50 else "Failed",
-                })
-        return base
+            uid = cand_id or cand_name
+            if uid in seen:
+                # Update existing row if this result is better/newer
+                for r in rows:
+                    if r.get("emp_id") == cand_id or r.get("name") == cand_name:
+                        r["overall_score"] = score_val
+                        r["final_test_score"] = score_val
+                        r["result"] = "Passed" if score_val >= 50 else "Failed"
+                continue
+            seen.add(uid)
+            rows.append({
+                "rank": len(rows) + 1,
+                "name": cand_name,
+                "emp_id": cand_id,
+                "overall_score": score_val,
+                "final_test_score": score_val,
+                "result": "Passed" if score_val >= 50 else "Failed",
+            })
+        # Re-sort by score descending and re-number ranks
+        rows.sort(key=lambda r: r["overall_score"], reverse=True)
+        for i, r in enumerate(rows):
+            r["rank"] = i + 1
+        return rows
 
     # ── Evaluation Tab State ───────────────────────────────────────────
     # Format: "Candidate Name (EMP-ID)"
