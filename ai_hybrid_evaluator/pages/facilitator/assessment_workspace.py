@@ -1297,56 +1297,7 @@ def evaluation_files_card() -> rx.Component:
 
             rx.divider(color_scheme="gray", size="4"),
 
-            # Row 2: Answer Key
-            rx.hstack(
-                rx.box(
-                    rx.icon("award", size=18, color="#B54708"),
-                    background="#FFFAEB",
-                    padding="0.5em",
-                    border_radius="8px",
-                    display="flex",
-                    align_items="center",
-                    justify_content="center",
-                ),
-                rx.vstack(
-                    rx.text("Answer Key", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                    rx.text(
-                        rx.cond(
-                            FacilitatorState.answer_key_uploaded,
-                            FacilitatorState.answer_key_filename,
-                            "No answer key uploaded",
-                        ),
-                        font_family=FONT_BODY,
-                        size="1",
-                        color=COLORS["slate"],
-                    ),
-                    spacing="0",
-                    align_items="start",
-                ),
-                rx.spacer(),
-                rx.cond(
-                    FacilitatorState.answer_key_uploaded,
-                    rx.badge("Uploaded", color_scheme="green", variant="soft", size="1"),
-                    rx.badge("Not Uploaded", color_scheme="orange", variant="soft", size="1"),
-                ),
-                rx.button(
-                    rx.icon("upload", size=13),
-                    rx.cond(FacilitatorState.answer_key_uploaded, "Replace Key", "Upload Answer Key"),
-                    on_click=FacilitatorState.open_answer_key_upload,
-                    size="1",
-                    variant="outline",
-                    color_scheme="indigo",
-                    font_family=FONT_BODY,
-                ),
-                spacing="3",
-                align_items="center",
-                width="100%",
-                padding_y="0.6em",
-            ),
-
-            rx.divider(color_scheme="gray", size="4"),
-
-            # Row 3: Candidate Response
+            # Row 2: Candidate Response
             rx.hstack(
                 rx.box(
                     rx.icon("file-text", size=18, color=COLORS["primary"]),
