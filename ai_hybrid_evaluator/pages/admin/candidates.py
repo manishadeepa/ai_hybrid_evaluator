@@ -16,7 +16,7 @@ def candidate_row(c: dict, idx: int) -> rx.Component:
                 rx.button(
                     rx.icon("eye", size=14),
                     "View Profile",
-                    # Not wired to anything yet — placeholder button only.
+                    on_click=AdminState.open_view_candidate_profile(idx),
                     size="1",
                     variant="outline",
                     color=COLORS["primary"],
@@ -83,14 +83,14 @@ def add_candidate_dialog() -> rx.Component:
                 ),
                 rx.text("Name", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
-                    placeholder="e.g. Priya Sharma",
+                    placeholder="Full Name",
                     value=AdminState.new_candidate_name,
                     on_change=AdminState.set_new_candidate_name,
                     width="100%",
                 ),
                 rx.text("Email ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
-                    placeholder="name@genaievaluator.com",
+                    placeholder="name@tvsmotor.com",
                     value=AdminState.new_candidate_email,
                     on_change=AdminState.set_new_candidate_email,
                     width="100%",
@@ -208,6 +208,137 @@ def delete_candidate_dialog() -> rx.Component:
     )
 
 
+def _profile_info_item(label: str, value: rx.Var, icon_name: str) -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.icon(icon_name, size=13, color=COLORS["slate"]),
+                rx.text(label, font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                spacing="1",
+                align_items="center",
+            ),
+            rx.text(
+                rx.cond(value != "", value, "—"),
+                font_family=FONT_BODY,
+                size="2",
+                weight="medium",
+                color=COLORS["ink"],
+            ),
+            spacing="1",
+            align_items="start",
+        ),
+        background="#F8FAFC",
+        padding="0.6em 0.8em",
+        border_radius="8px",
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+    )
+
+
+def view_candidate_profile_dialog() -> rx.Component:
+    p = AdminState.viewing_candidate_profile
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header row with avatar and basic info
+                rx.hstack(
+                    rx.avatar(
+                        src=rx.cond(
+                            p["profile_photo_url"] != "",
+                            p["profile_photo_url"],
+                            "",
+                        ),
+                        fallback="CA",
+                        size="6",
+                        radius="full",
+                        color_scheme="indigo",
+                    ),
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text(p["full_name"], font_family=FONT_BODY, size="4", weight="bold", color=COLORS["ink"]),
+                            rx.badge(p["emp_id"], color_scheme="indigo", size="1"),
+                            rx.badge(
+                                rx.cond(p["employment_status"] != "", p["employment_status"], "Active"),
+                                color_scheme="green",
+                                size="1",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.text(
+                            p["designation"],
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="1",
+                    ),
+                    spacing="4",
+                    align_items="center",
+                    padding_bottom="1.2em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                    width="100%",
+                ),
+                
+                # Details Grid in a scrollable container
+                rx.vstack(
+                    rx.text("Employee Information", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"], padding_top="0.8em"),
+                    rx.grid(
+                        _profile_info_item("Official Email", p["email"], "mail"),
+                        _profile_info_item("Phone Number", p["phone"], "phone"),
+                        _profile_info_item("Location", p["location"], "map-pin"),
+                        _profile_info_item("Date of Joining", p["date_of_joining"], "calendar"),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    
+                    rx.text("Organization Details", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"], padding_top="1em"),
+                    rx.grid(
+                        _profile_info_item("Company / BU", p["company_bu"], "building-2"),
+                        _profile_info_item("Department", p["department"], "briefcase"),
+                        _profile_info_item("Grade / Level", p["grade_level"], "award"),
+                        _profile_info_item("Reporting Manager", p["reporting_manager"], "user-check"),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    
+                    _profile_info_item("Work Location", p["work_location"], "map-pinned"),
+                    
+                    spacing="2",
+                    width="100%",
+                    max_height="55vh",
+                    overflow_y="auto",
+                    padding_right="0.5em",
+                ),
+                
+                # Footer Close Button
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Close",
+                            variant="outline",
+                            color=COLORS["slate"],
+                            font_family=FONT_BODY,
+                            on_click=AdminState.close_view_candidate_profile,
+                        ),
+                    ),
+                    width="100%",
+                    padding_top="1.2em",
+                    border_top=f"1px solid {COLORS['line']}",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            style={"maxWidth": "620px"},
+        ),
+        open=AdminState.show_view_candidate_profile,
+        on_open_change=AdminState.set_show_view_candidate_profile,
+    )
+
+
 def candidates_page() -> rx.Component:
     content = rx.vstack(
         rx.hstack(
@@ -240,6 +371,7 @@ def candidates_page() -> rx.Component:
             margin_top="1.2em",
             width="100%",
         ),
+        view_candidate_profile_dialog(),
         edit_candidate_dialog(),
         delete_candidate_dialog(),
         width="100%",

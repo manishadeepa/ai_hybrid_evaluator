@@ -20,9 +20,10 @@ def candidate_login_page() -> rx.Component:
         ),
         auth_input(
             "Employee ID",
-            "e.g. CAND-2031 or EMP-101",
+            "e.g. CAND-2031",
             AuthState.candidate_signin_id,
             AuthState.set_candidate_signin_id,
+            on_key_down=AuthState.handle_candidate_keydown,
         ),
         auth_input(
             "Password",
@@ -30,6 +31,7 @@ def candidate_login_page() -> rx.Component:
             AuthState.candidate_signin_password,
             AuthState.set_candidate_signin_password,
             input_type="password",
+            on_key_down=AuthState.handle_candidate_keydown,
         ),
         rx.cond(
             AuthState.candidate_signin_error != "",
@@ -54,7 +56,7 @@ def candidate_login_page() -> rx.Component:
             ),
         ),
         rx.box(
-            auth_button("Sign In to Test", AuthState.candidate_sign_in),
+            auth_button("Sign In", AuthState.candidate_sign_in),
             padding_top="1.4em",
             width="100%",
         ),

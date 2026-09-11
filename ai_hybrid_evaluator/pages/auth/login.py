@@ -110,10 +110,12 @@ def _change_password_dialog() -> rx.Component:
                 color=COLORS["primary"],
                 cursor="pointer",
                 _hover={"text_decoration": "underline"},
+                on_click=AuthState.open_change_password,
             ),
         ),
         rx.dialog.content(
             rx.vstack(
+                # ── Header ──────────────────────────────────────────
                 rx.hstack(
                     rx.box(
                         rx.icon("lock", size=20, color=COLORS["primary"]),
@@ -135,11 +137,14 @@ def _change_password_dialog() -> rx.Component:
                     align_items="center",
                     width="100%",
                 ),
+                # ── Form fields ──────────────────────────────────────
                 rx.vstack(
                     rx.vstack(
                         rx.text("Official Email (@tvsmotor.com)", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
                         rx.input(
                             placeholder="admin@tvsmotor.com",
+                            value=AuthState.chpwd_email,
+                            on_change=AuthState.set_chpwd_email,
                             width="100%",
                             size="3",
                             border=f"1.5px solid {COLORS['line']}",
@@ -154,6 +159,8 @@ def _change_password_dialog() -> rx.Component:
                         rx.input(
                             type="password",
                             placeholder="Enter current password",
+                            value=AuthState.chpwd_current,
+                            on_change=AuthState.set_chpwd_current,
                             width="100%",
                             size="3",
                             border=f"1.5px solid {COLORS['line']}",
@@ -168,6 +175,8 @@ def _change_password_dialog() -> rx.Component:
                         rx.input(
                             type="password",
                             placeholder="Enter new password",
+                            value=AuthState.chpwd_new,
+                            on_change=AuthState.set_chpwd_new,
                             width="100%",
                             size="3",
                             border=f"1.5px solid {COLORS['line']}",
@@ -182,6 +191,8 @@ def _change_password_dialog() -> rx.Component:
                         rx.input(
                             type="password",
                             placeholder="Confirm new password",
+                            value=AuthState.chpwd_confirm,
+                            on_change=AuthState.set_chpwd_confirm,
                             width="100%",
                             size="3",
                             border=f"1.5px solid {COLORS['line']}",
@@ -195,6 +206,20 @@ def _change_password_dialog() -> rx.Component:
                     width="100%",
                     padding_top="0.8em",
                 ),
+                # ── Inline error ─────────────────────────────────────
+                rx.cond(
+                    AuthState.chpwd_error != "",
+                    rx.box(
+                        rx.text(
+                            AuthState.chpwd_error,
+                            color=COLORS["danger"],
+                            size="2",
+                            font_family=FONT_BODY,
+                        ),
+                        padding_top="0.5em",
+                    ),
+                ),
+                # ── Buttons ──────────────────────────────────────────
                 rx.hstack(
                     rx.spacer(),
                     rx.dialog.close(
@@ -206,16 +231,14 @@ def _change_password_dialog() -> rx.Component:
                             size="2",
                         ),
                     ),
-                    rx.dialog.close(
-                        rx.button(
-                            "Update Password",
-                            on_click=rx.toast.success("Admin password updated successfully. Please login with your new password."),
-                            background=COLORS["primary"],
-                            color="white",
-                            font_family=FONT_BODY,
-                            size="2",
-                            _hover={"background": COLORS["primary_hover"]},
-                        ),
+                    rx.button(
+                        "Update Password",
+                        on_click=AuthState.change_password,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        _hover={"background": COLORS["primary_hover"]},
                     ),
                     spacing="3",
                     width="100%",
@@ -228,6 +251,8 @@ def _change_password_dialog() -> rx.Component:
             padding="1.8em",
             border_radius="14px",
         ),
+        open=AuthState.chpwd_open,
+        on_open_change=AuthState.set_chpwd_open,
     )
 
 
@@ -242,6 +267,7 @@ def login_page() -> rx.Component:
             "admin@tvsmotor.com",
             AuthState.signin_email,
             AuthState.set_signin_email,
+            on_key_down=AuthState.handle_admin_keydown,
         ),
         rx.box(
             auth_input(
@@ -250,6 +276,7 @@ def login_page() -> rx.Component:
                 AuthState.signin_password,
                 AuthState.set_signin_password,
                 input_type="password",
+                on_key_down=AuthState.handle_admin_keydown,
             ),
             width="100%",
             padding_top="1.1em",
@@ -275,11 +302,11 @@ def login_page() -> rx.Component:
             ),
         ),
         rx.box(
-            auth_button("Login", AuthState.sign_in),
+            auth_button("Sign In", AuthState.sign_in),
             padding_top="1.6em",
             width="100%",
         ),
         width="100%",
         align_items="stretch",
     )
-    return auth_card(content)
+    return auth_card(content)

@@ -236,12 +236,31 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                 padding_bottom="0.4em",
             ),
 
-            # Test rows — formative tests + built-in summative test
+            # When no tests configured yet
+            rx.cond(
+                (a["tests"].length() == 0) & (a["final_test"] == ""),
+                rx.box(
+                    rx.text(
+                        "No tests scheduled yet for this assessment.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                        font_style="italic",
+                    ),
+                    padding="0.8em 0.2em",
+                ),
+            ),
+
+            # Test rows — formative tests
             rx.foreach(
                 a["tests"],
                 lambda t: _test_row(a["name"], t, False),
             ),
-            _test_row(a["name"], a["final_test"], True),
+            # Summative test row (only when configured by Facilitator)
+            rx.cond(
+                a["final_test"] != "",
+                _test_row(a["name"], a["final_test"], True),
+            ),
 
             spacing="0",
             width="100%",

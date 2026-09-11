@@ -1080,6 +1080,13 @@ def candidate_test_page() -> rx.Component:
                     on_click=CandidateState.handle_fullscreen_entered,
                     style={"display": "none"},
                 ),
+                # Hidden bridge button for tab-switch / window-blur violation
+                rx.button(
+                    id="tab-switch-btn",
+                    on_click=CandidateState.trigger_proctoring_warning,
+                    disabled=CandidateState.is_test_submitted | CandidateState.is_time_expired,
+                    style={"display": "none"},
+                ),
                 rx.script(
                     r"""
                     (function() {
@@ -1102,7 +1109,87 @@ def candidate_test_page() -> rx.Component:
                         document.addEventListener('fullscreenchange', checkFS);
                         document.addEventListener('webkitfullscreenchange', checkFS);
 
-                        // ── localStorage helpers ──────────────────────────────────────
+                        // ── Tab-switch / window-blur detection ────────────────────────
+                        // Use a 600ms debounce: both visibilitychange and window blur
+                        // can fire for the same switch event (e.g. Alt+Tab sometimes
+                        // triggers both). The debounce ensures exactly one violation per
+                        // actual switch, regardless of which events fire together.
+                        var __tabSwitchLastMs = 0;
+                        function triggerTabSwitch() {
+                            var btn = document.getElementById('tab-switch-btn');
+                            if (btn && btn.disabled) return; // test over
+                            var now = Date.now();
+                            if (now - __tabSwitchLastMs < 600) return; // debounce
+                            __tabSwitchLastMs = now;
+                            btn.click();
+                        }
+                        // Remove any previous listeners before re-attaching
+                        if (window.__candidate_vis_handler) {
+                            document.removeEventListener('visibilitychange', window.__candidate_vis_handler);
+                        }
+                        if (window.__candidate_blur_handler) {
+                            window.removeEventListener('blur', window.__candidate_blur_handler);
+                        }
+                        // visibilitychange: fires when switching browser tabs
+                        window.__candidate_vis_handler = function() {
+                            if (document.hidden) triggerTabSwitch();
+                        };
+                        // blur: fires when Alt+Tabbing to another application.
+                        // No document.hidden check — blur is the primary signal for app-switch.
+                        window.__candidate_blur_handler = function() {
+                            triggerTabSwitch();
+                        };
+                        document.addEventListener('visibilitychange', window.__candidate_vis_handler);
+                        window.addEventListener('blur', window.__candidate_blur_handler);
+
+                        // ── Auto-refocus when candidate returns to the tab ────────────
+                        if (window.__candidate_focus_handler) {
+                            document.removeEventListener('visibilitychange', window.__candidate_focus_handler);
+                        }
+                        window.__candidate_focus_handler = function() {
+                            if (!document.hidden) { setTimeout(function(){ window.focus(); }, 50); }
+                        };
+                        document.addEventListener('visibilitychange', window.__candidate_focus_handler);
+
+                        // ── Block keyboard tab-switch shortcuts ───────────────────────
+                        // Ctrl+W (close tab), Ctrl+T (new tab), Ctrl+N (new window),
+                        // Ctrl+Tab / Ctrl+Shift+Tab (cycle tabs), Alt+F4 (close window)
+                        if (window.__candidate_key_handler) {
+                            document.removeEventListener('keydown', window.__candidate_key_handler, true);
+                        }
+                        window.__candidate_key_handler = function(e) {
+                            var btn = document.getElementById('tab-switch-btn');
+                            if (btn && btn.disabled) return; // test already over
+                            var ctrl = e.ctrlKey || e.metaKey;
+                            var blocked = false;
+                            if (ctrl && (e.key === 'w' || e.key === 'W'))             blocked = true;
+                            if (ctrl && (e.key === 't' || e.key === 'T'))             blocked = true;
+                            if (ctrl && (e.key === 'n' || e.key === 'N'))             blocked = true;
+                            if (ctrl && e.key === 'Tab')                               blocked = true;
+                            if (ctrl && e.shiftKey && e.key === 'Tab')                blocked = true;
+                            if (e.altKey && e.key === 'F4')                           blocked = true;
+                            if (blocked) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                triggerTabSwitch(); // count as a violation attempt
+                            }
+                        };
+                        document.addEventListener('keydown', window.__candidate_key_handler, true);
+
+                        // ── Warn on unload / navigation away ─────────────────────────
+                        if (window.__candidate_beforeunload) {
+                            window.removeEventListener('beforeunload', window.__candidate_beforeunload);
+                        }
+                        window.__candidate_beforeunload = function(e) {
+                            var btn = document.getElementById('tab-switch-btn');
+                            if (btn && btn.disabled) return; // test over, allow navigation
+                            e.preventDefault();
+                            e.returnValue = 'Leaving this page will be flagged as a proctoring violation.';
+                            return e.returnValue;
+                        };
+                        window.addEventListener('beforeunload', window.__candidate_beforeunload);
+
+                        // ── localStorage helpers ───────────────────────────────────────
                         // Key: candidate_id::assessment_name::test_name::question_id
                         // Data attributes are written on #rte-relay by _restore_rte_script.
                         window.__rteGetStorageKey = function(qidOverride) {

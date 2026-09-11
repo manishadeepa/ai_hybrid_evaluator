@@ -77,7 +77,7 @@ def facilitator_response_badge(approval_status: str) -> rx.Component:
 
 def assessment_row(a: dict, idx: int) -> rx.Component:
     return rx.table.row(
-        # 1. Assessment & Tests
+        # 1. Assessment
         rx.table.cell(
             rx.vstack(
                 rx.text(
@@ -86,17 +86,6 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
                     color=COLORS["ink"],
                     weight="bold",
                     size="3",
-                ),
-                rx.hstack(
-                    rx.foreach(
-                        a["tests"],
-                        lambda t: test_chip(idx, t),
-                    ),
-                    final_test_chip(idx, a["final_test"]),
-                    spacing="1",
-                    wrap="wrap",
-                    align_items="center",
-                    padding_top="0.2em",
                 ),
                 spacing="1",
                 align_items="start",
@@ -120,25 +109,9 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
                 font_family=FONT_BODY, color=COLORS["slate"], size="2",
             ),
         ),
-        # 4. Tests count
-        rx.table.cell(
-            rx.text(
-                a["tests"].length().to_string() + " + Summative",
-                font_family=FONT_BODY, color=COLORS["slate"], size="2",
-            ),
-        ),
 
         rx.table.cell(
             rx.hstack(
-                rx.button(
-                    rx.icon("list-plus", size=14),
-                    "Type of Test",
-                    on_click=AdminState.open_assessment_tests(idx),
-                    size="1",
-                    variant="soft",
-                    color_scheme="indigo",
-                    font_family=FONT_BODY,
-                ),
                 rx.button(
                     rx.icon("pencil", size=14),
                     "Edit",
@@ -1159,10 +1132,9 @@ def assessments_page() -> rx.Component:
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
-                        rx.table.column_header_cell("Assessment & Tests"),
+                        rx.table.column_header_cell("Assessment"),
                         rx.table.column_header_cell("Facilitator"),
                         rx.table.column_header_cell("Candidates"),
-                        rx.table.column_header_cell("Tests"),
                         rx.table.column_header_cell("Actions", justify="center", align="center"),
                         rx.table.column_header_cell("Facilitator Response"),
                     ),
@@ -1177,8 +1149,6 @@ def assessments_page() -> rx.Component:
             margin_top="1.2em",
             width="100%",
         ),
-        assessment_tests_dialog(),
-        test_details_dialog(),
         edit_assessment_dialog(),
         delete_assessment_dialog(),
         width="100%",

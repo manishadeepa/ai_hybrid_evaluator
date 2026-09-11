@@ -56,14 +56,33 @@ def profile_page_content() -> rx.Component:
                 rx.avatar(src=FacilitatorProfileState.profile_photo_url, size="7", radius="full"),
                 rx.vstack(
                     rx.text("Profile Photo", font_family=FONT_BODY, size="3", weight="bold"),
-                    rx.button(
-                        "Upload Photo",
-                        rx.icon("upload", size=14),
-                        on_click=FacilitatorProfileState.simulate_upload_photo,
-                        variant="outline",
-                        color=COLORS["primary"],
-                        border=f"1px solid {COLORS['primary']}",
-                        _hover={"background": COLORS["canvas"]},
+                    rx.upload(
+                        rx.hstack(
+                            rx.icon("upload", size=14, color=COLORS["primary"]),
+                            rx.text("Upload Photo", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["primary"]),
+                            spacing="2",
+                            align_items="center",
+                            padding="0.5em 1em",
+                            border=f"1px solid {COLORS['primary']}",
+                            border_radius="8px",
+                            background="transparent",
+                            cursor="pointer",
+                            _hover={"background": COLORS["canvas"]},
+                        ),
+                        id="facilitator_profile_photo_uploader",
+                        accept={
+                            "image/png": [".png"],
+                            "image/jpeg": [".jpg", ".jpeg"],
+                            "image/webp": [".webp"],
+                            "image/gif": [".gif"],
+                        },
+                        max_files=1,
+                        border="none",
+                        padding="0",
+                        cursor="pointer",
+                        on_drop=FacilitatorProfileState.handle_photo_upload(
+                            rx.upload_files(upload_id="facilitator_profile_photo_uploader")
+                        ),
                     ),
                     align_items="start",
                     spacing="2",

@@ -4,7 +4,18 @@ import reflex as rx
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY
 
 
-def auth_input(label: str, placeholder: str, value, on_change, input_type: str = "text") -> rx.Component:
+def auth_input(
+    label: str,
+    placeholder: str,
+    value,
+    on_change,
+    input_type: str = "text",
+    on_key_down=None,
+) -> rx.Component:
+    extra_props = {}
+    if on_key_down is not None:
+        extra_props["on_key_down"] = on_key_down
+
     return rx.vstack(
         rx.text(
             label,
@@ -30,6 +41,7 @@ def auth_input(label: str, placeholder: str, value, on_change, input_type: str =
                 "box_shadow": f"0 0 0 3px {COLORS['primary_soft']}",
                 "outline": "none",
             },
+            **extra_props,
         ),
         spacing="1",
         align_items="start",

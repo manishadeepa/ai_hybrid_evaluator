@@ -22,6 +22,7 @@ def facilitator_login_page() -> rx.Component:
             "e.g. F001",
             AuthState.facilitator_signin_id,
             AuthState.set_facilitator_signin_id,
+            on_key_down=AuthState.handle_facilitator_keydown,
         ),
         auth_input(
             "Password",
@@ -29,6 +30,7 @@ def facilitator_login_page() -> rx.Component:
             AuthState.facilitator_signin_password,
             AuthState.set_facilitator_signin_password,
             input_type="password",
+            on_key_down=AuthState.handle_facilitator_keydown,
         ),
         rx.cond(
             AuthState.facilitator_signin_error != "",

@@ -17,7 +17,7 @@ def facilitator_row(f: dict, idx: int) -> rx.Component:
                 rx.button(
                     rx.icon("eye", size=14),
                     "View Profile",
-                    # Not wired to anything yet — placeholder button only.
+                    on_click=AdminState.open_view_facilitator_profile(idx),
                     size="1",
                     variant="outline",
                     color=COLORS["primary"],
@@ -89,21 +89,21 @@ def add_facilitator_dialog() -> rx.Component:
                 ),
                 rx.text("Facilitator Name", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
-                    placeholder="e.g. Ravi Kumar",
+                    placeholder="Full Name",
                     value=AdminState.new_facilitator_name,
                     on_change=AdminState.set_new_facilitator_name,
                     width="100%",
                 ),
                 rx.text("Facilitator Mail", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
-                    placeholder="name@genaievaluator.com",
+                    placeholder="name@tvsmotor.com",
                     value=AdminState.new_facilitator_email,
                     on_change=AdminState.set_new_facilitator_email,
                     width="100%",
                 ),
                 rx.text("Facilitator Phone", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
-                    placeholder="e.g. 9876543210",
+                    placeholder="Phone Number",
                     value=AdminState.new_facilitator_phone,
                     on_change=AdminState.set_new_facilitator_phone,
                     max_length=10,
@@ -233,6 +233,141 @@ def delete_facilitator_dialog() -> rx.Component:
         on_open_change=AdminState.set_show_delete_facilitator,
     )
 
+def _profile_info_item(label: str, value: rx.Var, icon_name: str) -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.icon(icon_name, size=13, color=COLORS["slate"]),
+                rx.text(label, font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                spacing="1",
+                align_items="center",
+            ),
+            rx.text(
+                rx.cond(value != "", value, "—"),
+                font_family=FONT_BODY,
+                size="2",
+                weight="medium",
+                color=COLORS["ink"],
+            ),
+            spacing="1",
+            align_items="start",
+        ),
+        background="#F8FAFC",
+        padding="0.6em 0.8em",
+        border_radius="8px",
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+    )
+
+
+def view_facilitator_profile_dialog() -> rx.Component:
+    p = AdminState.viewing_facilitator_profile
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header row with avatar and basic info
+                rx.hstack(
+                    rx.avatar(
+                        src=rx.cond(
+                            p["profile_photo_url"] != "",
+                            p["profile_photo_url"],
+                            "/placeholder_avatar.png",
+                        ),
+                        fallback="FA",
+                        size="6",
+                        radius="full",
+                        color_scheme="indigo",
+                    ),
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text(p["full_name"], font_family=FONT_BODY, size="4", weight="bold", color=COLORS["ink"]),
+                            rx.badge(p["emp_id"], color_scheme="indigo", size="1"),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        rx.text(
+                            p["designation"],
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="1",
+                    ),
+                    spacing="4",
+                    align_items="center",
+                    padding_bottom="1.2em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                    width="100%",
+                ),
+                
+                # Details Grid in a scrollable container
+                rx.vstack(
+                    rx.text("Contact Information", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"], padding_top="0.8em"),
+                    rx.grid(
+                        _profile_info_item("Email", p["email"], "mail"),
+                        _profile_info_item("Phone", p["phone"], "phone"),
+                        _profile_info_item("Location", p["location"], "map-pin"),
+                        _profile_info_item("Availability", p["availability"], "clock"),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    
+                    rx.text("Professional & Organization", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"], padding_top="1em"),
+                    rx.grid(
+                        _profile_info_item("Department", p["department"], "building-2"),
+                        _profile_info_item("Business Unit", p["business_unit"], "briefcase"),
+                        _profile_info_item("Years of Exp.", p["years_experience"], "award"),
+                        _profile_info_item("Training Exp.", p["training_experience"], "users"),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    
+                    rx.text("Domain & Expertise", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"], padding_top="1em"),
+                    rx.grid(
+                        _profile_info_item("Primary Expertise", p["primary_expertise"], "circle-check"),
+                        _profile_info_item("Domain / Subjects", p["subjects_domains"], "book-open"),
+                        _profile_info_item("Specific Skills", p["specific_skills"], "cpu"),
+                        _profile_info_item("Education", p["highest_qualification"], "graduation-cap"),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    _profile_info_item("Specialization", p["specialization"], "file-text"),
+                    _profile_info_item("Certifications", p["certifications"], "award"),
+                    spacing="2",
+                    width="100%",
+                    max_height="55vh",
+                    overflow_y="auto",
+                    padding_right="0.5em",
+                ),
+                
+                # Footer Close Button
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Close",
+                            variant="outline",
+                            color=COLORS["slate"],
+                            font_family=FONT_BODY,
+                            on_click=AdminState.close_view_facilitator_profile,
+                        ),
+                    ),
+                    width="100%",
+                    padding_top="1.2em",
+                    border_top=f"1px solid {COLORS['line']}",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            style={"maxWidth": "620px"},
+        ),
+        open=AdminState.show_view_facilitator_profile,
+        on_open_change=AdminState.set_show_view_facilitator_profile,
+    )
+
 
 def facilitators_page() -> rx.Component:
     content = rx.vstack(
@@ -269,6 +404,7 @@ def facilitators_page() -> rx.Component:
             margin_top="1.2em",
             width="100%",
         ),
+        view_facilitator_profile_dialog(),
         edit_facilitator_dialog(),
         delete_facilitator_dialog(),
         width="100%",

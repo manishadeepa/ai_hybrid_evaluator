@@ -129,7 +129,10 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
                     a["tests"],
                     lambda t: sidebar_test_sublink(a["name"], t, False),
                 ),
-                sidebar_test_sublink(a["name"], a["final_test"], True),
+                rx.cond(
+                    a["final_test"] != "",
+                    sidebar_test_sublink(a["name"], a["final_test"], True),
+                ),
                 spacing="1",
                 width="100%",
                 padding_top="0.1em",

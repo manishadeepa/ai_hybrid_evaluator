@@ -60,7 +60,7 @@ def profile_page_content() -> rx.Component:
             rx.hstack(
                 rx.avatar(
                     src=CandidateProfileState.profile_photo_url,
-                    fallback=CandidateProfileState.full_name[:2].upper(),
+                    fallback="CA",
                     size="7",
                     radius="full",
                     color_scheme="indigo",
@@ -81,7 +81,12 @@ def profile_page_content() -> rx.Component:
                             _hover={"background": COLORS["canvas"]},
                         ),
                         id="candidate_profile_photo_uploader",
-                        accept="image/png,image/jpeg,image/jpg",
+                        accept={
+                            "image/png": [".png"],
+                            "image/jpeg": [".jpg", ".jpeg"],
+                            "image/webp": [".webp"],
+                            "image/gif": [".gif"],
+                        },
                         max_files=1,
                         border="none",
                         padding="0",

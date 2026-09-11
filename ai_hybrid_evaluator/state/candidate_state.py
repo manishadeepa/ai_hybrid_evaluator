@@ -7,9 +7,13 @@ import asyncio
 import base64
 import re
 from datetime import datetime
+from pathlib import Path
 import reflex as rx
+import pandas as pd
 from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
+from ai_hybrid_evaluator.models.models import get_candidate_profile, save_candidate_profile
+from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response
 
 
 MOCK_SUBJECTIVE_QUESTIONS = [
@@ -88,6 +92,48 @@ MOCK_SUBJECTIVE_QUESTIONS = [
     }
     for i in range(6, 21)
 ]
+
+QUESTION_PAPER_PATH = Path("uploaded_files") / "Question sheet.xlsx"
+
+
+def load_question_paper_questions() -> list[dict]:
+    """Load the candidate questions from the real Question Paper Excel file."""
+    path_to_use = QUESTION_PAPER_PATH
+    if not path_to_use.exists():
+        alt = Path(__file__).resolve().parents[2] / "uploaded_files" / "Question sheet.xlsx"
+        if alt.exists():
+            path_to_use = alt
+
+    try:
+        df = pd.read_excel(path_to_use)
+        questions = []
+        for _, row in df.iterrows():
+            q_num_str = str(row["Question No"]).replace("Q", "").strip()
+            q_id = int(q_num_str) if q_num_str.isdigit() else len(questions) + 1
+            questions.append({
+                "id": q_id,
+                "title": str(row["Question No"]),
+                "marks": int(row["Marks"]) if pd.notna(row.get("Marks")) else 10,
+                "co": str(row.get("CO", "")),
+                "lo": str(row.get("LO", "")),
+                "knowledge_type": str(row.get("Knowledge Type", "")),
+                "category": str(row.get("Domain", "")),
+                "rbt_level": str(row.get("RBT level", "")),
+                "text": str(row.get("Question", "")),
+                "guidelines": [
+                    "Read the question carefully.",
+                    "Answer in your own words.",
+                    "Support your answer with relevant points.",
+                ],
+            })
+        if questions:
+            return questions
+    except Exception as e:
+        print(f"Error loading {path_to_use}: {e}")
+    return MOCK_SUBJECTIVE_QUESTIONS
+
+
+REAL_QUESTIONS = load_question_paper_questions()
 
 
 def _strip_html(html: str) -> str:
@@ -196,9 +242,9 @@ class CandidateState(rx.State):
     # ── Computed Variables ──────────────────────────────────────────────
     @rx.var
     def current_question(self) -> dict:
-        if 0 <= self.current_question_index < len(MOCK_SUBJECTIVE_QUESTIONS):
-            return MOCK_SUBJECTIVE_QUESTIONS[self.current_question_index]
-        return MOCK_SUBJECTIVE_QUESTIONS[0]
+        if 0 <= self.current_question_index < len(REAL_QUESTIONS):
+            return REAL_QUESTIONS[self.current_question_index]
+        return REAL_QUESTIONS[0]
 
     @rx.var
     def current_question_number(self) -> int:
@@ -206,7 +252,7 @@ class CandidateState(rx.State):
 
     @rx.var
     def total_questions(self) -> int:
-        return len(MOCK_SUBJECTIVE_QUESTIONS)
+        return len(REAL_QUESTIONS)
 
     @rx.var
     def current_answer_text(self) -> str:
@@ -227,7 +273,7 @@ class CandidateState(rx.State):
     @rx.var
     def answered_count(self) -> int:
         count = 0
-        for q in MOCK_SUBJECTIVE_QUESTIONS:
+        for q in REAL_QUESTIONS:
             qid_str = str(q["id"])
             if _strip_html(self.answers.get(qid_str, "")).strip():
                 count += 1
@@ -281,37 +327,37 @@ class CandidateState(rx.State):
     @rx.var
     def is_last_question(self) -> bool:
         """True when the candidate is on the final question."""
-        return self.current_question_index >= len(MOCK_SUBJECTIVE_QUESTIONS) - 1
+        return self.current_question_index >= len(REAL_QUESTIONS) - 1
 
     # ── Question metadata computed vars (CO / LO / RBT / Marks) ───────
-    # Access MOCK_SUBJECTIVE_QUESTIONS directly (cannot chain .get() on an rx.var result)
+    # Access REAL_QUESTIONS directly (cannot chain .get() on an rx.var result)
     @rx.var
     def current_question_marks(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
-            v = MOCK_SUBJECTIVE_QUESTIONS[idx].get("marks", "")
+        if 0 <= idx < len(REAL_QUESTIONS):
+            v = REAL_QUESTIONS[idx].get("marks", "")
             return str(v) if v != "" else ""
         return ""
 
     @rx.var
     def current_question_co(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
-            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("co", ""))
+        if 0 <= idx < len(REAL_QUESTIONS):
+            return str(REAL_QUESTIONS[idx].get("co", ""))
         return ""
 
     @rx.var
     def current_question_lo(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
-            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("lo", ""))
+        if 0 <= idx < len(REAL_QUESTIONS):
+            return str(REAL_QUESTIONS[idx].get("lo", ""))
         return ""
 
     @rx.var
     def current_question_rbt(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(MOCK_SUBJECTIVE_QUESTIONS):
-            return str(MOCK_SUBJECTIVE_QUESTIONS[idx].get("rbt_level", ""))
+        if 0 <= idx < len(REAL_QUESTIONS):
+            return str(REAL_QUESTIONS[idx].get("rbt_level", ""))
         return ""
 
     # ── Timer & Actions ──────────────────────────────────────────────────
@@ -500,12 +546,12 @@ class CandidateState(rx.State):
         return rx.call_script(js)
 
     def set_question_index(self, index: int):
-        if 0 <= index < len(MOCK_SUBJECTIVE_QUESTIONS):
+        if 0 <= index < len(REAL_QUESTIONS):
             self.current_question_index = index
             return self._restore_rte_script()
 
     def next_question(self):
-        if self.current_question_index < len(MOCK_SUBJECTIVE_QUESTIONS) - 1:
+        if self.current_question_index < len(REAL_QUESTIONS) - 1:
             self.current_question_index += 1
             return self._restore_rte_script()
 
@@ -568,7 +614,7 @@ class CandidateState(rx.State):
         # Persist current answers (already in state via set_answer_html)
         self._save_current_test_record()
         self.auto_save_status = "Auto-saved"
-        if self.current_question_index < len(MOCK_SUBJECTIVE_QUESTIONS) - 1:
+        if self.current_question_index < len(REAL_QUESTIONS) - 1:
             self.current_question_index += 1
             return self._restore_rte_script()
 
@@ -660,8 +706,22 @@ class CandidateState(rx.State):
         self.show_submit_dialog = False
 
     def confirm_submit_test(self):
-        """Submit the assessment test session and persist the completed status."""
+        """Submit the assessment and save the candidate answers as Excel."""
         now = datetime.now()
+
+        cand_id = self.candidate_id or "CAND-2031"
+        try:
+            save_candidate_response(
+                candidate_id=cand_id,
+                candidate_name=cand_id,
+                assessment_name=self.active_assessment_name,
+                test_name=self.active_test_name,
+                questions=REAL_QUESTIONS,
+                answers=self.answers,
+            )
+        except Exception as e:
+            print(f"Error saving candidate response: {e}")
+
         self.is_test_submitted = True
         self.show_submit_dialog = False
         self.show_violation_modal = False
@@ -678,10 +738,25 @@ class CandidateState(rx.State):
         return rx.toast.success("Assessment submitted successfully!", duration=4000)
 
     def return_to_dashboard(self):
-        """Navigate back to the candidate dashboard."""
+        """Navigate back to the candidate dashboard after test submission.
+
+        Always exits browser fullscreen first so the dashboard never
+        inherits fullscreen state from a completed test.  Because
+        is_test_submitted is True before this is called, the
+        fullscreenchange listener will NOT record a proctoring violation.
+        """
         self.show_submit_dialog = False
         self.show_violation_modal = False
-        return rx.redirect("/candidate/dashboard")
+        # Reset fullscreen flag so the next test starts fresh
+        self.is_fullscreen = False
+        return [
+            rx.call_script(
+                "if (document.fullscreenElement) {"
+                "  document.exitFullscreen().catch(function(e){ console.warn(e); });"
+                "}"
+            ),
+            rx.redirect("/candidate/dashboard"),
+        ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -757,6 +832,35 @@ class CandidateProfileState(rx.State):
     def set_reporting_manager(self, v: str): self.reporting_manager = v
     def set_work_location(self, v: str): self.work_location = v
 
+    async def load_profile(self):
+        """Load candidate profile from shared store."""
+        try:
+            auth = await self.get_state(AuthState)
+            if auth.candidate_emp_id:
+                self.emp_id = auth.candidate_emp_id
+        except Exception:
+            pass
+
+        cid = self.emp_id or "CAND-2031"
+        prof = get_candidate_profile(
+            cid,
+            default_name=self.full_name or "Candidate",
+            default_email=self.email,
+        )
+        self.full_name = prof.get("full_name", "")
+        self.email = prof.get("email", "")
+        self.phone = prof.get("phone", "")
+        self.location = prof.get("location", "")
+        self.profile_photo_url = prof.get("profile_photo_url", "")
+        self.date_of_joining = prof.get("date_of_joining", "")
+        self.employment_status = prof.get("employment_status", "Active")
+        self.company_bu = prof.get("company_bu", "TVS Motor Company")
+        self.department = prof.get("department", "Quality Assurance & Testing")
+        self.designation = prof.get("designation", "Senior Quality Engineer")
+        self.grade_level = prof.get("grade_level", "L3 - Senior Associate")
+        self.reporting_manager = prof.get("reporting_manager", "Ravi Kumar (Lead Evaluator)")
+        self.work_location = prof.get("work_location", "TVS Motor Plant, Hosur Facility, Block C")
+
     async def handle_photo_upload(self, files: list[rx.UploadFile]):
         """Upload and display the selected candidate profile image immediately."""
         if not files:
@@ -783,8 +887,27 @@ class CandidateProfileState(rx.State):
         except Exception:
             pass
 
+        # Save photo to shared store
+        save_candidate_profile(self.emp_id, {"profile_photo_url": self.profile_photo_url})
         return rx.toast.success(f"Profile photo updated: {file.filename}")
 
     async def save_profile(self):
-        """Save candidate profile changes."""
+        """Save candidate profile changes to shared store."""
+        data = {
+            "emp_id": self.emp_id,
+            "full_name": self.full_name,
+            "email": self.email,
+            "phone": self.phone,
+            "location": self.location,
+            "profile_photo_url": self.profile_photo_url,
+            "date_of_joining": self.date_of_joining,
+            "employment_status": self.employment_status,
+            "company_bu": self.company_bu,
+            "department": self.department,
+            "designation": self.designation,
+            "grade_level": self.grade_level,
+            "reporting_manager": self.reporting_manager,
+            "work_location": self.work_location,
+        }
+        save_candidate_profile(self.emp_id, data)
         return rx.toast.success("Profile saved successfully!")

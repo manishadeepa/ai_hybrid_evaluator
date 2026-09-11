@@ -5,7 +5,7 @@ Calls into services/mock_api.py so the mock logic stays out of the UI layer.
 
 import re
 import reflex as rx
-from ai_hybrid_evaluator.services.mock_api import mock_login, mock_signup, EMAIL_REGEX
+from ai_hybrid_evaluator.services.mock_api import mock_login, mock_signup, change_admin_password, EMAIL_REGEX
 from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES, SHARED_FACILITATORS
 from ai_hybrid_evaluator.state.admin_state import AdminState
 
@@ -16,6 +16,14 @@ class AuthState(rx.State):
     signin_password: str = ""
     signin_error: str = ""
 
+    # ---- Change Password form (Admin) ----
+    chpwd_email: str = ""
+    chpwd_current: str = ""
+    chpwd_new: str = ""
+    chpwd_confirm: str = ""
+    chpwd_error: str = ""
+    chpwd_open: bool = False
+
     # ---- Sign Up form (Admin) ----
     signup_username: str = ""
     signup_employee_id: str = ""
@@ -25,9 +33,11 @@ class AuthState(rx.State):
     signup_error: str = ""
     signup_success: bool = False
 
-    # ---- Session (mock only) ----
+    # ---- Session (Admin) ----
     is_authenticated: bool = False
     admin_name: str = ""
+    admin_employee_id: str = ""
+    admin_email: str = ""
 
     # ---- Facilitator sign-in (Facilitator ID + Password created by Admin) ----
     facilitator_signin_id: str = ""
@@ -49,12 +59,27 @@ class AuthState(rx.State):
     candidate_emp_id: str = ""
     candidate_email: str = ""
 
+    @rx.var
+    def admin_avatar_initial(self) -> str:
+        name = self.admin_name.strip()
+        if name:
+            return name[0].upper()
+        return "A"
+
     # ---- Field setters ----
+    def on_signin_page_load(self):
+        """Clear any stale error when the Sign In page loads."""
+        self.signin_error = ""
+        self.signin_email = ""
+        self.signin_password = ""
+
     def set_signin_email(self, value: str):
         self.signin_email = value
+        self.signin_error = ""  # hide error as user types
 
     def set_signin_password(self, value: str):
         self.signin_password = value
+        self.signin_error = ""  # hide error as user types
 
     def set_signup_username(self, value: str):
         self.signup_username = value
@@ -86,12 +111,33 @@ class AuthState(rx.State):
         self.facilitator_access_denied = False
 
     # ---- Actions ----
+    def handle_admin_keydown(self, key: str):
+        if key == "Enter":
+            return self.sign_in()
+
+    async def handle_facilitator_keydown(self, key: str):
+        if key == "Enter":
+            return await self.facilitator_sign_in()
+
+    async def handle_candidate_keydown(self, key: str):
+        if key == "Enter":
+            return await self.candidate_sign_in()
+
     def sign_in(self):
-        result = mock_login(self.signin_email, self.signin_password)
+        self.signin_error = ""
+        email = self.signin_email.strip()
+        password = self.signin_password.strip()
+        if not email or not password:
+            self.signin_error = "Invalid Admin email or password."
+            return
+
+        result = mock_login(email, password)
         if result["success"]:
             self.signin_error = ""
             self.is_authenticated = True
-            self.admin_name = "Admin"
+            self.admin_name = result.get("employee_name", "Admin")
+            self.admin_employee_id = result.get("employee_id", "")
+            self.admin_email = result.get("employee_mail", "")
             return rx.redirect("/admin/dashboard")
         self.signin_error = result["error"]
 
@@ -123,7 +169,68 @@ class AuthState(rx.State):
     def logout(self):
         self.is_authenticated = False
         self.admin_name = ""
+        self.admin_employee_id = ""
+        self.admin_email = ""
         return rx.redirect("/signin")
+
+    # ---- Change Password (Admin) ----
+    def open_change_password(self):
+        """Reset form fields and open the dialog."""
+        self.chpwd_email = ""
+        self.chpwd_current = ""
+        self.chpwd_new = ""
+        self.chpwd_confirm = ""
+        self.chpwd_error = ""
+        self.chpwd_open = True
+
+    def set_chpwd_open(self, value: bool):
+        """Called by on_open_change — value is True (opening) or False (closing)."""
+        self.chpwd_open = value
+        if not value:
+            # Reset when dialog is dismissed (Escape, outside click, Cancel)
+            self.chpwd_error = ""
+            self.chpwd_email = ""
+            self.chpwd_current = ""
+            self.chpwd_new = ""
+            self.chpwd_confirm = ""
+
+    def set_chpwd_email(self, v: str):
+        self.chpwd_email = v
+        self.chpwd_error = ""
+
+    def set_chpwd_current(self, v: str):
+        self.chpwd_current = v
+        self.chpwd_error = ""
+
+    def set_chpwd_new(self, v: str):
+        self.chpwd_new = v
+        self.chpwd_error = ""
+
+    def set_chpwd_confirm(self, v: str):
+        self.chpwd_confirm = v
+        self.chpwd_error = ""
+
+    def change_password(self):
+        """Validate inputs and update Default Password in the Excel database."""
+        result = change_admin_password(
+            self.chpwd_email,
+            self.chpwd_current,
+            self.chpwd_new,
+            self.chpwd_confirm,
+        )
+        if result["success"]:
+            self.chpwd_error = ""
+            self.chpwd_open = False
+            self.chpwd_email = ""
+            self.chpwd_current = ""
+            self.chpwd_new = ""
+            self.chpwd_confirm = ""
+            return rx.toast.success(
+                "Password updated successfully. Please sign in with your new password.",
+                duration=5000,
+            )
+        else:
+            self.chpwd_error = result["error"]
 
     async def facilitator_sign_in(self):
         """Facilitator sign in using Facilitator ID and password created by Admin."""

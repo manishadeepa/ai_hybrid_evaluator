@@ -136,12 +136,6 @@ def report_row(a: dict) -> rx.Component:
                 font_family=FONT_BODY, size="2", color=COLORS["slate"],
             ),
         ),
-        rx.table.cell(
-            rx.text(
-                a["tests"].length().to_string(), " + Final",
-                font_family=FONT_BODY, size="2", color=COLORS["slate"],
-            ),
-        ),
         rx.table.cell(assessment_status_badge(a["status"])),
         rx.table.cell(approval_badge(a.get("approval_status", "pending"))),
     )
@@ -1169,7 +1163,6 @@ def reports_page() -> rx.Component:
                             rx.table.column_header_cell("Assessment"),
                             rx.table.column_header_cell("Facilitator"),
                             rx.table.column_header_cell("Candidates"),
-                            rx.table.column_header_cell("Tests"),
                             rx.table.column_header_cell("Status"),
                             rx.table.column_header_cell("Facilitator Response"),
                         ),

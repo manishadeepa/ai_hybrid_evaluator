@@ -455,119 +455,717 @@ def question_paper_overview_row(test_name: str, is_final: bool) -> rx.Component:
     )
 
 
-def question_paper_tab() -> rx.Component:
+def test_management_card(test: dict) -> rx.Component:
+    t_name = test["name"]
+    t_date = test["date"]
+    is_final = test["is_final"]
+    has_file = test["has_qp"]
+    is_active = FacilitatorState.selected_test_name == t_name
+
+    return rx.box(
+        rx.hstack(
+            # Left: Icon & Info
+            rx.hstack(
+                rx.box(
+                    rx.cond(
+                        is_final,
+                        rx.icon("award", size=20, color="#D97706"),
+                        rx.icon("file-text", size=20, color=COLORS["primary"]),
+                    ),
+                    background=rx.cond(
+                        is_final,
+                        "#FEF3C7",
+                        "#EDE9FE",
+                    ),
+                    padding="0.65em",
+                    border_radius="10px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    flex_shrink=0,
+                ),
+                rx.vstack(
+                    rx.text(
+                        t_name,
+                        font_family=FONT_BODY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.hstack(
+                        rx.icon("calendar", size=13, color=COLORS["slate"]),
+                        rx.vstack(
+                            rx.text("Test Date", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                            rx.text(
+                                rx.cond(t_date != "", t_date, "Not scheduled"),
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="2",
+                        align_items="start",
+                        padding_top="0.3em",
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="start",
+            ),
+            rx.spacer(),
+            # Right: Status badge & Actions
+            rx.vstack(
+                rx.hstack(
+                    rx.cond(
+                        has_file,
+                        rx.badge(
+                            rx.hstack(
+                                rx.icon("circle-check", size=12),
+                                rx.text("Question Paper Uploaded"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            color_scheme="green",
+                            variant="soft",
+                            size="1",
+                            border_radius="12px",
+                            padding="0.3em 0.7em",
+                        ),
+                        rx.badge(
+                            rx.hstack(
+                                rx.icon("clock", size=12),
+                                rx.text("Pending Question Paper"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            color_scheme="amber",
+                            variant="soft",
+                            size="1",
+                            border_radius="12px",
+                            padding="0.3em 0.7em",
+                        ),
+                    ),
+                    rx.menu.root(
+                        rx.menu.trigger(
+                            rx.icon_button(
+                                rx.icon("ellipsis-vertical", size=14),
+                                variant="ghost",
+                                color_scheme="gray",
+                                size="1",
+                                cursor="pointer",
+                            ),
+                        ),
+                        rx.menu.content(
+                            rx.cond(
+                                has_file,
+                                rx.menu.item(
+                                    "View Question Paper",
+                                    on_click=FacilitatorState.open_qp_preview(t_name, FacilitatorState.selected_assessment_name),
+                                ),
+                            ),
+                            rx.menu.item(
+                                rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
+                                on_click=FacilitatorState.start_replacing_qp(t_name),
+                            ),
+                            rx.cond(
+                                has_file,
+                                rx.menu.item(
+                                    "Remove Question Paper",
+                                    on_click=FacilitatorState.remove_test_question_paper(t_name),
+                                    color="red",
+                                ),
+                            ),
+                            rx.menu.separator(),
+                            rx.menu.item(
+                                "Delete Test",
+                                on_click=FacilitatorState.facilitator_remove_test(t_name),
+                                color="red",
+                            ),
+                        ),
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.button(
+                    "Manage",
+                    rx.icon("arrow-right", size=13),
+                    on_click=FacilitatorState.set_selected_test(t_name),
+                    size="1",
+                    variant="outline",
+                    color_scheme="gray",
+                    font_family=FONT_BODY,
+                    border_radius="6px",
+                    margin_top="0.8em",
+                    cursor="pointer",
+                ),
+                align_items="end",
+                spacing="0",
+            ),
+            width="100%",
+            align_items="start",
+        ),
+        padding="1.1em 1.3em",
+        border_radius="12px",
+        background=rx.cond(is_active, "#FAFAFE", COLORS["surface"]),
+        border=rx.cond(
+            is_active,
+            f"1.5px solid {COLORS['primary']}",
+            f"1px solid {COLORS['line']}",
+        ),
+        cursor="pointer",
+        on_click=FacilitatorState.set_selected_test(t_name),
+        _hover={
+            "border_color": rx.cond(is_active, COLORS["primary"], "#CBD5E1"),
+            "background": rx.cond(is_active, "#FAFAFE", "#FAFAFC"),
+        },
+        transition="all 0.15s ease",
+        width="100%",
+    )
+
+
+def test_management_left_column() -> rx.Component:
     assessment = FacilitatorState.my_assessments[FacilitatorState.selected_assessment_index]
-    tests = assessment["tests"]
-    final_test = assessment["final_test"]
+    test_items = assessment["test_items"]
 
     return rx.vstack(
-        # ── Header ──────────────────────────────────────────────────────
-        rx.vstack(
-            rx.text(
-                "Test-wise Question Papers",
-                font_family=FONT_BODY,
-                size="4",
-                weight="bold",
-                color=COLORS["ink"],
-            ),
-            rx.text(
-                "Upload individual question papers for each test stage in this assessment. "
-                "Select a test below to browse and upload its paper.",
-                font_family=FONT_BODY,
-                size="2",
-                color=COLORS["slate"],
-            ),
-            align_items="start",
-            spacing="1",
-            padding_bottom="1.2em",
-        ),
-
-        # ── Test Selector Pills ─────────────────────────────────────────
+        # Section Header
         rx.hstack(
-            rx.foreach(
-                tests,
-                lambda t: test_qp_status_pill(t, False),
+            rx.vstack(
+                rx.text(
+                    "Test Management",
+                    font_family=FONT_DISPLAY,
+                    size="4",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.text(
+                    "Create and manage tests for this assessment.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                rx.text(
+                    "Select a test to upload or replace its question paper.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="0",
+                align_items="start",
             ),
-            test_qp_status_pill(final_test, True),
-            spacing="2",
-            wrap="wrap",
+            rx.spacer(),
+            rx.button(
+                rx.icon("plus", size=14),
+                "Add Test",
+                on_click=FacilitatorState.open_add_test_modal,
+                size="2",
+                background=COLORS["primary"],
+                color="white",
+                font_family=FONT_BODY,
+                border_radius="8px",
+                _hover={"background": COLORS["primary_hover"]},
+                cursor="pointer",
+            ),
             width="100%",
-            padding_bottom="1.5em",
+            align_items="start",
+            padding_bottom="0.5em",
+        ),
+        # Cards List
+        rx.vstack(
+            rx.foreach(
+                test_items,
+                test_management_card,
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        spacing="3",
+        width="100%",
+        align_items="stretch",
+    )
+
+
+def question_paper_right_column() -> rx.Component:
+    return rx.vstack(
+        # ── Top Card (Selected Test Summary) ──
+        rx.hstack(
+            rx.hstack(
+                rx.box(
+                    rx.cond(
+                        FacilitatorState.is_selected_test_summative,
+                        rx.icon("award", size=22, color="#D97706"),
+                        rx.icon("file-text", size=22, color=COLORS["primary"]),
+                    ),
+                    background=rx.cond(
+                        FacilitatorState.is_selected_test_summative,
+                        "#FEF3C7",
+                        "#EDE9FE",
+                    ),
+                    padding="0.65em",
+                    border_radius="10px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                ),
+                rx.vstack(
+                    rx.text(
+                        FacilitatorState.selected_test_name,
+                        font_family=FONT_DISPLAY,
+                        size="4",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.hstack(
+                        rx.text(
+                            "Test Date: ",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        rx.text(
+                            rx.cond(
+                                FacilitatorState.current_selected_test_date != "",
+                                FacilitatorState.current_selected_test_date,
+                                "Not scheduled",
+                            ),
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="medium",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            rx.spacer(),
+            rx.hstack(
+                rx.cond(
+                    FacilitatorState.has_current_test_qp,
+                    rx.badge(
+                        rx.hstack(
+                            rx.icon("circle-check", size=13),
+                            rx.text("Question Paper Uploaded"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        color_scheme="green",
+                        variant="soft",
+                        size="2",
+                        border_radius="16px",
+                        padding="0.3em 0.8em",
+                    ),
+                    rx.badge(
+                        rx.hstack(
+                            rx.icon("clock", size=13),
+                            rx.text("Pending Question Paper"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        color_scheme="amber",
+                        variant="soft",
+                        size="2",
+                        border_radius="16px",
+                        padding="0.3em 0.8em",
+                    ),
+                ),
+                rx.menu.root(
+                    rx.menu.trigger(
+                        rx.icon_button(
+                            rx.icon("ellipsis-vertical", size=16),
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                        ),
+                    ),
+                    rx.menu.content(
+                        rx.cond(
+                            FacilitatorState.has_current_test_qp,
+                            rx.menu.item(
+                                "View File",
+                                on_click=FacilitatorState.open_qp_preview(FacilitatorState.selected_test_name, FacilitatorState.selected_assessment_name),
+                            ),
+                        ),
+                        rx.menu.item(
+                            rx.cond(FacilitatorState.has_current_test_qp, "Replace File", "Upload File"),
+                            on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
+                        ),
+                        rx.cond(
+                            FacilitatorState.has_current_test_qp,
+                            rx.menu.item(
+                                "Remove Question Paper",
+                                on_click=FacilitatorState.remove_current_test_question_paper,
+                                color="red",
+                            ),
+                        ),
+                        rx.menu.separator(),
+                        rx.menu.item(
+                            "Delete Test",
+                            on_click=FacilitatorState.facilitator_remove_test(FacilitatorState.selected_test_name),
+                            color="red",
+                        ),
+                    ),
+                ),
+                spacing="2",
+                align_items="center",
+            ),
+            width="100%",
+            align_items="center",
+            background=COLORS["surface"],
+            border=f"1px solid {COLORS['line']}",
+            border_radius="12px",
+            padding="1.1em 1.4em",
         ),
 
-        # ── Active Test Upload Section ──────────────────────────────────
+        # ── Question Paper Section ──
         rx.vstack(
             rx.hstack(
+                rx.icon("file-text", size=16, color=COLORS["ink"]),
                 rx.text(
-                    "Active Test: ", FacilitatorState.selected_test_name,
+                    "Question Paper",
                     font_family=FONT_BODY,
                     size="3",
                     weight="bold",
                     color=COLORS["ink"],
                 ),
-                rx.spacer(),
-                rx.cond(
-                    FacilitatorState.has_current_test_qp & ~FacilitatorState.is_replacing_qp,
-                    rx.badge("File Attached", color_scheme="green", variant="soft", size="1"),
-                    rx.badge("Upload / Replace Ready", color_scheme="orange", variant="soft", size="1"),
-                ),
-                width="100%",
+                spacing="2",
                 align_items="center",
-                padding_bottom="0.5em",
+                padding_top="0.6em",
             ),
+            # Content Card
             rx.cond(
                 FacilitatorState.has_current_test_qp & ~FacilitatorState.is_replacing_qp,
-                active_test_uploaded_card(),
-                active_test_dropzone_card(),
-            ),
-            spacing="1",
-            width="100%",
-            padding_bottom="2em",
-        ),
-
-        # ── All Tests Summary Table ─────────────────────────────────────
-        rx.box(
-            rx.vstack(
-                rx.hstack(
-                    rx.icon("layers", size=16, color=COLORS["primary"]),
-                    rx.text("All Tests Question Paper Status", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
-                    spacing="2",
-                    align_items="center",
-                    padding="1em 1.2em",
-                    border_bottom=f"1px solid {COLORS['line']}",
+                # Uploaded Card View
+                rx.box(
+                    rx.vstack(
+                        rx.box(
+                            rx.icon("cloud-upload", size=30, color="#7C3AED"),
+                            background="#F5F3FF",
+                            padding="0.9em",
+                            border_radius="50%",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.text(
+                            "Question Paper Uploaded",
+                            font_family=FONT_BODY,
+                            size="3",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.hstack(
+                            rx.text(
+                                FacilitatorState.current_test_filename,
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                                weight="medium",
+                            ),
+                            rx.text(
+                                "(2.4 MB)",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["placeholder"],
+                            ),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        rx.hstack(
+                            rx.button(
+                                rx.icon("eye", size=14),
+                                "View File",
+                                variant="outline",
+                                color_scheme="gray",
+                                font_family=FONT_BODY,
+                                size="2",
+                                border_radius="8px",
+                                on_click=FacilitatorState.open_qp_preview(FacilitatorState.selected_test_name, FacilitatorState.selected_assessment_name),
+                                cursor="pointer",
+                            ),
+                            rx.button(
+                                rx.icon("refresh-cw", size=14),
+                                "Replace File",
+                                background=COLORS["primary"],
+                                color="white",
+                                font_family=FONT_BODY,
+                                size="2",
+                                border_radius="8px",
+                                on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
+                                _hover={"background": COLORS["primary_hover"]},
+                                cursor="pointer",
+                            ),
+                            spacing="3",
+                            align_items="center",
+                            padding_top="0.5em",
+                        ),
+                        rx.text(
+                            "Supported formats: .xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["placeholder"],
+                            padding_top="0.8em",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                        width="100%",
+                        padding="3.5em 2em",
+                    ),
+                    border=f"1.5px dashed {COLORS['line']}",
+                    border_radius="14px",
+                    background="#FAFAFC",
                     width="100%",
                 ),
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("Test Name & Stage"),
-                            rx.table.column_header_cell("Question Paper File"),
-                            rx.table.column_header_cell("Status"),
-                            rx.table.column_header_cell("Action"),
+                # Dropzone View (when pending or replacing)
+                rx.box(
+                    rx.vstack(
+                        rx.cond(
+                            FacilitatorState.is_replacing_qp,
+                            rx.hstack(
+                                rx.text(
+                                    "Replacing file for ", FacilitatorState.selected_test_name,
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    color="#92400E",
+                                ),
+                                rx.spacer(),
+                                rx.button(
+                                    "Cancel",
+                                    size="1",
+                                    variant="ghost",
+                                    on_click=FacilitatorState.cancel_replacing_qp,
+                                ),
+                                width="100%",
+                                background="#FFFBEB",
+                                padding="0.4em 0.8em",
+                                border_radius="6px",
+                            ),
                         ),
-                    ),
-                    rx.table.body(
-                        rx.foreach(
-                            tests,
-                            lambda t: question_paper_overview_row(t, False),
+                        rx.upload(
+                            rx.vstack(
+                                rx.box(
+                                    rx.icon("cloud-upload", size=30, color=COLORS["primary"]),
+                                    background="#F5F3FF",
+                                    padding="0.9em",
+                                    border_radius="50%",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.text(
+                                    "Upload Question Paper for ", FacilitatorState.selected_test_name,
+                                    font_family=FONT_BODY,
+                                    size="3",
+                                    weight="bold",
+                                    color=COLORS["ink"],
+                                ),
+                                rx.text(
+                                    "Drag & drop file here or click Browse File",
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    color=COLORS["slate"],
+                                ),
+                                rx.button(
+                                    rx.icon("folder-open", size=14),
+                                    "Browse File",
+                                    variant="outline",
+                                    color_scheme="indigo",
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    border_radius="8px",
+                                    cursor="pointer",
+                                ),
+                                rx.text(
+                                    "Supported formats: .xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color=COLORS["placeholder"],
+                                    padding_top="0.5em",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                                width="100%",
+                            ),
+                            id="test_qp_file_upload",
+                            padding="3.5em 2em",
+                            width="100%",
                         ),
-                        question_paper_overview_row(final_test, True),
+                        rx.cond(
+                            rx.selected_files("test_qp_file_upload"),
+                            rx.hstack(
+                                rx.foreach(
+                                    rx.selected_files("test_qp_file_upload"),
+                                    lambda f: rx.badge(f, color_scheme="indigo", size="2"),
+                                ),
+                                rx.spacer(),
+                                rx.button(
+                                    rx.icon("upload", size=14),
+                                    "Confirm Upload",
+                                    on_click=FacilitatorState.handle_upload_for_test(rx.upload_files(upload_id="test_qp_file_upload")),
+                                    background="#027A48",
+                                    color="white",
+                                    size="2",
+                                    border_radius="8px",
+                                    _hover={"background": "#05603A"},
+                                ),
+                                spacing="2",
+                                width="100%",
+                                padding="0.8em 1.2em",
+                                background="#ECFDF3",
+                                border_radius="8px",
+                                align_items="center",
+                            ),
+                        ),
+                        spacing="2",
+                        width="100%",
                     ),
+                    border=f"1.5px dashed {COLORS['line']}",
+                    border_radius="14px",
+                    background="#FAFAFC",
                     width="100%",
                 ),
-                spacing="0",
-                width="100%",
             ),
-            background=COLORS["surface"],
-            border=f"1px solid {COLORS['line']}",
-            border_radius="12px",
-            overflow="hidden",
+            # Status Banner
+            rx.cond(
+                FacilitatorState.has_current_test_qp,
+                rx.box(
+                    rx.hstack(
+                        rx.icon("circle-check", size=20, color="#027A48"),
+                        rx.vstack(
+                            rx.text(
+                                "Question paper is ready for evaluation.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color="#027A48",
+                            ),
+                            rx.text(
+                                "You can replace the file if needed.",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color="#027A48",
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    background="#ECFDF3",
+                    border="1px solid #A6F4C5",
+                    border_radius="10px",
+                    padding="0.9em 1.2em",
+                    width="100%",
+                ),
+                rx.box(
+                    rx.hstack(
+                        rx.icon("clock", size=20, color="#B45309"),
+                        rx.vstack(
+                            rx.text(
+                                "Question paper pending upload.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color="#92400E",
+                            ),
+                            rx.text(
+                                "Upload a question paper above so candidates can take this test.",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color="#92400E",
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    background="#FFFBEB",
+                    border="1px solid #FDE68A",
+                    border_radius="10px",
+                    padding="0.9em 1.2em",
+                    width="100%",
+                ),
+            ),
+            spacing="3",
             width="100%",
+            align_items="stretch",
         ),
-
-        spacing="0",
+        spacing="4",
         width="100%",
         align_items="stretch",
+    )
+
+
+def question_paper_tab() -> rx.Component:
+    assessment = FacilitatorState.my_assessments[FacilitatorState.selected_assessment_index]
+    test_items = assessment["test_items"]
+
+    # When no tests configured
+    empty_state = rx.center(
+        rx.vstack(
+            rx.box(
+                rx.icon("layers", size=36, color=COLORS["primary"]),
+                background=COLORS["primary_soft"],
+                padding="1.2em",
+                border_radius="50%",
+            ),
+            rx.text("No tests yet", font_family=FONT_DISPLAY, size="4", weight="bold", color=COLORS["ink"]),
+            rx.text("Get started by adding tests to this assessment.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+            rx.button(
+                rx.icon("plus", size=14),
+                "Add Test",
+                on_click=FacilitatorState.open_add_test_modal,
+                size="2",
+                background=COLORS["primary"],
+                color="white",
+                font_family=FONT_BODY,
+                border_radius="8px",
+                _hover={"background": COLORS["primary_hover"]},
+                margin_top="0.5em",
+                cursor="pointer",
+            ),
+            align_items="center",
+            spacing="2",
+            padding="4em 2em",
+        ),
+        width="100%",
+        background=COLORS["surface"],
+        border=f"1.5px dashed {COLORS['line']}",
+        border_radius="16px",
+    )
+
+    two_column_view = rx.grid(
+        # Left column: Test Management & Cards
+        test_management_left_column(),
+        # Right column: Question Paper Details for active test
+        rx.cond(
+            FacilitatorState.selected_test_name != "",
+            question_paper_right_column(),
+            rx.center(
+                rx.text("Select a test on the left to view its Question Paper details.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                padding="4em 2em",
+                width="100%",
+            ),
+        ),
+        columns="5fr 6fr",
+        gap="1.8em",
+        width="100%",
+        align_items="start",
+    )
+
+    return rx.cond(
+        test_items.length() > 0,
+        two_column_view,
+        empty_state,
     )
 
 
@@ -771,7 +1369,11 @@ def evaluation_files_card() -> rx.Component:
                     align_items="start",
                 ),
                 rx.spacer(),
-                rx.badge("Submitted", color_scheme="green", variant="soft", size="1"),
+                rx.cond(
+                    FacilitatorState.has_submitted_response,
+                    rx.badge("Submitted", color_scheme="green", variant="soft", size="1"),
+                    rx.badge("Not Submitted", color_scheme="gray", variant="soft", size="1"),
+                ),
                 rx.button(
                     rx.icon("eye", size=13),
                     "View Response",
@@ -789,6 +1391,7 @@ def evaluation_files_card() -> rx.Component:
                     variant="outline",
                     color_scheme="gray",
                     font_family=FONT_BODY,
+                    disabled=~FacilitatorState.has_submitted_response,
                 ),
                 spacing="2",
                 align_items="center",
@@ -963,7 +1566,11 @@ def evaluation_ai_results_card() -> rx.Component:
             # Header Row
             rx.hstack(
                 rx.text(
-                    "AI Evaluation Results (Mock)",
+                    rx.cond(
+                        FacilitatorState.real_ai_score_display != "—",
+                        "AI Evaluation Results",
+                        "AI Evaluation Results (Mock)",
+                    ),
                     font_family=FONT_BODY,
                     size="3",
                     weight="bold",
@@ -984,22 +1591,34 @@ def evaluation_ai_results_card() -> rx.Component:
                 padding_bottom="0.4em",
             ),
 
-            # Green Success Alert Banner
+            # Status Alert Banner
             rx.box(
                 rx.hstack(
-                    rx.icon("circle-check", size=15, color="#027A48"),
+                    rx.cond(
+                        FacilitatorState.has_ai_evaluated_current_candidate,
+                        rx.icon("circle-check", size=15, color="#027A48"),
+                        rx.icon("clock", size=15, color=COLORS["slate"]),
+                    ),
                     rx.text(
-                        "AI evaluation completed successfully (Mock Data)",
+                        rx.cond(
+                            FacilitatorState.has_ai_evaluated_current_candidate,
+                            "AI evaluation completed successfully",
+                            rx.cond(
+                                FacilitatorState.has_submitted_response,
+                                "Candidate response submitted — Ready for AI Evaluation",
+                                "No response submitted yet",
+                            ),
+                        ),
                         font_family=FONT_BODY,
                         size="1",
-                        color="#027A48",
+                        color=rx.cond(FacilitatorState.has_ai_evaluated_current_candidate, "#027A48", COLORS["slate"]),
                         weight="medium",
                     ),
                     spacing="2",
                     align_items="center",
                 ),
-                background="#ECFDF3",
-                border="1px solid #A6F4C5",
+                background=rx.cond(FacilitatorState.has_ai_evaluated_current_candidate, "#ECFDF3", COLORS["canvas"]),
+                border=rx.cond(FacilitatorState.has_ai_evaluated_current_candidate, "1px solid #A6F4C5", f"1px solid {COLORS['line']}"),
                 border_radius="8px",
                 padding="0.6em 0.9em",
                 width="100%",
@@ -1050,7 +1669,7 @@ def evaluation_ai_results_card() -> rx.Component:
                     rx.vstack(
                         rx.text("Evaluation Date", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                         rx.text(
-                            "29 Aug 2026, 11:30 AM",
+                            FacilitatorState.current_candidate_ai_eval_date,
                             font_family=FONT_BODY,
                             size="2",
                             weight="medium",
@@ -1071,64 +1690,93 @@ def evaluation_ai_results_card() -> rx.Component:
             ),
 
             # Question-wise Breakdown Table
-            rx.box(
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell(
-                                rx.text("Question No.", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                width="90px",
-                            ),
-                            rx.table.column_header_cell(
-                                rx.text("AI Score", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                width="75px",
-                            ),
-                            rx.table.column_header_cell(
-                                rx.text("Max Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                width="85px",
-                            ),
-                            rx.table.column_header_cell(
-                                rx.text("AI Justification (Mock)", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+            rx.cond(
+                FacilitatorState.has_ai_evaluated_current_candidate,
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell(
+                                    rx.text("Question No.", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                    width="90px",
+                                ),
+                                rx.table.column_header_cell(
+                                    rx.text("AI Score", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                    width="75px",
+                                ),
+                                rx.table.column_header_cell(
+                                    rx.text("Max Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                    width="85px",
+                                ),
+                                rx.table.column_header_cell(
+                                    rx.text("AI Justification", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                ),
                             ),
                         ),
+                        rx.table.body(
+                            rx.foreach(
+                                FacilitatorState.current_candidate_ai_eval_questions,
+                                lambda q: rx.table.row(
+                                    rx.table.cell(
+                                        rx.text(q["q_no"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
+                                        vertical_align="top",
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(q["ai_score"], font_family=FONT_BODY, size="1", color=COLORS["ink"]),
+                                        vertical_align="top",
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(q["max_marks"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                        vertical_align="top",
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(q["justification"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                        vertical_align="top",
+                                    ),
+                                ),
+                            ),
+                            # Total Summary Row
+                            rx.table.row(
+                                rx.table.cell(rx.text("Total", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_total_score_only, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_max_val, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                rx.table.cell(rx.text("", font_family=FONT_BODY, size="1")),
+                                background="#F9FAFB",
+                            ),
+                        ),
+                        width="100%",
                     ),
-                    rx.table.body(
-                        rx.foreach(
-                            FacilitatorState.current_candidate_ai_eval_questions,
-                            lambda q: rx.table.row(
-                                rx.table.cell(
-                                    rx.text(q["q_no"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
-                                    vertical_align="top",
-                                ),
-                                rx.table.cell(
-                                    rx.text(q["ai_score"], font_family=FONT_BODY, size="1", color=COLORS["ink"]),
-                                    vertical_align="top",
-                                ),
-                                rx.table.cell(
-                                    rx.text(q["max_marks"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                                    vertical_align="top",
-                                ),
-                                rx.table.cell(
-                                    rx.text(q["justification"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                                    vertical_align="top",
-                                ),
-                            ),
-                        ),
-                        # Total Summary Row
-                        rx.table.row(
-                            rx.table.cell(rx.text("Total", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                            rx.table.cell(rx.text("38", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                            rx.table.cell(rx.text("50", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                            rx.table.cell(rx.text("", font_family=FONT_BODY, size="1")),
-                            background="#F9FAFB",
-                        ),
-                    ),
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="8px",
+                    overflow="hidden",
                     width="100%",
                 ),
-                border=f"1px solid {COLORS['line']}",
-                border_radius="8px",
-                overflow="hidden",
-                width="100%",
+                rx.box(
+                    rx.vstack(
+                        rx.icon("sparkles", size=24, color=COLORS["slate"]),
+                        rx.text("No AI evaluation results yet", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                        rx.text(
+                            rx.cond(
+                                FacilitatorState.has_submitted_response,
+                                "Click 'Start AI Evaluation' above to run real AI evaluation for this candidate.",
+                                "Candidate has not submitted a response for evaluation.",
+                            ),
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                            text_align="center",
+                        ),
+                        spacing="1",
+                        align_items="center",
+                        justify_content="center",
+                        padding="2.5em 1em",
+                        width="100%",
+                    ),
+                    border=f"1px dashed {COLORS['line']}",
+                    border_radius="8px",
+                    width="100%",
+                    background=COLORS["canvas"],
+                ),
             ),
 
             spacing="0",
@@ -1188,53 +1836,84 @@ def candidate_response_modal() -> rx.Component:
                     border_bottom=f"1px solid {COLORS['line']}",
                 ),
 
-                # Excel-like Table View
-                rx.box(
-                    rx.table.root(
-                        rx.table.header(
-                            rx.table.row(
-                                rx.table.column_header_cell(
-                                    rx.text("Question No.", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
-                                    width="110px",
-                                    min_width="110px",
-                                ),
-                                rx.table.column_header_cell(
-                                    rx.text("Question", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
-                                    width="280px",
-                                    min_width="240px",
-                                ),
-                                rx.table.column_header_cell(
-                                    rx.text("Candidate Response", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
-                                ),
-                            ),
-                        ),
-                        rx.table.body(
-                            rx.foreach(
-                                FacilitatorState.current_candidate_responses,
-                                lambda item: rx.table.row(
-                                    rx.table.cell(
-                                        rx.text(item["q_no"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                                        vertical_align="top",
+                # Content: Table if submitted, else Empty State
+                rx.cond(
+                    FacilitatorState.has_submitted_response,
+                    rx.box(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(
+                                        rx.text("Question No.", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
+                                        width="110px",
+                                        min_width="110px",
                                     ),
-                                    rx.table.cell(
-                                        rx.text(item["question"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
-                                        vertical_align="top",
+                                    rx.table.column_header_cell(
+                                        rx.text("Question", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
+                                        width="280px",
+                                        min_width="240px",
                                     ),
-                                    rx.table.cell(
-                                        rx.text(item["response"], font_family=FONT_BODY, size="2", color=COLORS["slate"], line_height="1.5"),
-                                        vertical_align="top",
+                                    rx.table.column_header_cell(
+                                        rx.text("Candidate Response", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["slate"]),
                                     ),
                                 ),
                             ),
+                            rx.table.body(
+                                rx.foreach(
+                                    FacilitatorState.current_candidate_responses,
+                                    lambda item: rx.table.row(
+                                        rx.table.cell(
+                                            rx.text(item["q_no"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                            vertical_align="top",
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(item["question"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+                                            vertical_align="top",
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(item["response"], font_family=FONT_BODY, size="2", color=COLORS["slate"], line_height="1.5"),
+                                            vertical_align="top",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            width="100%",
                         ),
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        overflow="auto",
+                        max_height="420px",
                         width="100%",
+                        margin_y="1em",
                     ),
-                    border=f"1px solid {COLORS['line']}",
-                    border_radius="8px",
-                    overflow="auto",
-                    max_height="420px",
-                    width="100%",
-                    margin_y="1em",
+                    rx.box(
+                        rx.vstack(
+                            rx.icon("file-x", size=36, color=COLORS["slate"]),
+                            rx.text(
+                                "No Response Available",
+                                font_family=FONT_BODY,
+                                size="3",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "This candidate has not submitted any response for this test.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="2",
+                            align_items="center",
+                            justify_content="center",
+                            padding="3.5em 1.5em",
+                            width="100%",
+                        ),
+                        border=f"1px dashed {COLORS['line']}",
+                        border_radius="10px",
+                        margin_y="1em",
+                        width="100%",
+                        background=COLORS["canvas"],
+                    ),
                 ),
 
                 # Footer Action Buttons
@@ -1242,21 +1921,25 @@ def candidate_response_modal() -> rx.Component:
                     rx.spacer(),
                     rx.dialog.close(
                         rx.button(
-                            "Cancel",
+                            "Close",
                             variant="outline",
                             color_scheme="gray",
                             font_family=FONT_BODY,
                             size="2",
                         ),
                     ),
-                    rx.button(
-                        rx.icon("download", size=14),
-                        "Download Excel",
-                        on_click=FacilitatorState.download_candidate_response,
-                        variant="outline",
-                        color_scheme="indigo",
-                        font_family=FONT_BODY,
-                        size="2",
+                    rx.cond(
+                        FacilitatorState.has_submitted_response,
+                        rx.button(
+                            rx.icon("download", size=14),
+                            "Download Excel",
+                            on_click=FacilitatorState.download_candidate_response,
+                            variant="outline",
+                            color_scheme="indigo",
+                            font_family=FONT_BODY,
+                            size="2",
+                        ),
+                        rx.fragment(),
                     ),
                     spacing="3",
                     align_items="center",
@@ -1467,28 +2150,66 @@ def answer_key_upload_modal() -> rx.Component:
                     size="2",
                     color=COLORS["slate"],
                 ),
-                rx.box(
+                rx.upload(
                     rx.vstack(
                         rx.icon("file-spreadsheet", size=32, color="#B54708"),
-                        rx.text("Upload model answer key (.xlsx, .pdf, .docx)", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                        rx.text("Click to select answer key (.xlsx, .xls)", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
                         rx.button(
-                            "Select File (Mock Upload)",
-                            on_click=FacilitatorState.simulate_upload_answer_key,
+                            "Browse File",
                             size="2",
                             background="#B54708",
                             color="white",
                             font_family=FONT_BODY,
+                            type="button",
                         ),
                         spacing="2",
                         align_items="center",
                         padding="2em",
                         width="100%",
                     ),
+                    id="answer_key_upload_zone",
+                    accept={
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+                        "application/vnd.ms-excel": [".xls"],
+                    },
+                    max_files=1,
                     border=f"2px dashed {COLORS['line']}",
                     border_radius="10px",
                     background=COLORS["canvas"],
                     width="100%",
                     margin_y="1em",
+                    cursor="pointer",
+                ),
+                rx.cond(
+                    rx.selected_files("answer_key_upload_zone").length() > 0,
+                    rx.hstack(
+                        rx.icon("file-check-2", size=16, color="#027A48"),
+                        rx.text(
+                            rx.selected_files("answer_key_upload_zone")[0],
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.spacer(),
+                        rx.button(
+                            rx.icon("upload", size=14),
+                            "Upload",
+                            on_click=FacilitatorState.handle_answer_key_upload(rx.upload_files(upload_id="answer_key_upload_zone")),
+                            size="2",
+                            background="#027A48",
+                            color="white",
+                            font_family=FONT_BODY,
+                        ),
+                        spacing="2",
+                        align_items="center",
+                        background="#ECFDF3",
+                        border="1px solid #A6F4C5",
+                        border_radius="8px",
+                        padding="0.6em 1em",
+                        width="100%",
+                        margin_bottom="0.5em",
+                    ),
                 ),
                 rx.hstack(
                     rx.spacer(),
@@ -1595,7 +2316,7 @@ def ai_evaluation_trigger_modal() -> rx.Component:
                     ),
                     rx.button(
                         rx.icon("sparkles", size=14),
-                        "Run AI Evaluation (Mock)",
+                        "Run AI Evaluation",
                         on_click=FacilitatorState.trigger_evaluation_tab_ai_eval,
                         background="#027A48",
                         color="white",
@@ -2753,6 +3474,321 @@ def qp_preview_dialog() -> rx.Component:
     )
 
 
+def add_new_test_dialog() -> rx.Component:
+    is_formative = FacilitatorState.new_test_type == "Formative"
+    is_summative = FacilitatorState.new_test_type == "Summative"
+
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # ── Header ──────────────────────────────────────────────
+                rx.hstack(
+                    rx.vstack(
+                        rx.text(
+                            "Add New Test",
+                            font_family=FONT_DISPLAY,
+                            size="5",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Create a new test for the assessment \"",
+                            FacilitatorState.selected_assessment_name,
+                            "\".",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=18),
+                            size="2",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_add_test_modal,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="start",
+                    padding_bottom="0.5em",
+                ),
+
+                # ── Test Type Selection ─────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Type", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        # Formative Option Card
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.cond(
+                                        is_formative,
+                                        rx.box(
+                                            rx.box(width="8px", height="8px", border_radius="50%", background=COLORS["primary"]),
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['primary']}",
+                                            display="flex",
+                                            align_items="center",
+                                            justify_content="center",
+                                        ),
+                                        rx.box(
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['line']}",
+                                        ),
+                                    ),
+                                    flex_shrink=0,
+                                ),
+                                rx.box(
+                                    rx.icon("file-text", size=18, color=COLORS["primary"]),
+                                    background="#EDE9FE",
+                                    padding="0.45em",
+                                    border_radius="8px",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                    flex_shrink=0,
+                                ),
+                                rx.vstack(
+                                    rx.text("Formative", font_family=FONT_BODY, size="2", weight="bold", color=rx.cond(is_formative, COLORS["primary"], COLORS["ink"])),
+                                    rx.text("Ongoing assessment during the learning process.", font_family=FONT_BODY, size="1", color=COLORS["slate"], line_height="1.2"),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            padding="0.85em 1em",
+                            border_radius="12px",
+                            border=rx.cond(is_formative, f"2px solid {COLORS['primary']}", f"1px solid {COLORS['line']}"),
+                            background=rx.cond(is_formative, "#FAF5FF", "#FFFFFF"),
+                            cursor="pointer",
+                            flex="1",
+                            on_click=FacilitatorState.set_new_test_type("Formative"),
+                            transition="all 0.15s ease",
+                        ),
+
+                        # Summative Option Card
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.cond(
+                                        is_summative,
+                                        rx.box(
+                                            rx.box(width="8px", height="8px", border_radius="50%", background=COLORS["primary"]),
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['primary']}",
+                                            display="flex",
+                                            align_items="center",
+                                            justify_content="center",
+                                        ),
+                                        rx.box(
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['line']}",
+                                        ),
+                                    ),
+                                    flex_shrink=0,
+                                ),
+                                rx.box(
+                                    rx.icon("award", size=18, color="#D97706"),
+                                    background="#FEF3C7",
+                                    padding="0.45em",
+                                    border_radius="8px",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                    flex_shrink=0,
+                                ),
+                                rx.vstack(
+                                    rx.text("Summative", font_family=FONT_BODY, size="2", weight="bold", color=rx.cond(is_summative, COLORS["primary"], COLORS["ink"])),
+                                    rx.text("Final assessment to measure overall learning.", font_family=FONT_BODY, size="1", color=COLORS["slate"], line_height="1.2"),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            padding="0.85em 1em",
+                            border_radius="12px",
+                            border=rx.cond(is_summative, f"2px solid {COLORS['primary']}", f"1px solid {COLORS['line']}"),
+                            background=rx.cond(is_summative, "#FAF5FF", "#FFFFFF"),
+                            cursor="pointer",
+                            flex="1",
+                            on_click=FacilitatorState.set_new_test_type("Summative"),
+                            transition="all 0.15s ease",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Test Name ───────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Name", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.input(
+                        value=FacilitatorState.new_test_name,
+                        on_change=FacilitatorState.set_new_test_name,
+                        placeholder="e.g. Formative 4",
+                        width="100%",
+                        border_radius="8px",
+                        border=f"1px solid {COLORS['line']}",
+                        font_family=FONT_BODY,
+                        size="2",
+                    ),
+                    rx.text(
+                        "You can edit the test name if needed.",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Test Date ───────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Date", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.input(
+                        rx.input.slot(
+                            rx.icon("calendar", size=16, color=COLORS["slate"]),
+                        ),
+                        type="date",
+                        value=FacilitatorState.new_test_date,
+                        on_change=FacilitatorState.set_new_test_date,
+                        width="100%",
+                        size="2",
+                        font_family=FONT_BODY,
+                    ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Description (Optional) ──────────────────────────────
+                rx.vstack(
+                    rx.text("Description (Optional)", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                    rx.text_area(
+                        value=FacilitatorState.new_test_description,
+                        on_change=FacilitatorState.set_new_test_description,
+                        placeholder="Enter a brief description about this test...",
+                        max_length=200,
+                        rows="3",
+                        width="100%",
+                        resize="none",
+                        border_radius="8px",
+                        border=f"1px solid {COLORS['line']}",
+                        font_family=FONT_BODY,
+                        size="2",
+                    ),
+                    rx.hstack(
+                        rx.spacer(),
+                        rx.text(
+                            FacilitatorState.new_test_desc_counter,
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        width="100%",
+                    ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Info Callout ────────────────────────────────────────
+                rx.box(
+                    rx.hstack(
+                        rx.icon("info", size=18, color=COLORS["primary"], flex_shrink=0),
+                        rx.text(
+                            "After creating the test, you can upload the Question Paper and Answer Key from the test management page.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["primary"],
+                            weight="medium",
+                            line_height="1.4",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    background="#F5F3FF",
+                    border="1px solid #E9D5FF",
+                    border_radius="10px",
+                    padding="0.8em 1em",
+                    width="100%",
+                ),
+
+                # ── Actions ─────────────────────────────────────────────
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color_scheme="gray",
+                        on_click=FacilitatorState.close_add_test_modal,
+                        font_family=FONT_BODY,
+                        size="2",
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        cursor="pointer",
+                    ),
+                    rx.button(
+                        "Create Test",
+                        on_click=FacilitatorState.create_new_test,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        border_radius="8px",
+                        _hover={"background": COLORS["primary_hover"]},
+                        cursor="pointer",
+                    ),
+                    spacing="3",
+                    width="100%",
+                    align_items="center",
+                    padding_top="0.5em",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "540px", "width": "92vw", "padding": "1.8em", "borderRadius": "16px"},
+        ),
+        open=FacilitatorState.show_add_test_modal,
+        on_open_change=FacilitatorState.set_show_add_test_modal,
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Workspace page
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2769,6 +3805,7 @@ def assessment_workspace_page() -> rx.Component:
             question_paper_tab(),
         ),
         qp_preview_dialog(),
+        add_new_test_dialog(),
         spacing="0",
         width="100%",
         align_items="stretch",

@@ -11,6 +11,7 @@ import reflex as rx
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
     SHARED_CANDIDATES, SHARED_FACILITATORS,
+    get_facilitator_profile, get_candidate_profile,
 )
 
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -30,6 +31,55 @@ class AdminState(rx.State):
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
     active_assessments: int = 3
     pending_evaluations: int = 12
+
+    # =========================================================
+    # VIEW FACILITATOR PROFILE (dialog)
+    # =========================================================
+    show_view_facilitator_profile: bool = False
+    viewing_facilitator_profile: dict = {}
+
+    def open_view_facilitator_profile(self, index: int):
+        if 0 <= index < len(self.facilitators):
+            f = self.facilitators[index]
+            fid = f["emp_id"]
+            prof = get_facilitator_profile(
+                fid,
+                default_name=f.get("name", ""),
+                default_email=f.get("email", ""),
+                default_phone=f.get("phone", ""),
+            )
+            self.viewing_facilitator_profile = prof
+            self.show_view_facilitator_profile = True
+
+    def close_view_facilitator_profile(self):
+        self.show_view_facilitator_profile = False
+
+    def set_show_view_facilitator_profile(self, value: bool):
+        self.show_view_facilitator_profile = value
+
+    # =========================================================
+    # VIEW CANDIDATE PROFILE (dialog)
+    # =========================================================
+    show_view_candidate_profile: bool = False
+    viewing_candidate_profile: dict = {}
+
+    def open_view_candidate_profile(self, index: int):
+        if 0 <= index < len(self.candidates):
+            c = self.candidates[index]
+            cid = c["emp_id"]
+            prof = get_candidate_profile(
+                cid,
+                default_name=c.get("name", ""),
+                default_email=c.get("email", ""),
+            )
+            self.viewing_candidate_profile = prof
+            self.show_view_candidate_profile = True
+
+    def close_view_candidate_profile(self):
+        self.show_view_candidate_profile = False
+
+    def set_show_view_candidate_profile(self, value: bool):
+        self.show_view_candidate_profile = value
 
     # ---- Computed stats ----
     @rx.var
@@ -385,23 +435,16 @@ class AdminState(rx.State):
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
             "status": "Scheduled",
-            "tests": ["Formative 1", "Formative 2", "Formative 3"],
-            "final_test": "Summative Test",
+            # Tests start empty — Facilitators add them via their workspace
+            "tests": [],
+            "final_test": "",
             "approval_status": "approved",
             "facilitator_approvals": {
                 "F001": "approved",
                 "F002": "approved",
             },
-            "question_papers": {
-                "Formative 1": "Quality_Technical_Stage1.xlsx",
-            },
-            # Per-test dates (key = test name)
-            "test_dates": {
-                "Formative 1": "25 Aug 2026",
-                "Formative 2": "27 Aug 2026",
-                "Formative 3": "29 Aug 2026",
-                "Summative Test": "31 Aug 2026",
-            },
+            "question_papers": {},
+            "test_dates": {},
         }
     ]
 
@@ -564,9 +607,9 @@ class AdminState(rx.State):
             "assigned_candidates": list(self.new_assessment_candidate_ids),
             "status": self.new_assessment_status,
             "tests": [],
-            "final_test": "Summative Test",
+            "final_test": "",
             "approval_status": "pending",
-            "test_dates": {"Summative Test": self.new_assessment_date or ""},
+            "test_dates": {},
         })
         self.set_show_add_assessment(False)
 
@@ -707,8 +750,8 @@ class AdminState(rx.State):
         fac_names = [f["name"] for f in selected_facilitators]
 
         existing_a = self.assessments[self.edit_assessment_index]
-        existing_tests = existing_a.get("tests", ["Formative 1"])
-        existing_final_test = existing_a.get("final_test", "Summative Test")
+        existing_tests = existing_a.get("tests", [])
+        existing_final_test = existing_a.get("final_test", "")
         existing_test_dates = existing_a.get("test_dates", {})
         existing_qps = existing_a.get("question_papers", {})
 
@@ -951,7 +994,7 @@ class AdminState(rx.State):
                     result.append({
                         "name": a.get("facilitator_name", "Facilitator"),
                         "emp_id": fid,
-                        "email": f"{fid.lower()}@genaievaluator.com",
+                        "email": f"{fid.lower()}@tvsmotor.com",
                         "phone": "",
                         "password": "",
                     })
@@ -1149,4 +1192,4 @@ class AdminReportsState(rx.State):
         return r.get("test_scores", [])
 
     def mock_export_report(self):
-        return rx.toast.info("Report exported as PDF (Mock)!")
+        return rx.toast.info("Report exported as PDF (Mock)!")

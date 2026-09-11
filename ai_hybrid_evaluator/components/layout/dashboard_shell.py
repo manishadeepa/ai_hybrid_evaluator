@@ -3,6 +3,7 @@
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.sidebar import sidebar
 from ai_hybrid_evaluator.components.layout.topbar import unified_topbar
+from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.theme import COLORS
 
 
@@ -10,9 +11,9 @@ def admin_shell(active: str, title: str, subtitle: str, content: rx.Component) -
     return rx.vstack(
         # Full-width Top Header
         unified_topbar(
-            user_name="Admin",
+            user_name=AuthState.admin_name,
             role_name="Administrator",
-            avatar_initial="A",
+            avatar_initial=AuthState.admin_avatar_initial,
         ),
         # Body: Sidebar + Main Content Area
         rx.hstack(
