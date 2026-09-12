@@ -22,7 +22,7 @@ except ImportError:
     _evaluate_candidate = None
 
 # Valid workspace tab keys
-WORKSPACE_TABS = ["question_paper", "evaluation", "weightage", "results"]
+WORKSPACE_TABS = ["tests", "question_paper", "evaluation", "weightage", "results", "reports", "report_detail"]
 
 
 from ai_hybrid_evaluator.services.candidate_response_service import (
@@ -80,13 +80,14 @@ class FacilitatorState(rx.State):
 
 
     # ── Workspace tab navigation (state-based, no route change) ───────
-    # One of: "question_paper" | "evaluation" | "results"
-    active_workspace_tab: str = "question_paper"
+    # One of: "tests" | "evaluation" | "weightage" | "results" | "reports"
+    active_workspace_tab: str = "tests"
 
     def set_workspace_tab(self, tab: str):
         """Switch the active tab inside the Assessment Workspace."""
         if tab in WORKSPACE_TABS:
             self.active_workspace_tab = tab
+        return rx.redirect("/facilitator/assessment")
 
     # ── Question Paper uploads (Test-wise) ─────────────────────────────
     # Structure: { assessment_name: { test_name: filename } }
@@ -95,6 +96,277 @@ class FacilitatorState(rx.State):
     # Selected test for the workspace (e.g. "Formative 1", "Summative Test")
     selected_test_name: str = ""
     is_replacing_qp: bool = False
+
+    # ── Reports Configuration (UI Only) ───────────────────────────────
+    reports_pass_percentage: str = "50"
+    # Name of the test whose report detail is currently open (e.g. "Formative 1")
+    selected_report_test_name: str = ""
+    active_report_section: str = "summary"
+
+    def set_active_report_section(self, section: str):
+        self.active_report_section = section
+
+    @rx.var
+    def facilitator_display_name(self) -> str:
+        """Exposes the facilitator's name from AuthState for use in the report detail view."""
+        return "Ravi Kumar"
+
+
+    def set_reports_pass_percentage(self, value: str):
+        self.reports_pass_percentage = value
+
+    def save_reports_pass_percentage(self):
+        return rx.toast.success(f"Pass percentage saved: {self.reports_pass_percentage}%")
+
+    def view_report_action(self, report_title: str):
+        """Open the detail view for a specific test report."""
+        # Strip " Report" suffix to recover the test name (e.g. "Formative 1 Report" → "Formative 1")
+        if report_title.endswith(" Report"):
+            test_name = report_title[:-7].strip()
+        else:
+            test_name = report_title
+        self.selected_report_test_name = test_name
+        self.active_workspace_tab = "report_detail"
+
+    def back_to_reports(self):
+        """Return from report detail view back to the Reports tab."""
+        self.active_workspace_tab = "reports"
+        self.selected_report_test_name = ""
+
+    def download_report_action(self, report_name: str = ""):
+        name = report_name if report_name else f"{self.selected_report_test_name} Report"
+        return rx.toast.info(f"Downloading {name}")
+
+    # Colour palette for report cards (cycles through tests)
+    _REPORT_ICON_COLOURS: list = [
+        {"icon_color": "#2563EB", "icon_bg": "#EFF6FF"},
+        {"icon_color": "#059669", "icon_bg": "#ECFDF5"},
+        {"icon_color": "#D97706", "icon_bg": "#FFFBEB"},
+        {"icon_color": "#7C3AED", "icon_bg": "#F5F3FF"},
+        {"icon_color": "#DC2626", "icon_bg": "#FEF2F2"},
+    ]
+
+    @rx.var(cache=True)
+    async def reports_dynamic_test_items(self) -> list[dict]:
+        """Return one report-card dict per actual test in the selected assessment."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+
+        items: list[dict] = []
+        palette = self._REPORT_ICON_COLOURS
+        for idx, t in enumerate(match.get("test_items", [])):
+            t_name: str = t["name"]
+            t_date: str = t.get("date", "")
+            is_final: bool = t.get("is_final", False)
+            badge_label = "Summative" if is_final else "Formative"
+            badge_scheme = "purple" if is_final else "blue"
+            colours = palette[idx % len(palette)]
+
+            # Determine status from real evaluation data
+            score = self._get_test_normalized_score(t_name)
+            if score is not None:
+                status = "Ready to Generate"
+            else:
+                status = "Not Evaluated"
+
+            items.append({
+                "title": f"{t_name} Report",
+                "badge_label": badge_label,
+                "badge_scheme": badge_scheme,
+                "icon_color": colours["icon_color"],
+                "icon_bg": colours["icon_bg"],
+                "date_str": t_date if t_date else "—",
+                "description": f"Individual performance report for {t_name}.",
+                "status": status,
+            })
+        return items
+
+    @rx.var(cache=True)
+    async def can_show_overall_report(self) -> bool:
+        """True when every test in the selected assessment has been evaluated."""
+        items = await self.reports_dynamic_test_items
+        if not items:
+            return False
+        return all(item["status"] == "Ready to Generate" for item in items)
+
+    # ─── Report Detail computed vars ──────────────────────────────────────────
+
+    @rx.var(cache=True)
+    async def report_candidate_rows(self) -> list[dict]:
+        """Per-candidate normalized score + pass/fail for the selected report test."""
+        test_name = self.selected_report_test_name
+        asmn = self.selected_assessment_name
+        if not test_name or not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        try:
+            pass_pct = float(self.reports_pass_percentage)
+        except (ValueError, TypeError):
+            pass_pct = 50.0
+
+        rows: list[dict] = []
+        for i, cand in enumerate(match.get("candidate_details", []), 1):
+            cand_name: str = cand["name"]
+            cand_id: str = cand["emp_id"]
+            score: float | None = None
+            # Search real_ai_results_per_candidate for a matching key
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                c_part = parts[0].strip()
+                if t_part != test_name:
+                    continue
+                # Match by name or emp_id embedded in key
+                if cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name):
+                    score = self._calculate_normalized_score(val)
+                    break
+            if score is not None:
+                status = "Passed" if score >= pass_pct else "Failed"
+                score_str = str(int(score)) if score == int(score) else str(round(score, 1))
+            else:
+                status = "Pending"
+                score_str = "—"
+            rows.append({
+                "idx": str(i),
+                "cand_id": cand_id,
+                "cand_name": cand_name,
+                "score_str": score_str,
+                "status": status,
+            })
+        return rows
+
+    @rx.var(cache=True)
+    async def report_summary_stats(self) -> dict:
+        """Aggregate stats for the report detail header card."""
+        rows = await self.report_candidate_rows
+        total = len(rows)
+        evaluated = sum(1 for r in rows if r["status"] != "Pending")
+        pending = total - evaluated
+        passed = sum(1 for r in rows if r["status"] == "Passed")
+        failed = evaluated - passed
+        return {
+            "total": str(total),
+            "evaluated": str(evaluated),
+            "pending": str(pending),
+            "passed": str(passed),
+            "failed": str(failed),
+            "pass_pct": self.reports_pass_percentage + "%",
+        }
+
+    @rx.var(cache=True)
+    async def report_question_rows(self) -> list[dict]:
+        """Question-wise average scores aggregated across all evaluated candidates for the selected test."""
+        test_name = self.selected_report_test_name
+        if not test_name:
+            return []
+        # Collect all question arrays for this test
+        all_qs: dict[int, list[dict]] = {}
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            if t_part != test_name:
+                continue
+            for idx, q in enumerate(val.get("questions", [])):
+                all_qs.setdefault(idx, []).append(dict(q))
+        rows: list[dict] = []
+        for idx in sorted(all_qs.keys()):
+            qs = all_qs[idx]
+            q_text = qs[0].get("question", f"Question {idx + 1}")
+            max_marks = qs[0].get("max_marks", 0)
+            scores = []
+            for q in qs:
+                try:
+                    scores.append(float(q.get("ai_score", 0) or 0))
+                except (ValueError, TypeError):
+                    pass
+            avg = round(sum(scores) / len(scores), 1) if scores else 0.0
+            difficulty = qs[0].get("difficulty", "—")
+            rows.append({
+                "qno": str(idx + 1),
+                "question": q_text,
+                "max_marks": str(max_marks),
+                "avg_score": str(avg),
+                "difficulty": difficulty,
+            })
+        return rows
+
+    @rx.var(cache=True)
+    async def report_remarks_rows(self) -> list[dict]:
+        """Per-candidate remarks/feedback for the selected test."""
+        test_name = self.selected_report_test_name
+        if not test_name:
+            return []
+        rows: list[dict] = []
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            c_part = parts[0].strip()
+            if t_part != test_name:
+                continue
+            remarks = (
+                val.get("remarks")
+                or val.get("feedback")
+                or val.get("overall_feedback")
+                or val.get("summary")
+                or "—"
+            )
+            rows.append({"candidate": c_part, "remarks": str(remarks)})
+        return rows
+
+    @rx.var
+    def selected_report_test_meta(self) -> dict:
+        """Badge label and date for the currently viewed report test."""
+        test_name = self.selected_report_test_name
+        if not test_name:
+            return {"badge": "Formative", "badge_scheme": "blue", "date": "15 Sep 2026"}
+        badge = "Summative" if "summative" in test_name.lower() else "Formative"
+        badge_scheme = "purple" if badge == "Summative" else "blue"
+        return {"badge": badge, "badge_scheme": badge_scheme, "date": "15 Sep 2026"}
+
+    @rx.var(cache=True)
+    async def report_metadata(self) -> dict:
+        """Detailed metadata for the currently viewed report test."""
+        test_name = self.selected_report_test_name
+        asmn = self.selected_assessment_name
+        badge = "Summative" if "summative" in test_name.lower() else "Formative"
+        badge_scheme = "purple" if badge == "Summative" else "blue"
+        test_date = ""
+        if asmn and test_name:
+            mine = await self.my_assessments
+            match = next((a for a in mine if a["name"] == asmn), None)
+            if match:
+                test_dates = match.get("test_dates", {})
+                test_date = test_dates.get(test_name, "")
+                if not test_date:
+                    for item in match.get("test_items", []):
+                        if item.get("name") == test_name:
+                            test_date = item.get("date", "")
+                            break
+        if not test_date:
+            test_date = "15 Sep 2026"
+
+        from ai_hybrid_evaluator.state.auth_state import AuthState
+        auth_state = await self.get_state(AuthState)
+        fac_name = auth_state.facilitator_name if auth_state.facilitator_name else "Ravi Kumar"
+
+        from datetime import datetime
+        gen_date = datetime.now().strftime("%d %b %Y")
+
+        return {
+            "badge": badge,
+            "badge_scheme": badge_scheme,
+            "test_date": test_date,
+            "generated_on": gen_date,
+            "generated_by": f"{fac_name} (Facilitator)",
+        }
 
     # ── Weightage Tab state ────────────────────────────────────────────────────
     # Saved weightages: { assessment_name: { test_name: weightage_int } }
@@ -384,6 +656,10 @@ class FacilitatorState(rx.State):
     def cancel_replacing_qp(self):
         """Cancel replacing and return to the uploaded card view."""
         self.is_replacing_qp = False
+
+    def set_is_replacing_qp(self, value: bool):
+        """Setter for is_replacing_qp (used by dialog on_open_change)."""
+        self.is_replacing_qp = value
 
     async def handle_upload_for_test(self, files: list[rx.UploadFile]):
         """Real file upload handler: writes file to disk and updates test metadata."""
@@ -684,8 +960,15 @@ class FacilitatorState(rx.State):
             ]
             # Restore saved weightage values for this assessment
             self.restore_assessment_weightage(assessments[index]["name"])
-        # Always land on the Question Paper tab when opening a workspace
-        self.active_workspace_tab = "question_paper"
+        # Always land on the Tests tab when opening a workspace
+        self.active_workspace_tab = "tests"
+        return rx.redirect("/facilitator/assessment")
+
+    async def open_assessment_tab(self, assessment_name: str, tab: str):
+        """Opens the Assessment Workspace targeting a specific tab."""
+        await self.open_assessment_by_name(assessment_name)
+        if tab in WORKSPACE_TABS:
+            self.active_workspace_tab = tab
         return rx.redirect("/facilitator/assessment")
 
     async def open_assessment_test(self, assessment_name: str, test_name: str):
@@ -712,7 +995,7 @@ class FacilitatorState(rx.State):
                 # Restore saved weightage values for this assessment
                 self.restore_assessment_weightage(assessment_name)
                 break
-        self.active_workspace_tab = "question_paper"
+        self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
 
 
@@ -791,7 +1074,7 @@ class FacilitatorState(rx.State):
                     if c["emp_id"] in a.get("assigned_candidates", [])
                 ]
                 break
-        self.active_workspace_tab = "question_paper"
+        self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
 
     # ── Facilitator Test Management & Add Test Modal ─────────────────────────

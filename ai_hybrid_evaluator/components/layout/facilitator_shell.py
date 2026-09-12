@@ -50,11 +50,6 @@ def sidebar_test_sublink(assessment_name: str, test_name: str, is_final: bool) -
     is_active = (FacilitatorState.selected_assessment_name == assessment_name) & (FacilitatorState.selected_test_name == test_name)
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
     return rx.hstack(
-        rx.cond(
-            is_final,
-            rx.icon("award", size=12, color=rx.cond(is_active, "#D97706", "#F59E0B")),
-            rx.icon("file-text", size=12, color=rx.cond(is_active, COLORS["primary"], COLORS["slate"])),
-        ),
         rx.text(
             test_name,
             font_family=FONT_BODY,
@@ -68,12 +63,16 @@ def sidebar_test_sublink(assessment_name: str, test_name: str, is_final: bool) -
         ),
         rx.cond(
             has_qp,
-            rx.box(width="6px", height="6px", border_radius="50%", background="#059669"),
-            rx.box(width="6px", height="6px", border_radius="50%", background="#D97706"),
+            rx.box(width="6px", height="6px", border_radius="50%", background="#10B981"),
+            rx.cond(
+                is_final,
+                rx.box(width="7px", height="7px", border_radius="50%", border="1.5px solid #94A3B8", background="transparent"),
+                rx.box(width="6px", height="6px", border_radius="50%", background="#F59E0B"),
+            ),
         ),
         spacing="2",
         align_items="center",
-        padding="0.35em 0.8em 0.35em 2em",
+        padding="0.32em 0.8em 0.32em 0.6em",
         border_radius="6px",
         cursor="pointer",
         width="100%",
@@ -88,9 +87,55 @@ def sidebar_test_sublink(assessment_name: str, test_name: str, is_final: bool) -
     )
 
 
+def workspace_subnav_item(label: str, icon: str, tab_key: str, assessment_name: str) -> rx.Component:
+    """A sidebar sub-navigation item that sets the active workspace tab."""
+    is_tab_active = (
+        (FacilitatorState.selected_assessment_name == assessment_name)
+        & (FacilitatorState.active_workspace_tab == tab_key)
+    )
+    return rx.hstack(
+        rx.box(
+            rx.icon(
+                icon,
+                size=14,
+                color=rx.cond(is_tab_active, COLORS["primary"], COLORS["slate"]),
+            ),
+            background=rx.cond(is_tab_active, "#EDE9FE", "transparent"),
+            padding="0.28em",
+            border_radius="5px",
+            display="flex",
+            align_items="center",
+            justify_content="center",
+            flex_shrink=0,
+        ),
+        rx.text(
+            label,
+            font_family=FONT_BODY,
+            size="2",
+            color=rx.cond(is_tab_active, COLORS["primary"], "#334155"),
+            weight=rx.cond(is_tab_active, "bold", "medium"),
+        ),
+        spacing="2",
+        align_items="center",
+        width="100%",
+        padding="0.45em 0.8em 0.45em 1.6em",
+        border_radius="8px",
+        cursor="pointer",
+        background=rx.cond(is_tab_active, COLORS["primary_soft"], "transparent"),
+        on_click=FacilitatorState.open_assessment_tab(assessment_name, tab_key),
+        _hover={"background": rx.cond(is_tab_active, COLORS["primary_soft"], "#F8FAFC")},
+        transition="all 0.15s ease",
+    )
+
+
 def sidebar_approved_assessment_item(a: dict) -> rx.Component:
     is_sel = FacilitatorState.selected_assessment_name == a["name"]
+    is_tests_active = (
+        (FacilitatorState.selected_assessment_name == a["name"])
+        & (FacilitatorState.active_workspace_tab == "tests")
+    )
     return rx.vstack(
+        # Assessment header row
         rx.hstack(
             rx.icon("clipboard-check", size=14, color=rx.cond(is_sel, COLORS["primary"], COLORS["slate"])),
             rx.text(
@@ -121,18 +166,77 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
             _hover={"background": "#F8FAFC"},
             transition="all 0.15s ease",
         ),
-        # Test-wise sub-links
+        # Workspace sub-navigation (shown when assessment is selected)
         rx.cond(
             is_sel,
             rx.vstack(
-                rx.foreach(
-                    a["tests"],
-                    lambda t: sidebar_test_sublink(a["name"], t, False),
+                # Tests row (with nested test sub-items when active)
+                rx.vstack(
+                    # Tests nav item
+                    rx.hstack(
+                        rx.box(
+                            rx.icon(
+                                "file-spreadsheet",
+                                size=14,
+                                color=rx.cond(is_tests_active, COLORS["primary"], COLORS["slate"]),
+                            ),
+                            background=rx.cond(is_tests_active, "#EDE9FE", "transparent"),
+                            padding="0.28em",
+                            border_radius="5px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            flex_shrink=0,
+                        ),
+                        rx.text(
+                            "Tests",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=rx.cond(is_tests_active, COLORS["primary"], "#334155"),
+                            weight=rx.cond(is_tests_active, "bold", "medium"),
+                        ),
+                        spacing="2",
+                        align_items="center",
+                        width="100%",
+                        padding="0.45em 0.8em 0.45em 1.6em",
+                        border_radius="8px",
+                        cursor="pointer",
+                        background=rx.cond(is_tests_active, COLORS["primary_soft"], "transparent"),
+                        on_click=FacilitatorState.open_assessment_tab(a["name"], "tests"),
+                        _hover={"background": rx.cond(is_tests_active, COLORS["primary_soft"], "#F8FAFC")},
+                        transition="all 0.15s ease",
+                    ),
+                    # Nested test sub-links in a tree column with left border
+                    rx.box(
+                        rx.vstack(
+                            rx.foreach(
+                                a["tests"],
+                                lambda t: sidebar_test_sublink(a["name"], t, False),
+                            ),
+                            rx.cond(
+                                a["final_test"] != "",
+                                sidebar_test_sublink(a["name"], a["final_test"], True),
+                            ),
+                            spacing="0",
+                            width="100%",
+                        ),
+                        border_left="1.5px solid #E2E8F0",
+                        margin_left="2.3em",
+                        padding_left="0.4em",
+                        margin_y="0.1em",
+                        width="calc(100% - 2.3em)",
+                    ),
+                    spacing="0",
+                    width="100%",
                 ),
-                rx.cond(
-                    a["final_test"] != "",
-                    sidebar_test_sublink(a["name"], a["final_test"], True),
-                ),
+                # Evaluation
+                workspace_subnav_item("Evaluation", "pencil-line", "evaluation", a["name"]),
+                # Weightage
+                workspace_subnav_item("Weightage", "sliders-horizontal", "weightage", a["name"]),
+                # Results
+                workspace_subnav_item("Results", "bar-chart-2", "results", a["name"]),
+                # Reports
+                workspace_subnav_item("Reports", "file-bar-chart", "reports", a["name"]),
                 spacing="1",
                 width="100%",
                 padding_top="0.1em",

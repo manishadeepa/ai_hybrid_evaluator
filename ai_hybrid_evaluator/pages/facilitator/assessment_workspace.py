@@ -1107,7 +1107,217 @@ def question_paper_right_column() -> rx.Component:
     )
 
 
-def question_paper_tab() -> rx.Component:
+def tests_tab_card(test: dict) -> rx.Component:
+    """Reference-image style full-width test card with QP status and actions."""
+    t_name = test["name"]
+    t_date = test["date"]
+    is_final = test["is_final"]
+    has_file = test["has_qp"]
+
+    return rx.box(
+        rx.hstack(
+            # Left: Icon box
+            rx.box(
+                rx.icon("file-text", size=22, color="#7C3AED"),
+                background="#F5F3FF",
+                padding="0.85em",
+                border_radius="12px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                flex_shrink=0,
+            ),
+            # Center: Name, type badge, date, QP status
+            rx.vstack(
+                rx.hstack(
+                    rx.text(
+                        t_name,
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.badge(
+                        rx.cond(is_final, "Summative", "Formative"),
+                        color_scheme=rx.cond(is_final, "purple", "blue"),
+                        variant="soft",
+                        size="1",
+                        border_radius="12px",
+                        padding="0.2em 0.7em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.hstack(
+                    rx.icon("calendar", size=13, color=COLORS["slate"]),
+                    rx.text(
+                        "Test Date: ",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    rx.text(
+                        rx.cond(t_date != "", t_date, "Not scheduled"),
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="1",
+                    align_items="center",
+                ),
+                rx.cond(
+                    has_file,
+                    rx.hstack(
+                        rx.icon("circle-check", size=14, color="#10B981"),
+                        rx.text(
+                            "Question Paper Uploaded",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#047857",
+                            weight="medium",
+                        ),
+                        spacing="1",
+                        align_items="center",
+                        background="#ECFDF5",
+                        border="1px solid #A7F3D0",
+                        border_radius="20px",
+                        padding="0.2em 0.8em",
+                    ),
+                    rx.hstack(
+                        rx.icon("clock", size=14, color="#64748B"),
+                        rx.text(
+                            "No Question Paper",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#64748B",
+                            weight="medium",
+                        ),
+                        spacing="1",
+                        align_items="center",
+                        background="#F8FAFC",
+                        border="1px solid #E2E8F0",
+                        border_radius="20px",
+                        padding="0.2em 0.8em",
+                    ),
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            # Vertical divider
+            rx.box(
+                width="1px",
+                height="54px",
+                background="#F1F5F9",
+                margin_x="0.5em",
+                flex_shrink=0,
+            ),
+            # Right: Action buttons + 3-dot menu
+            rx.hstack(
+                # View File (only when QP uploaded)
+                rx.cond(
+                    has_file,
+                    rx.button(
+                        rx.icon("eye", size=14),
+                        "View File",
+                        on_click=FacilitatorState.open_qp_preview(t_name, FacilitatorState.selected_assessment_name),
+                        size="2",
+                        variant="outline",
+                        color_scheme="gray",
+                        color="#1E293B",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        cursor="pointer",
+                    ),
+                ),
+                # Replace File / Upload File
+                rx.cond(
+                    has_file,
+                    rx.button(
+                        rx.icon("refresh-cw", size=14),
+                        "Replace File",
+                        on_click=FacilitatorState.start_replacing_qp(t_name),
+                        size="2",
+                        background="#4F46E5",
+                        color="white",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        _hover={"background": "#4338CA"},
+                        cursor="pointer",
+                    ),
+                    rx.button(
+                        rx.icon("upload", size=14),
+                        "Upload File",
+                        on_click=FacilitatorState.start_replacing_qp(t_name),
+                        size="2",
+                        variant="outline",
+                        color_scheme="indigo",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        cursor="pointer",
+                    ),
+                ),
+                # 3-dot menu
+                rx.menu.root(
+                    rx.menu.trigger(
+                        rx.icon_button(
+                            rx.icon("ellipsis-vertical", size=14),
+                            variant="outline",
+                            color_scheme="gray",
+                            size="2",
+                            border_radius="8px",
+                            cursor="pointer",
+                        ),
+                    ),
+                    rx.menu.content(
+                        rx.cond(
+                            has_file,
+                            rx.menu.item(
+                                "View Question Paper",
+                                on_click=FacilitatorState.open_qp_preview(t_name, FacilitatorState.selected_assessment_name),
+                            ),
+                        ),
+                        rx.menu.item(
+                            rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
+                            on_click=FacilitatorState.start_replacing_qp(t_name),
+                        ),
+                        rx.cond(
+                            has_file,
+                            rx.menu.item(
+                                "Remove Question Paper",
+                                on_click=FacilitatorState.remove_test_question_paper(t_name),
+                                color="red",
+                            ),
+                        ),
+                        rx.menu.separator(),
+                        rx.menu.item(
+                            "Delete Test",
+                            on_click=FacilitatorState.facilitator_remove_test(t_name),
+                            color="red",
+                        ),
+                    ),
+                ),
+                spacing="2",
+                align_items="center",
+                flex_shrink=0,
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        padding="1.2em 1.4em",
+        border_radius="12px",
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+        _hover={"border_color": "#CBD5E1", "background": "#FAFAFC"},
+        transition="all 0.15s ease",
+    )
+
+
+def tests_tab() -> rx.Component:
+    """Tests tab — full-width card list matching the reference image."""
     assessment = FacilitatorState.my_assessments[FacilitatorState.selected_assessment_index]
     test_items = assessment["test_items"]
 
@@ -1145,30 +1355,135 @@ def question_paper_tab() -> rx.Component:
         border_radius="16px",
     )
 
-    two_column_view = rx.grid(
-        # Left column: Test Management & Cards
-        test_management_left_column(),
-        # Right column: Question Paper Details for active test
-        rx.cond(
-            FacilitatorState.selected_test_name != "",
-            question_paper_right_column(),
-            rx.center(
-                rx.text("Select a test on the left to view its Question Paper details.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
-                padding="4em 2em",
-                width="100%",
+    cards_view = rx.vstack(
+        # Page header with + Add Test button
+        rx.hstack(
+            rx.vstack(
+                rx.text(
+                    "Tests",
+                    font_family=FONT_DISPLAY,
+                    size="6",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.text(
+                    "Create and manage tests for this assessment. Upload or replace question papers.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="0",
+                align_items="start",
             ),
+            rx.spacer(),
+            rx.button(
+                rx.icon("plus", size=14),
+                "+ Add Test",
+                on_click=FacilitatorState.open_add_test_modal,
+                size="2",
+                background=COLORS["primary"],
+                color="white",
+                font_family=FONT_BODY,
+                border_radius="8px",
+                _hover={"background": COLORS["primary_hover"]},
+                cursor="pointer",
+            ),
+            width="100%",
+            align_items="center",
+            padding_bottom="1.2em",
         ),
-        columns="5fr 6fr",
-        gap="1.8em",
+        # Test cards list
+        rx.vstack(
+            rx.foreach(test_items, tests_tab_card),
+            spacing="3",
+            width="100%",
+        ),
+        # Supported formats banner (matching reference design)
+        rx.box(
+            rx.hstack(
+                rx.icon("info", size=20, color="#6366F1"),
+                rx.vstack(
+                    rx.text(
+                        "Supported Formats",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        ".xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            padding="1.1em 1.4em",
+            background="#F8FAFC",
+            border="1px solid #E2E8F0",
+            border_radius="12px",
+            width="100%",
+            margin_top="1em",
+        ),
+        spacing="0",
         width="100%",
-        align_items="start",
+        align_items="stretch",
     )
 
     return rx.cond(
         test_items.length() > 0,
-        two_column_view,
-        empty_state,
+        cards_view,
+        rx.vstack(
+            rx.hstack(
+                rx.vstack(
+                    rx.text(
+                        "Tests",
+                        font_family=FONT_DISPLAY,
+                        size="6",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        "Create and manage tests for this assessment. Upload or replace question papers.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                rx.spacer(),
+                rx.button(
+                    rx.icon("plus", size=14),
+                    "+ Add Test",
+                    on_click=FacilitatorState.open_add_test_modal,
+                    size="2",
+                    background=COLORS["primary"],
+                    color="white",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": COLORS["primary_hover"]},
+                    cursor="pointer",
+                ),
+                width="100%",
+                align_items="center",
+                padding_bottom="1.2em",
+            ),
+            empty_state,
+            spacing="0",
+            width="100%",
+            align_items="stretch",
+        ),
     )
+
+
+def question_paper_tab() -> rx.Component:
+    """Backward compatibility alias for tests_tab."""
+    return tests_tab()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3703,6 +4018,711 @@ def weightage_tab() -> rx.Component:
 
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Reports Tab Components (Matching Reference Design)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def reports_header() -> rx.Component:
+    return rx.hstack(
+        rx.vstack(
+            rx.text(
+                "Reports",
+                font_family=FONT_DISPLAY,
+                size="6",
+                weight="bold",
+                color=COLORS["ink"],
+            ),
+            rx.text(
+                "Generate and view assessment reports for all tests. Download individual test reports or the overall assessment report.",
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+            spacing="0",
+            align_items="start",
+        ),
+        rx.spacer(),
+        # Top-right Assessment info box
+        rx.box(
+            rx.hstack(
+                rx.box(
+                    rx.icon("file-text", size=20, color="#2563EB"),
+                    background="#EFF6FF",
+                    padding="0.6em",
+                    border_radius="10px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    flex_shrink=0,
+                ),
+                rx.vstack(
+                    rx.text("Assessment", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                    rx.text(
+                        rx.cond(
+                            FacilitatorState.selected_assessment_name != "",
+                            FacilitatorState.selected_assessment_name,
+                            "Quality",
+                        ),
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                rx.box(
+                    width="1px",
+                    height="32px",
+                    background=COLORS["line"],
+                    margin_x="0.6em",
+                    flex_shrink=0,
+                ),
+                rx.vstack(
+                    rx.text("Assessment Period", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                    rx.text(
+                        "01 Sep 2026 - 31 Oct 2026",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="2",
+                align_items="center",
+            ),
+            background=COLORS["surface"],
+            border=f"1px solid {COLORS['line']}",
+            border_radius="12px",
+            padding="0.6em 1.2em",
+        ),
+        width="100%",
+        align_items="center",
+        padding_bottom="0.8em",
+    )
+
+
+def reports_pass_percentage_card() -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            # Left: Icon & Description
+            rx.hstack(
+                rx.box(
+                    rx.icon("target", size=22, color="#6366F1"),
+                    background="#EDE9FE",
+                    padding="0.75em",
+                    border_radius="12px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    flex_shrink=0,
+                ),
+                rx.vstack(
+                    rx.text(
+                        "Pass Percentage Configuration",
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        "Set the pass percentage for this assessment. This will be used to determine Pass/Fail status in all test reports and the overall report.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            rx.spacer(),
+            # Right: Input & Save & Decided by Facilitator
+            rx.vstack(
+                rx.text(
+                    "Pass Percentage (%)",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color="#475467",
+                    weight="medium",
+                ),
+                rx.hstack(
+                    rx.input(
+                        value=FacilitatorState.reports_pass_percentage,
+                        on_change=FacilitatorState.set_reports_pass_percentage,
+                        type="number",
+                        min="0",
+                        max="100",
+                        width="110px",
+                        size="2",
+                        border_radius="8px",
+                    ),
+                    rx.button(
+                        rx.icon("save", size=14),
+                        "Save",
+                        on_click=FacilitatorState.save_reports_pass_percentage,
+                        size="2",
+                        background="#4F46E5",
+                        color="white",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        _hover={"background": "#4338CA"},
+                        cursor="pointer",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.text(
+                    "Decided by Facilitator",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            width="100%",
+            align_items="center",
+        ),
+        padding="1.3em 1.6em",
+        border_radius="14px",
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+    )
+
+
+def report_status_pill(status: str) -> rx.Component:
+    return rx.match(
+        status,
+        (
+            "Ready to Generate",
+            rx.hstack(
+                rx.icon("circle-check", size=13, color="#10B981"),
+                rx.text(
+                    "Ready to Generate",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color="#047857",
+                    weight="medium",
+                ),
+                spacing="1",
+                align_items="center",
+                background="#ECFDF5",
+                border="1px solid #A7F3D0",
+                border_radius="20px",
+                padding="0.25em 0.8em",
+            ),
+        ),
+        (
+            "Not Evaluated",
+            rx.hstack(
+                rx.icon("circle-alert", size=13, color="#F59E0B"),
+                rx.text(
+                    "Not Evaluated",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color="#B45309",
+                    weight="medium",
+                ),
+                spacing="1",
+                align_items="center",
+                background="#FFFBEB",
+                border="1px solid #FDE68A",
+                border_radius="20px",
+                padding="0.25em 0.8em",
+            ),
+        ),
+        (
+            "Not Available Yet",
+            rx.hstack(
+                rx.icon("info", size=13, color="#64748B"),
+                rx.text(
+                    "Not Available Yet",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color="#475467",
+                    weight="medium",
+                ),
+                spacing="1",
+                align_items="center",
+                background="#F1F5F9",
+                border="1px solid #CBD5E1",
+                border_radius="20px",
+                padding="0.25em 0.8em",
+            ),
+        ),
+        # Default fallback
+        rx.hstack(
+            rx.icon("info", size=13, color="#64748B"),
+            rx.text(status, font_family=FONT_BODY, size="1", color="#475467", weight="medium"),
+            spacing="1",
+            align_items="center",
+            background="#F1F5F9",
+            border="1px solid #CBD5E1",
+            border_radius="20px",
+            padding="0.25em 0.8em",
+        ),
+    )
+
+
+def dynamic_test_report_card(item) -> rx.Component:
+    """Render one report card from a dict — used by rx.foreach."""
+    return rx.box(
+        rx.hstack(
+            # Left: Icon
+            rx.box(
+                rx.icon("file-text", size=22, color=item["icon_color"]),
+                background=item["icon_bg"],
+                padding="0.85em",
+                border_radius="12px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                flex_shrink=0,
+            ),
+            # Center: Info
+            rx.vstack(
+                rx.hstack(
+                    rx.text(
+                        item["title"],
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.badge(
+                        item["badge_label"],
+                        color_scheme=item["badge_scheme"],
+                        variant="soft",
+                        size="1",
+                        border_radius="12px",
+                        padding="0.2em 0.7em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.hstack(
+                    rx.icon("calendar", size=13, color=COLORS["slate"]),
+                    rx.text(
+                        "Test Date: ",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    rx.text(
+                        item["date_str"],
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="1",
+                    align_items="center",
+                ),
+                rx.text(
+                    item["description"],
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            # Divider
+            rx.box(
+                width="1px",
+                height="56px",
+                background="#F1F5F9",
+                margin_x="0.6em",
+                flex_shrink=0,
+            ),
+            # Status Column
+            rx.vstack(
+                rx.text(
+                    "Status",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                    weight="medium",
+                ),
+                report_status_pill(item["status"]),
+                spacing="1",
+                align_items="start",
+                width="170px",
+                flex_shrink=0,
+            ),
+            # Right: Action buttons
+            rx.hstack(
+                rx.button(
+                    rx.icon("eye", size=14, color="#4F46E5"),
+                    "View Report",
+                    on_click=FacilitatorState.view_report_action(item["title"]),
+                    size="2",
+                    variant="outline",
+                    color_scheme="gray",
+                    color="#4F46E5",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#F5F3FF"},
+                    cursor="pointer",
+                ),
+                rx.button(
+                    rx.icon("download", size=14),
+                    "Download Report",
+                    on_click=FacilitatorState.download_report_action(item["title"]),
+                    size="2",
+                    background="#4F46E5",
+                    color="white",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#4338CA"},
+                    cursor="pointer",
+                ),
+                spacing="2",
+                align_items="center",
+                flex_shrink=0,
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        padding="1.2em 1.4em",
+        border_radius="12px",
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+        _hover={"border_color": "#CBD5E1", "background": "#FAFAFC"},
+        transition="all 0.15s ease",
+    )
+
+
+def test_report_card(
+    title: str,
+    badge_label: str,
+    badge_scheme: str,
+    icon_name: str,
+    icon_color: str,
+    icon_bg: str,
+    date_str: str,
+    description: str,
+    status: str,
+) -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            # Left: Icon
+            rx.box(
+                rx.icon(icon_name, size=22, color=icon_color),
+                background=icon_bg,
+                padding="0.85em",
+                border_radius="12px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                flex_shrink=0,
+            ),
+            # Center: Info
+            rx.vstack(
+                rx.hstack(
+                    rx.text(
+                        title,
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.badge(
+                        badge_label,
+                        color_scheme=badge_scheme,
+                        variant="soft",
+                        size="1",
+                        border_radius="12px",
+                        padding="0.2em 0.7em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.hstack(
+                    rx.icon("calendar", size=13, color=COLORS["slate"]),
+                    rx.text(
+                        "Test Date: ",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color=COLORS["slate"],
+                    ),
+                    rx.text(
+                        date_str,
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="1",
+                    align_items="center",
+                ),
+                rx.text(
+                    description,
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            # Divider
+            rx.box(
+                width="1px",
+                height="56px",
+                background="#F1F5F9",
+                margin_x="0.6em",
+                flex_shrink=0,
+            ),
+            # Status Column
+            rx.vstack(
+                rx.text(
+                    "Status",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                    weight="medium",
+                ),
+                report_status_pill(status),
+                spacing="1",
+                align_items="start",
+                width="170px",
+                flex_shrink=0,
+            ),
+            # Right: Action buttons
+            rx.hstack(
+                rx.button(
+                    rx.icon("eye", size=14, color="#4F46E5"),
+                    "View Report",
+                    on_click=FacilitatorState.view_report_action(title),
+                    size="2",
+                    variant="outline",
+                    color_scheme="gray",
+                    color="#4F46E5",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#F5F3FF"},
+                    cursor="pointer",
+                ),
+                rx.button(
+                    rx.icon("download", size=14),
+                    "Download Report",
+                    on_click=FacilitatorState.download_report_action(title),
+                    size="2",
+                    background="#4F46E5",
+                    color="white",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#4338CA"},
+                    cursor="pointer",
+                ),
+                spacing="2",
+                align_items="center",
+                flex_shrink=0,
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        padding="1.2em 1.4em",
+        border_radius="12px",
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        width="100%",
+        _hover={"border_color": "#CBD5E1", "background": "#FAFAFC"},
+        transition="all 0.15s ease",
+    )
+
+
+def overall_report_card() -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            # Left: Icon in green container
+            rx.box(
+                rx.icon("bar-chart-2", size=22, color="#059669"),
+                background="#DCFCE7",
+                padding="0.85em",
+                border_radius="12px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                flex_shrink=0,
+            ),
+            # Center: Info
+            rx.vstack(
+                rx.hstack(
+                    rx.text(
+                        "Overall Assessment Report",
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.badge(
+                        "Overall",
+                        color_scheme="green",
+                        variant="soft",
+                        size="1",
+                        border_radius="12px",
+                        padding="0.2em 0.7em",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.text(
+                    "Combined performance report for all tests (Formative 1, 2, 3 and Summative).",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color="#475467",
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            # Divider
+            rx.box(
+                width="1px",
+                height="56px",
+                background="#DCFCE7",
+                margin_x="0.6em",
+                flex_shrink=0,
+            ),
+            # Status Column
+            rx.vstack(
+                rx.text(
+                    "Status",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                    weight="medium",
+                ),
+                report_status_pill("Not Available Yet"),
+                spacing="1",
+                align_items="start",
+                width="170px",
+                flex_shrink=0,
+            ),
+            # Right: Action buttons
+            rx.hstack(
+                rx.button(
+                    rx.icon("eye", size=14, color="#4F46E5"),
+                    "View Report",
+                    on_click=FacilitatorState.view_report_action("Overall Assessment Report"),
+                    size="2",
+                    variant="outline",
+                    color_scheme="gray",
+                    color="#4F46E5",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#F5F3FF"},
+                    cursor="pointer",
+                ),
+                rx.button(
+                    rx.icon("download", size=14),
+                    "Download Report",
+                    on_click=FacilitatorState.download_report_action("Overall Assessment Report"),
+                    size="2",
+                    background="#4F46E5",
+                    color="white",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    _hover={"background": "#4338CA"},
+                    cursor="pointer",
+                ),
+                spacing="2",
+                align_items="center",
+                flex_shrink=0,
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        padding="1.2em 1.4em",
+        border_radius="12px",
+        background="#F0FDF4",
+        border="1.5px solid #BBF7D0",
+        width="100%",
+        _hover={"border_color": "#86EFAC"},
+        transition="all 0.15s ease",
+    )
+
+
+def reports_tab() -> rx.Component:
+    """Full Reports tab UI — dynamically generated from real assessment tests."""
+    return rx.vstack(
+        reports_header(),
+        reports_pass_percentage_card(),
+        rx.vstack(
+            rx.cond(
+                FacilitatorState.reports_dynamic_test_items.length() == 0,
+                # Empty state: no tests created yet
+                rx.center(
+                    rx.vstack(
+                        rx.box(
+                            rx.icon("file-text", size=36, color=COLORS["primary"]),
+                            background=COLORS["primary_soft"],
+                            padding="1.2em",
+                            border_radius="50%",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.text(
+                            "No Tests Created Yet",
+                            font_family=FONT_DISPLAY,
+                            size="5",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Create tests from the Tests tab to see report cards here.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                            text_align="center",
+                        ),
+                        align_items="center",
+                        spacing="2",
+                        padding="3em 2em",
+                    ),
+                    width="100%",
+                    background=COLORS["surface"],
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="14px",
+                ),
+                # Has tests: render dynamically
+                rx.vstack(
+                    rx.foreach(
+                        FacilitatorState.reports_dynamic_test_items,
+                        dynamic_test_report_card,
+                    ),
+                    # Overall report – only visible when all tests are evaluated
+                    rx.cond(
+                        FacilitatorState.can_show_overall_report,
+                        overall_report_card(),
+                        rx.fragment(),
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        spacing="4",
+        width="100%",
+        align_items="stretch",
+    )
+
+
 def results_tab() -> rx.Component:
     """Redesigned Results Analytics tab matching reference visual design."""
     return rx.vstack(
@@ -4422,19 +5442,682 @@ def add_new_test_dialog() -> rx.Component:
 # Workspace page
 # ──────────────────────────────────────────────────────────────────────────────
 
+def qp_upload_dialog() -> rx.Component:
+    """Dialog modal for uploading or replacing question paper for the selected test."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.vstack(
+                        rx.dialog.title(
+                            rx.cond(
+                                FacilitatorState.has_current_test_qp,
+                                "Replace Question Paper",
+                                "Upload Question Paper",
+                            ),
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.dialog.description(
+                            rx.hstack(
+                                rx.text("Assessment: ", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                                rx.text(FacilitatorState.selected_assessment_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                rx.text(" • Test: ", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                                rx.text(FacilitatorState.selected_test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["primary"]),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=18),
+                            variant="ghost",
+                            color_scheme="gray",
+                            size="2",
+                            cursor="pointer",
+                            on_click=FacilitatorState.cancel_replacing_qp,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="start",
+                    padding_bottom="0.5em",
+                ),
+                active_test_dropzone_card(),
+                spacing="3",
+                width="100%",
+            ),
+            style={"maxWidth": "620px", "width": "92vw", "padding": "1.8em", "borderRadius": "16px"},
+        ),
+        open=FacilitatorState.is_replacing_qp,
+        on_open_change=FacilitatorState.set_is_replacing_qp,
+    )
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Report Detail Tab  (opened via "View Report" from the Reports tab)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _report_nav_item(label: str, icon_name: str, sec_id: str, section_key: str) -> rx.Component:
+    is_active = (FacilitatorState.active_report_section == section_key)
+    return rx.box(
+        rx.hstack(
+            rx.icon(
+                icon_name,
+                size=16,
+                color=rx.cond(is_active, COLORS["primary"], COLORS["slate"]),
+            ),
+            rx.text(
+                label,
+                font_family=FONT_BODY,
+                size="2",
+                weight=rx.cond(is_active, "bold", "medium"),
+                color=rx.cond(is_active, COLORS["primary"], "#334155"),
+            ),
+            spacing="3",
+            align_items="center",
+            width="100%",
+        ),
+        padding="0.65em 0.9em",
+        border_radius="8px",
+        background=rx.cond(is_active, "#F3E8FF", "transparent"),
+        cursor="pointer",
+        transition="all 0.15s ease",
+        _hover={"background": rx.cond(is_active, "#F3E8FF", "#F8FAFC")},
+        on_click=[
+            FacilitatorState.set_active_report_section(section_key),
+            rx.call_script(f"const el = document.getElementById('{sec_id}'); if (el) el.scrollIntoView({{behavior: 'smooth', block: 'start'}});"),
+        ],
+        width="100%",
+    )
+
+
+def _report_doc_section_banner(icon_name: str, title: str, sec_id: str) -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            rx.icon(icon_name, size=15, color="#4F46E5"),
+            rx.text(title, font_family=FONT_BODY, size="2", weight="bold", color="#1E293B"),
+            spacing="2",
+            align_items="center",
+        ),
+        id=sec_id,
+        background="#EEF2FF",
+        border="1px solid #E0E7FF",
+        border_radius="6px",
+        padding="0.5em 0.85em",
+        width="100%",
+        margin_top="1.8em",
+        margin_bottom="0.8em",
+    )
+
+
+def _report_candidate_status_pill(status: str) -> rx.Component:
+    return rx.match(
+        status,
+        ("Passed", rx.box(rx.text("Passed", font_family=FONT_BODY, size="1", weight="bold", color="#03543F"), background="#DEF7EC", border_radius="12px", padding="0.2em 0.8em", display="inline-flex")),
+        ("Failed", rx.box(rx.text("Failed", font_family=FONT_BODY, size="1", weight="bold", color="#9B1C1C"), background="#FDE8E8", border_radius="12px", padding="0.2em 0.8em", display="inline-flex")),
+        rx.box(rx.text("Pending", font_family=FONT_BODY, size="1", weight="bold", color="#854D0E"), background="#FEF08A", border_radius="12px", padding="0.2em 0.8em", display="inline-flex"),
+    )
+
+
+def _report_difficulty_pill(diff: str) -> rx.Component:
+    return rx.match(
+        diff,
+        ("Easy", rx.box(rx.text("Easy", font_family=FONT_BODY, size="1", weight="bold", color="#03543F"), background="#DEF7EC", border_radius="12px", padding="0.2em 0.8em", display="inline-flex")),
+        ("Medium", rx.box(rx.text("Medium", font_family=FONT_BODY, size="1", weight="bold", color="#92400E"), background="#FEF3C7", border_radius="12px", padding="0.2em 0.8em", display="inline-flex")),
+        ("Hard", rx.box(rx.text("Hard", font_family=FONT_BODY, size="1", weight="bold", color="#9B1C1C"), background="#FDE8E8", border_radius="12px", padding="0.2em 0.8em", display="inline-flex")),
+        rx.text(diff, font_family=FONT_BODY, size="2", color="#475467"),
+    )
+
+
+def _pdf_viewer_toolbar() -> rx.Component:
+    return rx.hstack(
+        # Page indicator
+        rx.box(
+            rx.text("1 / 6", font_family=FONT_BODY, size="1", weight="medium", color="#E2E8F0"),
+            background="#1E2024",
+            padding="0.2em 0.6em",
+            border_radius="4px",
+        ),
+        rx.box(width="1px", height="16px", background="#475569", margin_x="0.6em"),
+        # Zoom controls
+        rx.icon("minus", size=14, color="#CBD5E1", cursor="pointer"),
+        rx.text("100%", font_family=FONT_BODY, size="1", color="#CBD5E1", margin_x="0.5em"),
+        rx.icon("plus", size=14, color="#CBD5E1", cursor="pointer"),
+        rx.box(width="1px", height="16px", background="#475569", margin_x="0.6em"),
+        rx.icon("expand", size=14, color="#CBD5E1", cursor="pointer"),
+        rx.icon("rotate-cw", size=14, color="#CBD5E1", cursor="pointer", margin_left="0.4em"),
+        rx.spacer(),
+        # Action icons
+        rx.icon(
+            "download",
+            size=15,
+            color="#CBD5E1",
+            cursor="pointer",
+            on_click=FacilitatorState.download_report_action(""),
+        ),
+        rx.icon(
+            "printer",
+            size=15,
+            color="#CBD5E1",
+            cursor="pointer",
+            margin_left="0.8em",
+            on_click=rx.call_script("window.print()"),
+        ),
+        rx.icon("ellipsis-vertical", size=15, color="#CBD5E1", cursor="pointer", margin_left="0.8em"),
+        background="#252830",
+        padding="0.6em 1.2em",
+        border_radius="10px 10px 0 0",
+        width="100%",
+        align_items="center",
+    )
+
+
+def report_detail_tab() -> rx.Component:
+    """Detailed report page matching reference design — driven entirely by real state data."""
+    stats = FacilitatorState.report_summary_stats
+    meta = FacilitatorState.report_metadata
+
+    return rx.vstack(
+        # ── 1. Top Bar: Back to Reports link ───────────────────────────────────
+        rx.hstack(
+            rx.button(
+                rx.icon("arrow-left", size=14),
+                "Back to Reports",
+                on_click=FacilitatorState.back_to_reports,
+                variant="ghost",
+                color=COLORS["primary"],
+                font_family=FONT_BODY,
+                size="2",
+                weight="medium",
+                cursor="pointer",
+                _hover={"background": COLORS["primary_soft"]},
+                border_radius="8px",
+                padding_x="0.5em",
+                padding_y="0.3em",
+            ),
+            width="100%",
+            align_items="center",
+            margin_bottom="0.4em",
+        ),
+
+        # ── 2. Header Row: Title, badge, subtitle, and Print/Download buttons ──
+        rx.hstack(
+            rx.vstack(
+                rx.hstack(
+                    rx.text(
+                        FacilitatorState.selected_report_test_name,
+                        " Report",
+                        font_family=FONT_DISPLAY,
+                        size="6",
+                        weight="bold",
+                        color="#0F172A",
+                    ),
+                    rx.badge(
+                        meta["badge"],
+                        color_scheme=meta["badge_scheme"],
+                        variant="soft",
+                        size="2",
+                        border_radius="12px",
+                        padding_x="0.7em",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                rx.text(
+                    "Detailed performance report for ",
+                    FacilitatorState.selected_report_test_name,
+                    ".",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            rx.hstack(
+                rx.button(
+                    rx.icon("printer", size=14),
+                    "Print",
+                    variant="outline",
+                    color="#1E293B",
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="medium",
+                    border="1px solid #CBD5E1",
+                    background="white",
+                    border_radius="8px",
+                    cursor="pointer",
+                    padding_x="1em",
+                    _hover={"background": "#F8FAFC", "border_color": "#94A3B8"},
+                    on_click=rx.call_script("window.print()"),
+                ),
+                rx.button(
+                    rx.icon("download", size=14),
+                    "Download PDF",
+                    background=COLORS["primary"],
+                    color="white",
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="medium",
+                    border_radius="8px",
+                    cursor="pointer",
+                    padding_x="1.2em",
+                    _hover={"background": COLORS["primary_hover"]},
+                    on_click=[
+                        FacilitatorState.download_report_action(""),
+                        rx.call_script("window.print()"),
+                    ],
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            width="100%",
+            align_items="center",
+            margin_bottom="1.5em",
+        ),
+
+        # ── 3. Main Split View: Left Navigation + Right PDF Viewer ─────────────
+        rx.hstack(
+            # ── Left Navigation Sidebar Card ──────────────────────────────────
+            rx.box(
+                rx.vstack(
+                    _report_nav_item("Report Summary", "file-text", "sec-summary", "summary"),
+                    _report_nav_item("Candidate Performance", "users", "sec-candidates", "candidates"),
+                    _report_nav_item("Question-wise Analysis", "square-check", "sec-questions", "questions"),
+                    _report_nav_item("Pass/Fail Summary", "circle-check", "sec-passfail", "passfail"),
+                    _report_nav_item("Remarks", "message-square", "sec-remarks", "remarks"),
+                    spacing="1",
+                    width="100%",
+                    align_items="stretch",
+                ),
+                background="white",
+                border="1px solid #E2E8F0",
+                border_radius="12px",
+                padding="1em 0.8em",
+                width="240px",
+                min_width="240px",
+                box_shadow="0 1px 3px rgba(0,0,0,0.04)",
+            ),
+
+            # ── Right PDF Viewer Card ─────────────────────────────────────────
+            rx.box(
+                rx.vstack(
+                    # PDF Toolbar
+                    _pdf_viewer_toolbar(),
+
+                    # PDF Document Scroll Area
+                    rx.box(
+                        # Document Page Sheet
+                        rx.box(
+                            rx.vstack(
+                                # TVS Document Header
+                                rx.hstack(
+                                    rx.image(
+                                        src="/tvs_logo.png",
+                                        height="34px",
+                                        width="auto",
+                                        object_fit="contain",
+                                    ),
+                                    rx.spacer(),
+                                    rx.text(
+                                        "GEN AI HYBRID EVALUATOR",
+                                        font_family=FONT_BODY,
+                                        size="3",
+                                        weight="bold",
+                                        color="#1E293B",
+                                        letter_spacing="0.04em",
+                                    ),
+                                    rx.spacer(),
+                                    rx.text(
+                                        "Assessment Report",
+                                        font_family=FONT_BODY,
+                                        size="3",
+                                        weight="bold",
+                                        color="#1E293B",
+                                    ),
+                                    width="100%",
+                                    align_items="center",
+                                ),
+                                rx.box(width="100%", height="1px", background="#E2E8F0", margin_y="1.2em"),
+
+                                # Report Metadata Header
+                                rx.hstack(
+                                    rx.vstack(
+                                        rx.text(
+                                            FacilitatorState.selected_report_test_name,
+                                            " Report",
+                                            font_family=FONT_DISPLAY,
+                                            size="6",
+                                            weight="bold",
+                                            color="#0F172A",
+                                        ),
+                                        rx.text(
+                                            FacilitatorState.selected_assessment_name,
+                                            " Assessment",
+                                            font_family=FONT_BODY,
+                                            size="2",
+                                            weight="bold",
+                                            color="#334155",
+                                        ),
+                                        rx.text(
+                                            "Assessment Type: ",
+                                            meta["badge"],
+                                            font_family=FONT_BODY,
+                                            size="2",
+                                            color="#64748B",
+                                        ),
+                                        spacing="1",
+                                        align_items="start",
+                                    ),
+                                    rx.spacer(),
+                                    rx.vstack(
+                                        rx.hstack(
+                                            rx.text("Test Date", width="105px", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(":", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(meta["test_date"], font_family=FONT_BODY, size="1", color="#0F172A", weight="medium"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        rx.hstack(
+                                            rx.text("Generated On", width="105px", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(":", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(meta["generated_on"], font_family=FONT_BODY, size="1", color="#0F172A", weight="medium"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        rx.hstack(
+                                            rx.text("Generated By", width="105px", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(":", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            rx.text(meta["generated_by"], font_family=FONT_BODY, size="1", color="#0F172A", weight="medium"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        spacing="1",
+                                        align_items="start",
+                                    ),
+                                    width="100%",
+                                    align_items="start",
+                                    margin_bottom="1.2em",
+                                ),
+
+                                # ── Section 1: Assessment Summary ──────────────
+                                _report_doc_section_banner("file-text", "Assessment Summary", "sec-summary"),
+                                rx.box(
+                                    rx.hstack(
+                                        # Left column
+                                        rx.vstack(
+                                            rx.hstack(
+                                                rx.text("Total Candidates", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["total"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            rx.hstack(
+                                                rx.text("Evaluated", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["evaluated"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            rx.hstack(
+                                                rx.text("Pending", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["pending"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            spacing="3",
+                                            flex="1",
+                                            align_items="stretch",
+                                        ),
+                                        # Divider
+                                        rx.box(width="1px", background="#E2E8F0", margin_x="2em", align_self="stretch"),
+                                        # Right column
+                                        rx.vstack(
+                                            rx.hstack(
+                                                rx.text("Pass Percentage (Set by Facilitator)", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["pass_pct"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            rx.hstack(
+                                                rx.text("Candidates Passed", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["passed"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            rx.hstack(
+                                                rx.text("Candidates Failed", font_family=FONT_BODY, size="2", color="#475467"),
+                                                rx.spacer(),
+                                                rx.text(stats["failed"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A"),
+                                                width="100%",
+                                            ),
+                                            spacing="3",
+                                            flex="1",
+                                            align_items="stretch",
+                                        ),
+                                        width="100%",
+                                        align_items="start",
+                                    ),
+                                    background="#F8FAFC",
+                                    border="1px solid #E2E8F0",
+                                    border_radius="6px",
+                                    padding="1.2em 1.5em",
+                                    width="100%",
+                                    margin_bottom="1.2em",
+                                ),
+
+                                # ── Section 2: Candidate Performance ───────────
+                                _report_doc_section_banner("users", "Candidate Performance", "sec-candidates"),
+                                rx.cond(
+                                    FacilitatorState.report_candidate_rows.length() == 0,
+                                    rx.box(
+                                        rx.text("No candidates assigned to this assessment.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                                        padding="1em",
+                                    ),
+                                    rx.table.root(
+                                        rx.table.header(
+                                            rx.table.row(
+                                                rx.table.column_header_cell(rx.text("#", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Candidate ID", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Candidate Name", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Normalized Score (%)", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Status", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                            ),
+                                        ),
+                                        rx.table.body(
+                                            rx.foreach(
+                                                FacilitatorState.report_candidate_rows,
+                                                lambda row: rx.table.row(
+                                                    rx.table.cell(rx.text(row["idx"], font_family=FONT_BODY, size="2", color="#64748B")),
+                                                    rx.table.cell(rx.text(row["cand_id"], font_family=FONT_BODY, size="2", color="#334155")),
+                                                    rx.table.cell(rx.text(row["cand_name"], font_family=FONT_BODY, size="2", color="#0F172A", weight="medium")),
+                                                    rx.table.cell(rx.text(row["score_str"], font_family=FONT_BODY, size="2", color="#0F172A", weight="bold")),
+                                                    rx.table.cell(_report_candidate_status_pill(row["status"])),
+                                                ),
+                                            ),
+                                        ),
+                                        width="100%",
+                                        variant="surface",
+                                        margin_bottom="1.2em",
+                                    ),
+                                ),
+
+                                # ── Section 3: Question-wise Analysis ──────────
+                                _report_doc_section_banner("square-check", "Question-wise Analysis", "sec-questions"),
+                                rx.cond(
+                                    FacilitatorState.report_question_rows.length() == 0,
+                                    rx.box(
+                                        rx.hstack(
+                                            rx.icon("info", size=16, color="#64748B"),
+                                            rx.text(
+                                                "No question-wise data available yet. Please complete AI or manual evaluation for this test.",
+                                                font_family=FONT_BODY, size="2", color=COLORS["slate"],
+                                            ),
+                                            spacing="2", align_items="center",
+                                        ),
+                                        background="#F8FAFC",
+                                        border="1px solid #E2E8F0",
+                                        border_radius="6px",
+                                        padding="1em 1.2em",
+                                        margin_bottom="1.2em",
+                                        width="100%",
+                                    ),
+                                    rx.table.root(
+                                        rx.table.header(
+                                            rx.table.row(
+                                                rx.table.column_header_cell(rx.text("Q. No.", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Question", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Max Marks", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Average Score", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                                rx.table.column_header_cell(rx.text("Difficulty", font_family=FONT_BODY, size="2", weight="bold", color="#64748B")),
+                                            ),
+                                        ),
+                                        rx.table.body(
+                                            rx.foreach(
+                                                FacilitatorState.report_question_rows,
+                                                lambda row: rx.table.row(
+                                                    rx.table.cell(rx.text(row["qno"], font_family=FONT_BODY, size="2", color="#64748B")),
+                                                    rx.table.cell(rx.text(row["question"], font_family=FONT_BODY, size="2", color="#0F172A"), min_width="220px"),
+                                                    rx.table.cell(rx.text(row["max_marks"], font_family=FONT_BODY, size="2", color="#334155")),
+                                                    rx.table.cell(rx.text(row["avg_score"], font_family=FONT_BODY, size="2", weight="bold", color="#0F172A")),
+                                                    rx.table.cell(_report_difficulty_pill(row["difficulty"])),
+                                                ),
+                                            ),
+                                        ),
+                                        width="100%",
+                                        variant="surface",
+                                        margin_bottom="1.2em",
+                                    ),
+                                ),
+
+                                # ── Section 4: Pass / Fail Summary ─────────────
+                                _report_doc_section_banner("circle-check", "Pass/Fail Summary", "sec-passfail"),
+                                rx.box(
+                                    rx.hstack(
+                                        rx.vstack(
+                                            rx.text("Passed", font_family=FONT_BODY, size="2", color="#059669", weight="medium"),
+                                            rx.text(stats["passed"], font_family=FONT_DISPLAY, size="7", weight="bold", color="#059669"),
+                                            rx.text("candidates", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        rx.vstack(
+                                            rx.text("Failed", font_family=FONT_BODY, size="2", color="#DC2626", weight="medium"),
+                                            rx.text(stats["failed"], font_family=FONT_DISPLAY, size="7", weight="bold", color="#DC2626"),
+                                            rx.text("candidates", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        rx.vstack(
+                                            rx.text("Pending", font_family=FONT_BODY, size="2", color="#D97706", weight="medium"),
+                                            rx.text(stats["pending"], font_family=FONT_DISPLAY, size="7", weight="bold", color="#D97706"),
+                                            rx.text("candidates", font_family=FONT_BODY, size="1", color="#64748B"),
+                                            spacing="1", align_items="center",
+                                        ),
+                                        spacing="8",
+                                        justify="center",
+                                        width="100%",
+                                    ),
+                                    background="#F8FAFC",
+                                    border="1px solid #E2E8F0",
+                                    border_radius="6px",
+                                    padding="1.5em",
+                                    width="100%",
+                                    margin_bottom="1.2em",
+                                ),
+
+                                # ── Section 5: Remarks ─────────────────────────
+                                _report_doc_section_banner("message-square", "Remarks", "sec-remarks"),
+                                rx.cond(
+                                    FacilitatorState.report_remarks_rows.length() == 0,
+                                    rx.box(
+                                        rx.text("No remarks available yet. Remarks are populated from evaluation feedback.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                                        padding="1em",
+                                    ),
+                                    rx.vstack(
+                                        rx.foreach(
+                                            FacilitatorState.report_remarks_rows,
+                                            lambda row: rx.box(
+                                                rx.vstack(
+                                                    rx.text(row["candidate"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                                    rx.text(row["remarks"], font_family=FONT_BODY, size="2", color="#475467", line_height="1.6"),
+                                                    spacing="1",
+                                                    align_items="start",
+                                                ),
+                                                background="#F8FAFC",
+                                                border="1px solid #E2E8F0",
+                                                border_left=f"3px solid {COLORS['primary']}",
+                                                border_radius="6px",
+                                                padding="0.9em 1.2em",
+                                                width="100%",
+                                            ),
+                                        ),
+                                        spacing="3",
+                                        width="100%",
+                                    ),
+                                ),
+
+                                spacing="0",
+                                width="100%",
+                                align_items="stretch",
+                            ),
+                            background="white",
+                            border_radius="4px",
+                            box_shadow="0 6px 24px rgba(0,0,0,0.3)",
+                            padding="3em 3.5em",
+                            max_width="860px",
+                            margin="0 auto",
+                            width="100%",
+                        ),
+                        background="#383C45",
+                        padding="2em 1.5em",
+                        border_radius="0 0 10px 10px",
+                        max_height="calc(100vh - 210px)",
+                        overflow_y="auto",
+                        width="100%",
+                    ),
+
+                    spacing="0",
+                    width="100%",
+                    align_items="stretch",
+                ),
+                flex="1",
+                min_width="0",
+                border_radius="10px",
+                border="1px solid #334155",
+                overflow="hidden",
+                box_shadow="0 4px 12px rgba(0,0,0,0.12)",
+            ),
+
+            spacing="5",
+            width="100%",
+            align_items="start",
+        ),
+
+        spacing="0",
+        width="100%",
+        align_items="stretch",
+    )
+
+
 def assessment_workspace_page() -> rx.Component:
     content = rx.vstack(
-        workspace_tab_bar(),
         rx.match(
             FacilitatorState.active_workspace_tab,
-            ("question_paper", question_paper_tab()),
+            ("tests", tests_tab()),
+            ("question_paper", tests_tab()),
             ("evaluation", evaluation_tab()),
             ("weightage", weightage_tab()),
             ("results", results_tab()),
+            ("reports", reports_tab()),
+            ("report_detail", report_detail_tab()),
             # Fallback
-            question_paper_tab(),
+            tests_tab(),
         ),
         qp_preview_dialog(),
+        qp_upload_dialog(),
         add_new_test_dialog(),
         spacing="0",
         width="100%",
