@@ -31,6 +31,8 @@ def candidate_login_page() -> rx.Component:
             AuthState.candidate_signin_password,
             AuthState.set_candidate_signin_password,
             input_type="password",
+            show_password=AuthState.show_candidate_signin_password,
+            on_toggle_password=AuthState.toggle_candidate_signin_password,
             on_key_down=AuthState.handle_candidate_keydown,
         ),
         rx.cond(

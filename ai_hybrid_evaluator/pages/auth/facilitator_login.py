@@ -30,6 +30,8 @@ def facilitator_login_page() -> rx.Component:
             AuthState.facilitator_signin_password,
             AuthState.set_facilitator_signin_password,
             input_type="password",
+            show_password=AuthState.show_facilitator_signin_password,
+            on_toggle_password=AuthState.toggle_facilitator_signin_password,
             on_key_down=AuthState.handle_facilitator_keydown,
         ),
         rx.cond(

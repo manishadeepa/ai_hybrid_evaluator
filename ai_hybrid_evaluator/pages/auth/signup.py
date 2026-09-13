@@ -58,11 +58,27 @@ def _form_view() -> rx.Component:
             width="100%", padding_top="1.1em",
         ),
         rx.box(
-            auth_input("Password", "At least 8 characters", AuthState.signup_password, AuthState.set_signup_password, input_type="password"),
+            auth_input(
+                "Password",
+                "At least 8 characters",
+                AuthState.signup_password,
+                AuthState.set_signup_password,
+                input_type="password",
+                show_password=AuthState.show_signup_password,
+                on_toggle_password=AuthState.toggle_signup_password,
+            ),
             width="100%", padding_top="1.1em",
         ),
         rx.box(
-            auth_input("Confirm Password", "Re-enter your password", AuthState.signup_confirm_password, AuthState.set_signup_confirm_password, input_type="password"),
+            auth_input(
+                "Confirm Password",
+                "Re-enter your password",
+                AuthState.signup_confirm_password,
+                AuthState.set_signup_confirm_password,
+                input_type="password",
+                show_password=AuthState.show_signup_confirm_password,
+                on_toggle_password=AuthState.toggle_signup_confirm_password,
+            ),
             width="100%", padding_top="1.1em",
         ),
         rx.cond(

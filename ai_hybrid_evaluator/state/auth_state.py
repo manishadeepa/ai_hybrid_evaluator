@@ -59,6 +59,40 @@ class AuthState(rx.State):
     candidate_emp_id: str = ""
     candidate_email: str = ""
 
+    # ---- Password Visibility Toggles ----
+    show_signin_password: bool = False
+    show_facilitator_signin_password: bool = False
+    show_candidate_signin_password: bool = False
+    show_signup_password: bool = False
+    show_signup_confirm_password: bool = False
+    show_chpwd_current: bool = False
+    show_chpwd_new: bool = False
+    show_chpwd_confirm: bool = False
+
+    def toggle_signin_password(self):
+        self.show_signin_password = not self.show_signin_password
+
+    def toggle_facilitator_signin_password(self):
+        self.show_facilitator_signin_password = not self.show_facilitator_signin_password
+
+    def toggle_candidate_signin_password(self):
+        self.show_candidate_signin_password = not self.show_candidate_signin_password
+
+    def toggle_signup_password(self):
+        self.show_signup_password = not self.show_signup_password
+
+    def toggle_signup_confirm_password(self):
+        self.show_signup_confirm_password = not self.show_signup_confirm_password
+
+    def toggle_chpwd_current(self):
+        self.show_chpwd_current = not self.show_chpwd_current
+
+    def toggle_chpwd_new(self):
+        self.show_chpwd_new = not self.show_chpwd_new
+
+    def toggle_chpwd_confirm(self):
+        self.show_chpwd_confirm = not self.show_chpwd_confirm
+
     @rx.var
     def admin_avatar_initial(self) -> str:
         name = self.admin_name.strip()

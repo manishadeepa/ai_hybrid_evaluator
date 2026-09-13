@@ -174,7 +174,9 @@ class FacilitatorState(rx.State):
             else:
                 status = "Not Evaluated"
 
+            is_ready = score is not None
             items.append({
+                "name": f"{t_name} Report",
                 "title": f"{t_name} Report",
                 "badge_label": badge_label,
                 "badge_scheme": badge_scheme,
@@ -183,22 +185,34 @@ class FacilitatorState(rx.State):
                 "date_str": t_date if t_date else "—",
                 "description": f"Individual performance report for {t_name}.",
                 "status": status,
+                "is_ready": is_ready,
+                "is_final": is_final,
             })
         return items
 
     @rx.var(cache=True)
     async def can_show_overall_report(self) -> bool:
-        """True when every test in the selected assessment has been evaluated."""
+        """True only when BOTH:
+        1. Every test in the selected assessment has been evaluated (status = 'Ready to Generate'), AND
+        2. Saved weightages for the assessment total exactly 100%.
+        """
         items = await self.reports_dynamic_test_items
         if not items:
             return False
-        return all(item["status"] == "Ready to Generate" for item in items)
+        all_evaluated = all(item["status"] == "Ready to Generate" for item in items)
+        if not all_evaluated:
+            return False
+        # Check weightage gate
+        asmn = self.selected_assessment_name
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        return total_w == 100
 
     # ─── Report Detail computed vars ──────────────────────────────────────────
 
     @rx.var(cache=True)
     async def report_candidate_rows(self) -> list[dict]:
-        """Per-candidate normalized score + pass/fail for the selected report test."""
+        """Per-candidate normalized score + pass/fail for the selected report test or overall assessment."""
         test_name = self.selected_report_test_name
         asmn = self.selected_assessment_name
         if not test_name or not asmn:
@@ -207,38 +221,85 @@ class FacilitatorState(rx.State):
         match = next((a for a in mine if a["name"] == asmn), None)
         if not match:
             return []
-        try:
-            pass_pct = float(self.reports_pass_percentage)
-        except (ValueError, TypeError):
-            pass_pct = 50.0
+        is_overall = "overall" in test_name.lower()
+        if is_overall:
+            pass_pct = self.get_assessment_overall_pass_percentage(asmn)
+        else:
+            pass_pct = self.get_test_pass_percentage(test_name, asmn)
+
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
 
         rows: list[dict] = []
         for i, cand in enumerate(match.get("candidate_details", []), 1):
             cand_name: str = cand["name"]
             cand_id: str = cand["emp_id"]
-            score: float | None = None
-            # Search real_ai_results_per_candidate for a matching key
-            for key, val in self.real_ai_results_per_candidate.items():
-                parts = key.split(":")
-                t_part = parts[1].strip() if len(parts) > 1 else ""
-                c_part = parts[0].strip()
-                if t_part != test_name:
-                    continue
-                # Match by name or emp_id embedded in key
-                if cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name):
-                    score = self._calculate_normalized_score(val)
-                    break
-            if score is not None:
-                status = "Passed" if score >= pass_pct else "Failed"
-                score_str = str(int(score)) if score == int(score) else str(round(score, 1))
+
+            if is_overall:
+                # Calculate weighted sum across all tests for this candidate
+                all_tests = match.get("test_items", [])
+                weighted_total = 0.0
+                has_any_score = False
+                for t in all_tests:
+                    t_name = t["name"]
+                    t_w = saved_w.get(t_name, 0)
+                    t_score = None
+                    for key, val in self.real_ai_results_per_candidate.items():
+                        parts = key.split(":")
+                        t_part = parts[1].strip() if len(parts) > 1 else ""
+                        c_part = parts[0].strip()
+                        if t_part == t_name and (cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name)):
+                            t_score = self._calculate_normalized_score(val)
+                            break
+                    if t_score is not None:
+                        has_any_score = True
+                        weighted_total += t_score * t_w / 100.0
+
+                if has_any_score:
+                    final_score = round(weighted_total, 1)
+                    status = "Passed" if final_score >= pass_pct else "Failed"
+                    score_str = str(int(final_score)) if final_score == int(final_score) else str(final_score)
+                    weightage_str = "100%"
+                    weighted_str = score_str
+                else:
+                    status = "Pending"
+                    score_str = "—"
+                    weightage_str = "100%"
+                    weighted_str = "—"
+
             else:
-                status = "Pending"
-                score_str = "—"
+                score: float | None = None
+                # Search real_ai_results_per_candidate for a matching key
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if t_part != test_name:
+                        continue
+                    # Match by name or emp_id embedded in key
+                    if cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name):
+                        score = self._calculate_normalized_score(val)
+                        break
+
+                t_w = saved_w.get(test_name, 0)
+                if score is not None:
+                    status = "Passed" if score >= pass_pct else "Failed"
+                    score_str = str(int(score)) if score == int(score) else str(round(score, 1))
+                    weightage_str = f"{t_w}%" if t_w else "—"
+                    weighted_val = round(score * t_w / 100.0, 1) if t_w else score
+                    weighted_str = f"{weighted_val}"
+                else:
+                    status = "Pending"
+                    score_str = "—"
+                    weightage_str = f"{t_w}%" if t_w else "—"
+                    weighted_str = "—"
+
             rows.append({
                 "idx": str(i),
                 "cand_id": cand_id,
                 "cand_name": cand_name,
                 "score_str": score_str,
+                "weightage_str": weightage_str,
+                "weighted_score_str": weighted_str,
                 "status": status,
             })
         return rows
@@ -252,20 +313,28 @@ class FacilitatorState(rx.State):
         pending = total - evaluated
         passed = sum(1 for r in rows if r["status"] == "Passed")
         failed = evaluated - passed
+        test_name = self.selected_report_test_name
+        asmn = self.selected_assessment_name
+        if "overall" in test_name.lower():
+            p_val = self.get_assessment_overall_pass_percentage(asmn)
+        else:
+            p_val = self.get_test_pass_percentage(test_name, asmn)
+        p_str = f"{int(p_val)}%" if p_val == int(p_val) else f"{p_val:.1f}%"
+
         return {
             "total": str(total),
             "evaluated": str(evaluated),
             "pending": str(pending),
             "passed": str(passed),
             "failed": str(failed),
-            "pass_pct": self.reports_pass_percentage + "%",
+            "pass_pct": p_str,
         }
 
     @rx.var(cache=True)
     async def report_question_rows(self) -> list[dict]:
         """Question-wise average scores aggregated across all evaluated candidates for the selected test."""
         test_name = self.selected_report_test_name
-        if not test_name:
+        if not test_name or "overall" in test_name.lower():
             return []
         # Collect all question arrays for this test
         all_qs: dict[int, list[dict]] = {}
@@ -302,7 +371,7 @@ class FacilitatorState(rx.State):
     async def report_remarks_rows(self) -> list[dict]:
         """Per-candidate remarks/feedback for the selected test."""
         test_name = self.selected_report_test_name
-        if not test_name:
+        if not test_name or "overall" in test_name.lower():
             return []
         rows: list[dict] = []
         for key, val in self.real_ai_results_per_candidate.items():
@@ -327,6 +396,8 @@ class FacilitatorState(rx.State):
         test_name = self.selected_report_test_name
         if not test_name:
             return {"badge": "Formative", "badge_scheme": "blue", "date": "15 Sep 2026"}
+        if "overall" in test_name.lower():
+            return {"badge": "Overall", "badge_scheme": "green", "date": "15 Sep 2026"}
         badge = "Summative" if "summative" in test_name.lower() else "Formative"
         badge_scheme = "purple" if badge == "Summative" else "blue"
         return {"badge": badge, "badge_scheme": badge_scheme, "date": "15 Sep 2026"}
@@ -336,8 +407,12 @@ class FacilitatorState(rx.State):
         """Detailed metadata for the currently viewed report test."""
         test_name = self.selected_report_test_name
         asmn = self.selected_assessment_name
-        badge = "Summative" if "summative" in test_name.lower() else "Formative"
-        badge_scheme = "purple" if badge == "Summative" else "blue"
+        if "overall" in (test_name or "").lower():
+            badge = "Overall"
+            badge_scheme = "green"
+        else:
+            badge = "Summative" if "summative" in (test_name or "").lower() else "Formative"
+            badge_scheme = "purple" if badge == "Summative" else "blue"
         test_date = ""
         if asmn and test_name:
             mine = await self.my_assessments
@@ -371,9 +446,11 @@ class FacilitatorState(rx.State):
     # ── Weightage Tab state ────────────────────────────────────────────────────
     # Saved weightages: { assessment_name: { test_name: weightage_int } }
     saved_assessment_weightages: dict[str, dict[str, int]] = {}
+    saved_assessment_pass_percentages: dict[str, dict[str, int]] = {}
 
     # Transient input values: { assessment_name: { test_name: percentage_str } }
     weightage_inputs: dict[str, dict[str, str]] = {}
+    pass_percentage_inputs: dict[str, dict[str, str]] = {}
     selected_assessment_final_test: str = ""
 
     @staticmethod
@@ -405,8 +482,75 @@ class FacilitatorState(rx.State):
         except Exception:
             pass
 
+    @staticmethod
+    def _get_pass_percentages_file_path() -> Path:
+        base_dir = Path(__file__).resolve().parent.parent
+        data_dir = base_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "assessment_pass_percentages.json"
+
+    def _load_saved_pass_percentages(self) -> dict[str, dict[str, int]]:
+        """Load saved test-level pass percentages from disk."""
+        fp = self._get_pass_percentages_file_path()
+        if fp.exists():
+            try:
+                import json
+                with open(fp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _persist_pass_percentages(self):
+        """Persist saved test-level pass percentages to disk."""
+        fp = self._get_pass_percentages_file_path()
+        try:
+            import json
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(self.saved_assessment_pass_percentages, f, indent=2)
+        except Exception:
+            pass
+
+    def get_test_pass_percentage(self, test_name: str, assessment_name: str = "") -> float:
+        """Get configured pass percentage for a specific test in an assessment (defaults to 50.0)."""
+        asmn = assessment_name or self.selected_assessment_name
+        if not self.saved_assessment_pass_percentages:
+            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
+        cur_inputs = self.pass_percentage_inputs.get(asmn, {})
+        if test_name in cur_inputs and str(cur_inputs[test_name]).strip():
+            try:
+                return float(cur_inputs[test_name])
+            except ValueError:
+                pass
+        saved = self.saved_assessment_pass_percentages.get(asmn, {})
+        if test_name in saved:
+            return float(saved[test_name])
+        return 50.0
+
+    def get_assessment_overall_pass_percentage(self, assessment_name: str = "") -> float:
+        """Weighted pass percentage across all tests in the assessment if weightages total 100%,
+        otherwise simple average of test pass percentages (defaults to 50.0)."""
+        asmn = assessment_name or self.selected_assessment_name
+        if not self.saved_assessment_weightages:
+            self.saved_assessment_weightages = self._load_saved_weightages()
+        if not self.saved_assessment_pass_percentages:
+            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        if total_w == 100 and saved_w:
+            weighted_pass = sum(
+                (w / 100.0) * self.get_test_pass_percentage(t_name, asmn)
+                for t_name, w in saved_w.items()
+            )
+            return round(weighted_pass, 1)
+        saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
+        if saved_p:
+            vals = [float(v) for v in saved_p.values()]
+            return round(sum(vals) / len(vals), 1)
+        return 50.0
+
     def restore_assessment_weightage(self, assessment_name: str):
-        """Restore saved weightages for the given assessment into weightage_inputs."""
+        """Restore saved weightages and pass percentages for the given assessment into inputs."""
         if not self.saved_assessment_weightages:
             self.saved_assessment_weightages = self._load_saved_weightages()
         saved = self.saved_assessment_weightages.get(assessment_name, {})
@@ -414,6 +558,14 @@ class FacilitatorState(rx.State):
         updated = dict(self.weightage_inputs)
         updated[assessment_name] = cur
         self.weightage_inputs = updated
+
+        if not self.saved_assessment_pass_percentages:
+            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
+        saved_p = self.saved_assessment_pass_percentages.get(assessment_name, {})
+        cur_p = {t: str(p) for t, p in saved_p.items()} if saved_p else {}
+        updated_p = dict(self.pass_percentage_inputs)
+        updated_p[assessment_name] = cur_p
+        self.pass_percentage_inputs = updated_p
 
     def set_weightage_input(self, test_name: str, value: str):
         """Update the weightage % string for a specific test in the current assessment."""
@@ -423,6 +575,15 @@ class FacilitatorState(rx.State):
         updated = dict(self.weightage_inputs)
         updated[asmn] = cur
         self.weightage_inputs = updated
+
+    def set_pass_percentage_input(self, test_name: str, value: str):
+        """Update the pass percentage string for a specific test in the current assessment."""
+        asmn = self.selected_assessment_name
+        cur = dict(self.pass_percentage_inputs.get(asmn, {}))
+        cur[test_name] = value
+        updated = dict(self.pass_percentage_inputs)
+        updated[asmn] = cur
+        self.pass_percentage_inputs = updated
 
     @rx.var
     def current_assessment_total_weightage(self) -> int:
@@ -501,7 +662,8 @@ class FacilitatorState(rx.State):
 
     @rx.var
     async def current_assessment_weightage_items(self) -> list[dict]:
-        """Dynamically computed test items with normalized and weighted scores for the active assessment."""
+        """Return assessment-level test items for the Weightage tab.
+        Weightage is common to all candidates; no candidate-specific scores here."""
         asmn = self.selected_assessment_name
         if not asmn:
             return []
@@ -511,30 +673,26 @@ class FacilitatorState(rx.State):
         if not match:
             return []
 
+        if not self.saved_assessment_pass_percentages:
+            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
         saved_w = self.saved_assessment_weightages.get(asmn, {})
         cur_w = self.weightage_inputs.get(asmn, {})
+        saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
+        cur_p = self.pass_percentage_inputs.get(asmn, {})
+        test_items = match.get("test_items", [])
+
+        # If only one test and no weightage saved/entered yet, default to 100%
+        if len(test_items) == 1 and not saved_w and not cur_w:
+            single_name = test_items[0]["name"]
+            cur_w = {single_name: "100"}
 
         items = []
-        for t in match.get("test_items", []):
+        for t in test_items:
             t_name = t["name"]
             is_final = t.get("is_final", False)
             d = t.get("date", "")
             w_val = cur_w.get(t_name, str(saved_w.get(t_name, t.get("weightage", ""))))
-
-            norm_score = self._get_test_normalized_score(t_name)
-            has_score = norm_score is not None
-            if has_score:
-                norm_score_val = round(norm_score, 1)
-                norm_score_str = f"{int(norm_score_val)}%" if norm_score_val == int(norm_score_val) else f"{norm_score_val}%"
-                try:
-                    w_num = float(w_val) if str(w_val).strip() else 0.0
-                except (ValueError, TypeError):
-                    w_num = 0.0
-                weighted_val = round((norm_score_val * w_num) / 100.0, 1)
-                weighted_str = f"{weighted_val:.1f}"
-            else:
-                norm_score_str = "Not Evaluated"
-                weighted_str = "—"
+            p_val = cur_p.get(t_name, str(saved_p.get(t_name, "50")))
 
             items.append({
                 "name": t_name,
@@ -542,9 +700,7 @@ class FacilitatorState(rx.State):
                 "is_final": is_final,
                 "has_qp": t.get("has_qp", False),
                 "weightage": w_val,
-                "has_score": has_score,
-                "norm_score_str": norm_score_str,
-                "weighted_score_str": weighted_str,
+                "pass_percentage": p_val,
             })
         return items
 
@@ -575,11 +731,29 @@ class FacilitatorState(rx.State):
         if total != 100:
             return rx.toast.error(f"Total weightage is {total}%. It must be exactly 100% to save.")
 
+        # Parse pass percentages for each test
+        p_inputs = self.pass_percentage_inputs.get(asmn, {})
+        saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
+        parsed_pass: dict[str, int] = {}
+        for t_name in parsed_weights.keys():
+            val_p = p_inputs.get(t_name, str(saved_p.get(t_name, "50")))
+            try:
+                p_int = int(val_p) if str(val_p).strip() else 50
+            except ValueError:
+                p_int = 50
+            parsed_pass[t_name] = max(0, min(100, p_int))
+
         updated_saved = dict(self.saved_assessment_weightages)
         updated_saved[asmn] = parsed_weights
         self.saved_assessment_weightages = updated_saved
         self._persist_weightages()
-        return rx.toast.success(f"Weightage configuration saved successfully ({total}%).")
+
+        updated_pass = dict(self.saved_assessment_pass_percentages)
+        updated_pass[asmn] = parsed_pass
+        self.saved_assessment_pass_percentages = updated_pass
+        self._persist_pass_percentages()
+
+        return rx.toast.success(f"Weightage and pass percentage configuration saved successfully.")
 
     @staticmethod
     def _calculate_normalized_score(res: dict) -> float:
@@ -1387,7 +1561,13 @@ class FacilitatorState(rx.State):
         except Exception:
             return 0
 
+
+    def close_eval_progress_modal(self):
+        """Dismiss the AI evaluation progress dialog."""
+        self.show_eval_progress_modal = False
+
     async def run_ai_evaluation(self):
+
         """Run the real AI Evaluation Engine using Azure OpenAI.
         Reads the uploaded Question Paper and the latest candidate response file.
         Falls back gracefully to mock data if files or API credentials are missing.
@@ -1671,6 +1851,7 @@ class FacilitatorState(rx.State):
     # ── Results Tab Analytics State ────────────────────────────────────
     results_selected_candidate: str = "All Candidates"
     results_active_dimension_tab: str = "overall"  # "overall", "co", "lo", "knowledge_type", "domain", "rbt_level"
+    results_selected_test: str = ""  # empty = all tests; otherwise specific test name
     # Sync cache of the current assessment's candidates — populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
 
@@ -1679,6 +1860,11 @@ class FacilitatorState(rx.State):
 
     def set_results_dimension_tab(self, tab_key: str):
         self.results_active_dimension_tab = tab_key
+
+    def set_results_selected_test(self, test_name: str):
+        """Update the results test filter and also sync selected_test_name."""
+        self.results_selected_test = test_name
+        self.selected_test_name = test_name
 
     @rx.var(cache=True)
     async def results_candidate_options(self) -> list[str]:
@@ -1729,13 +1915,178 @@ class FacilitatorState(rx.State):
 
         return options
 
+    @rx.var(cache=True)
+    async def results_test_options(self) -> list[str]:
+        """List of test names in the selected assessment for the Results test dropdown."""
+        mine = await self.my_assessments
+        for a in mine:
+            if a["name"] == self.selected_assessment_name:
+                return [t["name"] for t in a.get("test_items", [])]
+        return []
+
+    @rx.var
+    def results_eval_status(self) -> str:
+        """'Evaluated' or 'Not Evaluated' for the selected candidate + test combo."""
+        cand = self.results_selected_candidate
+        test = self.results_selected_test or self.selected_test_name
+        if cand == "All Candidates" or not cand or not test:
+            return ""
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        for key in self.real_ai_results_per_candidate:
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if t_part == test and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower()):
+                return "Evaluated"
+        return "Not Evaluated"
+
+    @rx.var
+    def results_eval_date(self) -> str:
+        """Submission / eval date for the selected candidate + test."""
+        cand = self.results_selected_candidate
+        test = self.results_selected_test or self.selected_test_name
+        if cand == "All Candidates" or not cand or not test:
+            return ""
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if t_part == test and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower()):
+                return val.get("eval_date", "")
+        return ""
+
+    @rx.var
+    def results_question_analysis_items(self) -> list[dict]:
+        """Question-wise breakdown for the selected single candidate + test.
+        Each item: q_no, question, marks_obtained, max_marks, score_pct_num, score_pct, remarks, bar_pct."""
+        cand = self.results_selected_candidate
+        test = self.results_selected_test or self.selected_test_name
+        if cand == "All Candidates" or not cand or not test:
+            return []
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if t_part == test and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower()):
+                items = []
+                for i, q in enumerate(val.get("questions", []), 1):
+                    try:
+                        obt = float(q.get("ai_score", 0) or 0)
+                        mx = float(q.get("max_marks", 0) or 0)
+                        pct = round((obt / mx) * 100, 1) if mx > 0 else 0.0
+                    except (ValueError, TypeError):
+                        obt, mx, pct = 0.0, 0.0, 0.0
+                    pct_int = int(pct) if pct == int(pct) else pct
+                    pct_str = f"{pct_int}%"
+                    pass_pct = self.results_pass_percentage
+                    # Derive remarks from score percentage relative to configured pass mark
+                    if pct >= max(85, pass_pct + 15):
+                        remarks = "Excellent"
+                        r_color = "#059669"
+                        r_bg = "#ECFDF5"
+                    elif pct >= pass_pct:
+                        remarks = "Good"
+                        r_color = "#2563EB"
+                        r_bg = "#EFF6FF"
+                    elif pct >= max(0, pass_pct - 15):
+                        remarks = "Average"
+                        r_color = "#D97706"
+                        r_bg = "#FFFBEB"
+                    else:
+                        remarks = "Needs Work"
+                        r_color = "#DC2626"
+                        r_bg = "#FEF2F2"
+                    items.append({
+                        "q_no": str(q.get("q_no", i)),
+                        "question": str(q.get("question", f"Question {i}")),
+                        "marks_obtained": str(int(obt) if obt == int(obt) else obt),
+                        "max_marks": str(int(mx) if mx == int(mx) else mx),
+                        "score_pct": pct_str,
+                        "score_pct_num": pct,
+                        "remarks": remarks,
+                        "r_color": r_color,
+                        "r_bg": r_bg,
+                        "bar_pct": pct,
+                    })
+                return items
+        return []
+
+    @rx.var
+    def results_performance_summary(self) -> dict:
+        """Performance summary card data: total_questions, marks_str, normalized_str, status."""
+        cand = self.results_selected_candidate
+        test = self.results_selected_test or self.selected_test_name
+        pass_pct = self.results_pass_percentage
+        if cand == "All Candidates" or not cand or not test:
+            data = self.current_results_data
+            if not data:
+                return {"total_questions": "—", "marks_str": "—", "normalized_str": "—", "status": "—", "status_color": "#475467"}
+            score = data.get("overall_score", 0)
+            return {
+                "total_questions": "—",
+                "marks_str": "—",
+                "normalized_str": f"{score}%",
+                "status": "Passed" if score >= pass_pct else "Failed",
+                "status_color": "#059669" if score >= pass_pct else "#DC2626",
+            }
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if t_part == test and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower()):
+                obt = val.get("marks_obtained", 0)
+                mx = val.get("max_marks", 0)
+                norm = val.get("normalized_score", 0)
+                questions = val.get("questions", [])
+                norm_str = f"{int(norm)}%" if norm == int(norm) else f"{norm}%"
+                obt_d = int(obt) if isinstance(obt, float) and obt == int(obt) else obt
+                mx_d = int(mx) if isinstance(mx, float) and mx == int(mx) else mx
+                pass_thresh = self.get_test_pass_percentage(test)
+                passed = norm >= pass_thresh
+                return {
+                    "total_questions": str(len(questions)),
+                    "marks_str": f"{obt_d} / {mx_d}",
+                    "normalized_str": norm_str,
+                    "status": "Passed" if passed else "Failed",
+                    "status_color": "#059669" if passed else "#DC2626",
+                }
+        return {"total_questions": "—", "marks_str": "—", "normalized_str": "—", "status": "—", "status_color": "#475467"}
+
     @rx.var
     def current_results_data(self) -> dict:
-        """Build results data exclusively from real AI evaluation results with
-        Normalized Score = (Marks Obtained / Max Marks) * 100 for every evaluated test.
+        """Build results data exclusively from real AI evaluation results.
+        Overall Assessment Score = sum(normalized_score * weightage / 100) for each test.
+        Falls back to simple average when no weightage is configured.
         Returns an empty dict if no real data exists for the selection."""
         cand = self.results_selected_candidate
         final_test_name = self.selected_assessment_final_test
+        asmn = self.selected_assessment_name
+
+        # Load saved weightages for this assessment
+        saved_w: dict[str, int] = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        use_weightage = (total_w == 100 and bool(saved_w))
+
+        def _weighted_score(test_name: str, norm_score: float) -> float:
+            """Return weighted contribution of a test score."""
+            if use_weightage and test_name in saved_w:
+                return round(norm_score * saved_w[test_name] / 100.0, 2)
+            return norm_score  # fallback: treat each test equally
 
         if cand == "All Candidates":
             # Aggregate across all real results for this assessment + selected test
@@ -1775,17 +2126,27 @@ class FacilitatorState(rx.State):
 
             if not all_scores:
                 return {}  # No real data — UI will show empty state
-            avg = int(round(sum(all_scores) / len(all_scores)))
-            passed = sum(1 for s in all_scores if s >= 50)
+
+            passed = 0
+            for t, v in test_scores.items():
+                p_thresh = self.get_test_pass_percentage(t)
+                passed += sum(1 for s in v if s >= p_thresh)
 
             # Final test average if available, else cohort average
             final_scores = test_scores.get(final_test_name, []) if final_test_name else []
-            final_avg = int(round(sum(final_scores) / len(final_scores))) if final_scores else avg
+            final_avg = int(round(sum(final_scores) / len(final_scores))) if final_scores else int(round(sum(all_scores) / len(all_scores)))
 
-            tests_bar = [
-                {"name": t, "score": int(round(sum(v) / len(v))), "is_final": (t == final_test_name)}
-                for t, v in test_scores.items()
-            ]
+            # Compute per-test averages and apply weightage
+            avg_weighted_total = 0.0
+            tests_bar = []
+            for t, v in test_scores.items():
+                t_avg = int(round(sum(v) / len(v)))
+                t_weighted = _weighted_score(t, float(t_avg))
+                avg_weighted_total += t_weighted if use_weightage else 0.0
+                tests_bar.append({"name": t, "score": t_avg, "is_final": (t == final_test_name)})
+
+            avg = int(round(avg_weighted_total)) if use_weightage else int(round(sum(all_scores) / len(all_scores)))
+
             co_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in co_agg.items()]
             lo_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in lo_agg.items()]
             rbt_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in rbt_agg.items()]
@@ -1806,9 +2167,11 @@ class FacilitatorState(rx.State):
                 "insight_diff": 0,
                 "insight_start": "",
                 "insight_end": f"Cohort Average ({avg}%)",
+                "use_weightage": use_weightage,
+                "saved_weightages": dict(saved_w),
             }
         else:
-            # Per-candidate: find actual evaluation result for this candidate + selected assessment + test
+            # Per-candidate: find actual evaluation results for this candidate + selected assessment + test
             target_test = self.selected_test_name.strip()
             cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
             cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
@@ -1832,18 +2195,50 @@ class FacilitatorState(rx.State):
             if not matched_tests:
                 return {}  # Candidate has no evaluation result for this test -> show No Results Available
 
-            cand_scores = []
             tests_bar = []
             co_agg = {}
             lo_agg = {}
             rbt_agg = {}
             domain_agg = {}
             kt_agg = {}
+            # For test breakdown shown in results tab
+            test_breakdown = []
+
+            weighted_sum = 0.0
+            norm_scores_simple = []
 
             for t_name, m_res in matched_tests.items():
                 norm_score = self._calculate_normalized_score(m_res)
+                norm_score_round = round(norm_score, 1)
                 score_val = int(round(norm_score))
-                cand_scores.append(score_val)
+                norm_scores_simple.append(score_val)
+
+                t_weightage = saved_w.get(t_name, 0) if use_weightage else 0
+                weighted = round(norm_score_round * t_weightage / 100.0, 1) if use_weightage else 0.0
+
+                if use_weightage:
+                    weighted_sum += weighted
+
+                marks_obt = m_res.get("marks_obtained", "—")
+                max_m = m_res.get("max_marks", "—")
+
+                norm_str = f"{int(norm_score_round)}%" if norm_score_round == int(norm_score_round) else f"{norm_score_round}%"
+                weighted_str = f"{weighted:.1f}" if use_weightage else "—"
+                marks_str = f"{marks_obt} / {max_m}"
+                weightage_str = f"{t_weightage}%" if use_weightage else "—"
+
+                test_breakdown.append({
+                    "name": t_name,
+                    "is_final": (t_name == final_test_name),
+                    "marks_obtained": str(marks_obt),
+                    "max_marks": str(max_m),
+                    "marks_str": marks_str,
+                    "norm_score_str": norm_str,
+                    "weightage": str(t_weightage) if use_weightage else "—",
+                    "weightage_str": weightage_str,
+                    "weighted_score_str": weighted_str,
+                    "norm_score_val": score_val,
+                })
                 tests_bar.append({
                     "name": t_name,
                     "score": score_val,
@@ -1860,7 +2255,13 @@ class FacilitatorState(rx.State):
                 for item in m_res.get("knowledge_type", []):
                     kt_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
 
-            avg_score = int(round(sum(cand_scores) / len(cand_scores))) if cand_scores else 0
+            if use_weightage:
+                avg_score = int(round(weighted_sum))
+                overall_score_str = f"{round(weighted_sum, 1)}"
+            else:
+                avg_score = int(round(sum(norm_scores_simple) / len(norm_scores_simple))) if norm_scores_simple else 0
+                overall_score_str = str(avg_score)
+
             final_s = None
             if final_test_name and final_test_name in matched_tests:
                 final_s = int(round(self._calculate_normalized_score(matched_tests[final_test_name])))
@@ -1872,13 +2273,22 @@ class FacilitatorState(rx.State):
             domain_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in domain_agg.items()]
             kt_items = [{"name": k, "code": k, "score": int(sum(v) / len(v))} for k, v in kt_agg.items()]
 
-            test_name = self.selected_test_name or "Test"
+            target_test = self.selected_test_name.strip()
+            if target_test:
+                pass_pct_val = self.get_test_pass_percentage(target_test)
+            elif matched_tests and len(matched_tests) == 1:
+                pass_pct_val = self.get_test_pass_percentage(list(matched_tests.keys())[0])
+            else:
+                pass_pct_val = self.get_assessment_overall_pass_percentage()
+
             return {
                 "overall_score": avg_score,
+                "overall_score_str": overall_score_str,
                 "final_test_score": final_score_val,
-                "passing_rate": "100%" if avg_score >= 50 else "0%",
-                "passing_count": "Passed" if avg_score >= 50 else "Failed",
+                "passing_rate": "100%" if avg_score >= pass_pct_val else "0%",
+                "passing_count": "Passed" if avg_score >= pass_pct_val else "Failed",
                 "tests": tests_bar,
+                "test_breakdown": test_breakdown,
                 "co": co_items,
                 "lo": lo_items,
                 "knowledge_type": kt_items,
@@ -1886,12 +2296,45 @@ class FacilitatorState(rx.State):
                 "rbt_level": rbt_items,
                 "insight_diff": 0,
                 "insight_start": "",
-                "insight_end": test_name + f" ({avg_score}%)",
+                "insight_end": f"{cand} ({overall_score_str}%)",
+                "use_weightage": use_weightage,
+                "saved_weightages": dict(saved_w),
             }
+
+
+    @rx.var
+    def results_pass_percentage(self) -> int:
+        """Dynamic pass percentage for the selected test or overall assessment, read from saved weightages/configuration."""
+        target_test = (self.results_selected_test or self.selected_test_name).strip()
+        asmn = self.selected_assessment_name
+        if target_test:
+            val = self.get_test_pass_percentage(target_test, asmn)
+        else:
+            val = self.get_assessment_overall_pass_percentage(asmn)
+        return int(round(val))
+
+    @rx.var
+    def results_pass_percentage_str(self) -> str:
+        return f"{self.results_pass_percentage}%"
+
+    @rx.var
+    def results_pass_line_top(self) -> str:
+        pct = max(0, min(100, self.results_pass_percentage))
+        return f"{100 - pct}%"
+
+    @rx.var
+    def results_pass_badge_top(self) -> str:
+        pct = max(0, min(100, self.results_pass_percentage))
+        return f"calc({100 - pct}% - 14px)"
+
+    @rx.var
+    def results_pass_line_bottom(self) -> str:
+        pct = max(0, min(100, self.results_pass_percentage))
+        return f"{pct}%"
 
     @rx.var
     def results_is_passing(self) -> bool:
-        return self.current_results_data.get("overall_score", 0) >= 50
+        return self.current_results_data.get("overall_score", 0) >= self.results_pass_percentage
 
     @rx.var
     def results_has_data(self) -> bool:
@@ -1905,6 +2348,14 @@ class FacilitatorState(rx.State):
     @rx.var
     def results_final_test_score_val(self) -> str:
         return str(self.current_results_data.get("final_test_score", 0))
+
+    @rx.var
+    def results_overall_score_pct_str(self) -> str:
+        return f"{self.current_results_data.get('overall_score', 0)}%"
+
+    @rx.var
+    def results_final_test_score_pct_str(self) -> str:
+        return f"{self.current_results_data.get('final_test_score', 0)}%"
 
     @rx.var
     def results_passing_rate_val(self) -> str:
@@ -1931,22 +2382,161 @@ class FacilitatorState(rx.State):
         tab = self.results_active_dimension_tab
         cand = self.results_selected_candidate
         if tab == "overall":
-            return f"OVERALL PERFORMANCE ({cand})"
+            return f"Overall Performance ({cand})"
         elif tab == "co":
-            return f"COURSE OUTCOMES - CO ATTAINMENT ({cand})"
+            return f"Course Outcomes (CO) - Attainment ({cand})"
         elif tab == "lo":
-            return f"LEARNING OUTCOMES - LO ATTAINMENT ({cand})"
+            return f"Learning Outcomes (LO) - Attainment ({cand})"
         elif tab == "knowledge_type":
-            return f"KNOWLEDGE TYPE PROFICIENCY ({cand})"
+            return f"Knowledge Type Proficiency ({cand})"
         elif tab == "domain":
-            return f"DOMAIN & TOPIC COMPETENCY ({cand})"
+            return f"Domain & Topic Competency ({cand})"
         elif tab == "rbt_level":
-            return f"REVISED BLOOM'S TAXONOMY - RBT LEVEL ({cand})"
-        return f"PERFORMANCE ANALYSIS ({cand})"
+            return f"Revised Bloom's Taxonomy (RBT) Level ({cand})"
+        elif tab == "question_wise":
+            return f"Question-wise Analysis ({cand})"
+        return f"Performance Analysis ({cand})"
+
+    @rx.var
+    def results_active_dimension_summary(self) -> dict:
+        """Returns summary stats for the currently active dimension tab:
+        total_label, total_val, passing_label, passing_val, avg_label, avg_val, status, is_passed, info_text."""
+        tab = self.results_active_dimension_tab
+        pass_pct = self.results_pass_percentage
+
+        if tab == "overall":
+            items = self.results_tests_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = self.current_results_data.get("overall_score", 0)
+            status = "Passed" if avg >= pass_pct else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total Tests",
+                "total_val": str(total if total > 0 else 1),
+                "passing_label": f"Tests ≥ {pass_pct}%",
+                "passing_val": str(above if total > 0 else (1 if avg >= pass_pct else 0)),
+                "avg_label": "Overall Score",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"Overall performance is calculated based on evaluated tests and configured weightages. Pass mark is set to {pass_pct}%.",
+            }
+        elif tab == "co":
+            items = self.results_co_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = int(round(sum(float(x.get("score", 0)) for x in items) / total)) if total > 0 else 0
+            status = "Passed" if (avg >= pass_pct and total > 0) else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total COs",
+                "total_val": str(total),
+                "passing_label": f"COs ≥ {pass_pct}%",
+                "passing_val": str(above),
+                "avg_label": "Average CO Attainment",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"CO attainment is calculated based on the mapped questions and their configured weightages. Pass mark is set to {pass_pct}%.",
+            }
+        elif tab == "lo":
+            items = self.results_lo_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = int(round(sum(float(x.get("score", 0)) for x in items) / total)) if total > 0 else 0
+            status = "Passed" if (avg >= pass_pct and total > 0) else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total LOs",
+                "total_val": str(total),
+                "passing_label": f"LOs ≥ {pass_pct}%",
+                "passing_val": str(above),
+                "avg_label": "Average LO Attainment",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"LO attainment is calculated based on the mapped questions and their configured weightages. Pass mark is set to {pass_pct}%.",
+            }
+        elif tab == "knowledge_type":
+            items = self.results_kt_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = int(round(sum(float(x.get("score", 0)) for x in items) / total)) if total > 0 else 0
+            status = "Passed" if (avg >= pass_pct and total > 0) else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total Types",
+                "total_val": str(total),
+                "passing_label": f"Types ≥ {pass_pct}%",
+                "passing_val": str(above),
+                "avg_label": "Average Proficiency",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"Knowledge Type proficiency is calculated from evaluated question mapping. Pass mark is set to {pass_pct}%.",
+            }
+        elif tab == "domain":
+            items = self.results_domain_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = int(round(sum(float(x.get("score", 0)) for x in items) / total)) if total > 0 else 0
+            status = "Passed" if (avg >= pass_pct and total > 0) else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total Domains",
+                "total_val": str(total),
+                "passing_label": f"Domains ≥ {pass_pct}%",
+                "passing_val": str(above),
+                "avg_label": "Average Competency",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"Domain competency is calculated from evaluated question domain mappings. Pass mark is set to {pass_pct}%.",
+            }
+        elif tab == "rbt_level":
+            items = self.results_rbt_items
+            total = len(items)
+            above = sum(1 for x in items if float(x.get("score", 0)) >= pass_pct)
+            avg = int(round(sum(float(x.get("score", 0)) for x in items) / total)) if total > 0 else 0
+            status = "Passed" if (avg >= pass_pct and total > 0) else "Failed"
+            is_passed = (status == "Passed")
+            return {
+                "total_label": "Total RBT Levels",
+                "total_val": str(total),
+                "passing_label": f"Levels ≥ {pass_pct}%",
+                "passing_val": str(above),
+                "avg_label": "Average RBT Score",
+                "avg_val": f"{avg}%",
+                "status": status,
+                "is_passed": is_passed,
+                "info_text": f"RBT level performance reflects cognitive complexity mapping. Pass mark is set to {pass_pct}%.",
+            }
+        return {
+            "total_label": "Total Items",
+            "total_val": "0",
+            "passing_label": f"Items ≥ {pass_pct}%",
+            "passing_val": "0",
+            "avg_label": "Average Score",
+            "avg_val": "0%",
+            "status": "—",
+            "is_passed": False,
+            "info_text": f"Pass mark is set to {pass_pct}%.",
+        }
 
     @rx.var
     def results_tests_items(self) -> list[dict]:
         return self.current_results_data.get("tests", [])
+
+    @rx.var
+    def results_test_breakdown(self) -> list[dict]:
+        """Per-test breakdown (marks, normalized score, weightage, weighted score) for selected candidate."""
+        return self.current_results_data.get("test_breakdown", [])
+
+    @rx.var
+    def results_has_breakdown(self) -> bool:
+        """True when a specific candidate is selected and has test breakdown entries."""
+        return bool(self.results_test_breakdown)
 
     @rx.var
     def results_current_dimension_items(self) -> list[dict]:
@@ -1962,16 +2552,48 @@ class FacilitatorState(rx.State):
             return data.get("domain", [])
         elif tab == "rbt_level":
             return data.get("rbt_level", [])
-        return data.get("tests", [])
+        # Overall tab:
+        tests = data.get("tests", [])
+        if tests:
+            return tests
+        score = data.get("overall_score", 0)
+        target_test = (self.results_selected_test or self.selected_test_name or "Overall").strip()
+        return [{"name": target_test, "score": score}]
+
+    @rx.var
+    def results_co_items(self) -> list[dict]:
+        return self.current_results_data.get("co", [])
+
+    @rx.var
+    def results_lo_items(self) -> list[dict]:
+        return self.current_results_data.get("lo", [])
+
+    @rx.var
+    def results_kt_items(self) -> list[dict]:
+        return self.current_results_data.get("knowledge_type", [])
+
+    @rx.var
+    def results_domain_items(self) -> list[dict]:
+        return self.current_results_data.get("domain", [])
+
+    @rx.var
+    def results_rbt_items(self) -> list[dict]:
+        return self.current_results_data.get("rbt_level", [])
 
     @rx.var
     def results_candidate_summary_rows(self) -> list[dict]:
-        """Build the candidate summary table exclusively from real AI results
-        with Normalized Score = (Marks Obtained / Max Marks) * 100 for every evaluated test.
-        Falls back to an empty list (no mock data) when no evaluations have run."""
+        """Build the candidate summary table exclusively from real AI results.
+        Overall Score = sum(normalized_score * weightage / 100) for each evaluated test.
+        Falls back to a simple average when weightage totals ≠ 100 (not yet configured).
+        Returns an empty list when no evaluations have run."""
         rows: list[dict] = []
         cand_map: dict[str, dict] = {}
         final_test_name = self.selected_assessment_final_test
+        asmn = self.selected_assessment_name
+
+        saved_w: dict[str, int] = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        use_weightage = (total_w == 100 and bool(saved_w))
 
         for key, res in self.real_ai_results_per_candidate.items():
             cand_part = key.split(":")[0]
@@ -1981,33 +2603,55 @@ class FacilitatorState(rx.State):
             uid = cand_id or cand_name
 
             norm_score = self._calculate_normalized_score(res)
-            score_val = int(round(norm_score))
+            score_val = round(norm_score, 1)
 
             if uid not in cand_map:
                 cand_map[uid] = {
                     "name": cand_name,
                     "emp_id": cand_id,
                     "scores": {},
+                    "norm_scores": {},
                 }
             cand_map[uid]["scores"][test_part] = score_val
+            cand_map[uid]["norm_scores"][test_part] = score_val
 
+        target_test = self.selected_test_name.strip()
         for uid, info in cand_map.items():
-            scores = list(info["scores"].values())
-            overall = int(round(sum(scores) / len(scores))) if scores else 0
-            final_s = info["scores"].get(final_test_name, overall)
+            scores_map = info["scores"]
+            if use_weightage:
+                weighted_sum = sum(
+                    scores_map.get(t, 0.0) * w / 100.0
+                    for t, w in saved_w.items()
+                )
+                overall = round(weighted_sum, 1)
+            else:
+                s_vals = list(scores_map.values())
+                overall = round(sum(s_vals) / len(s_vals), 1) if s_vals else 0.0
+
+            if target_test and target_test in scores_map:
+                t_score = scores_map[target_test]
+                t_pass = self.get_test_pass_percentage(target_test)
+                result_str = "Passed" if t_score >= t_pass else "Failed"
+            else:
+                overall_pass = self.get_assessment_overall_pass_percentage()
+                result_str = "Passed" if overall >= overall_pass else "Failed"
+
+            final_s = scores_map.get(final_test_name, overall)
             rows.append({
                 "rank": len(rows) + 1,
                 "name": info["name"],
                 "emp_id": info["emp_id"],
-                "overall_score": overall,
-                "final_test_score": final_s,
-                "result": "Passed" if overall >= 50 else "Failed",
+                "overall_score": int(round(overall)),
+                "overall_score_str": str(overall) if (overall != int(overall)) else str(int(overall)),
+                "final_test_score": int(round(final_s)),
+                "result": result_str,
             })
         # Re-sort by score descending and re-number ranks
         rows.sort(key=lambda r: r["overall_score"], reverse=True)
         for i, r in enumerate(rows):
             r["rank"] = i + 1
         return rows
+
 
     # ── Evaluation Tab State ───────────────────────────────────────────
     # Format: "Candidate Name (EMP-ID)"
