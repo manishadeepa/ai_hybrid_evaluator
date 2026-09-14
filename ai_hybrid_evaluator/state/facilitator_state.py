@@ -192,21 +192,69 @@ class FacilitatorState(rx.State):
 
     @rx.var(cache=True)
     async def can_show_overall_report(self) -> bool:
-        """True only when BOTH:
-        1. Every test in the selected assessment has been evaluated (status = 'Ready to Generate'), AND
-        2. Saved weightages for the assessment total exactly 100%.
+        """True ONLY when ALL four conditions are met:
+        A. Facilitator explicitly marked the assessment as Complete.
+        B. Every test has been evaluated (has real AI results).
+        C. Saved weightages for the assessment total exactly 100%.
+        D. There is at least some valid evaluation data.
         """
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return False
+        # A — assessment must be explicitly marked Complete
+        if not self.completed_assessments:
+            return False
+        if not self.completed_assessments.get(asmn, False):
+            return False
+        # B — every test must be evaluated
         items = await self.reports_dynamic_test_items
         if not items:
             return False
-        all_evaluated = all(item["status"] == "Ready to Generate" for item in items)
+        all_evaluated = all(item["is_ready"] for item in items)
         if not all_evaluated:
             return False
-        # Check weightage gate
-        asmn = self.selected_assessment_name
+        # C — weightage must total exactly 100%
+        if not self.saved_assessment_weightages:
+            return False
         saved_w = self.saved_assessment_weightages.get(asmn, {})
         total_w = sum(saved_w.values())
-        return total_w == 100
+        if total_w != 100:
+            return False
+        # D — valid evaluation data exists
+        return bool(self.real_ai_results_per_candidate)
+
+    @rx.var(cache=True)
+    async def overall_report_lock_reason(self) -> str:
+        """Human-readable reason why the Overall Assessment Report is locked.
+        Returns empty string when the report is ready (all conditions met).
+        """
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return "No assessment selected."
+
+        # Check A — assessment marked Complete
+        if not self.completed_assessments or not self.completed_assessments.get(asmn, False):
+            return "Assessment not marked Complete"
+
+        # Check B — all tests evaluated
+        items = await self.reports_dynamic_test_items
+        if not items:
+            return "No tests exist in this assessment"
+        pending = [it["name"] for it in items if not it["is_ready"]]
+        if pending:
+            return f"Pending evaluation for: {', '.join(pending)}"
+
+        # Check C — weightage = 100%
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        if total_w != 100:
+            return f"Total weightage is {total_w}% (must be 100%)"
+
+        # Check D — evaluation data
+        if not self.real_ai_results_per_candidate:
+            return "No evaluation data found"
+
+        return ""  # All conditions met — report is ready.
 
     # ─── Report Detail computed vars ──────────────────────────────────────────
 
@@ -367,27 +415,200 @@ class FacilitatorState(rx.State):
             })
         return rows
 
+    @rx.var
+    def is_overall_report_selected(self) -> bool:
+        """True if the currently viewed report is the Overall Assessment Report."""
+        return "overall" in (self.selected_report_test_name or "").lower()
+
+    @rx.var(cache=True)
+    async def overall_report_test_headers(self) -> list[str]:
+        """Names of all actual tests in the current assessment for dynamic table headers."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        return [t["name"] for t in match.get("test_items", [])]
+
+    @rx.var(cache=True)
+    async def overall_report_test_summary_rows(self) -> list[dict]:
+        """Summary metrics for each dynamically created test in the assessment."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+
+        cands = match.get("candidate_details", [])
+        total_cands = len(cands)
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        test_dates = match.get("test_dates", {})
+
+        rows: list[dict] = []
+        for t in match.get("test_items", []):
+            t_name = t["name"]
+            is_final = t.get("is_final", False) or "summative" in t_name.lower()
+            t_type = "Summative" if is_final else "Formative"
+            t_date = t.get("date") or test_dates.get(t_name, "—")
+            weight = f"{saved_w.get(t_name, 0)}%"
+
+            # Gather candidate evaluation scores for this test
+            scores = []
+            for cand in cands:
+                c_name = cand["name"]
+                c_id = cand["emp_id"]
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if t_part == t_name and (c_name in c_part or c_id in c_part or c_part.startswith(c_name)):
+                        score = self._calculate_normalized_score(val)
+                        scores.append(score)
+                        break
+
+            eval_count = len(scores)
+            eval_str = f"{eval_count}/{total_cands}" if total_cands > 0 else f"{eval_count}"
+            if scores:
+                avg = round(sum(scores) / len(scores), 1)
+                avg_str = f"{int(avg)}%" if avg == int(avg) else f"{avg}%"
+                status = "Ready"
+            else:
+                avg_str = "—"
+                status = "Pending"
+
+            pass_pct_val = self.get_test_pass_percentage(t_name, asmn)
+            pass_pct_str = f"{int(pass_pct_val)}%" if pass_pct_val == int(pass_pct_val) else f"{pass_pct_val:.1f}%"
+
+            rows.append({
+                "test_name": t_name,
+                "test_type": t_type,
+                "test_date": t_date if t_date else "—",
+                "weightage": weight,
+                "evaluated": eval_str,
+                "avg_score": avg_str,
+                "pass_pct": pass_pct_str,
+                "status": status,
+            })
+        return rows
+
+    @rx.var(cache=True)
+    async def overall_candidate_rows(self) -> list[dict]:
+        """Combined candidate performance with scores for every actual test and calculated overall score."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+
+        all_tests = match.get("test_items", [])
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        pass_thresh = self.get_assessment_overall_pass_percentage(asmn)
+
+        rows: list[dict] = []
+        for i, cand in enumerate(match.get("candidate_details", []), 1):
+            c_name = cand["name"]
+            c_id = cand["emp_id"]
+            test_score_strs = []
+            weighted_sum = 0.0
+            evaluated_test_count = 0
+
+            for t in all_tests:
+                t_name = t["name"]
+                t_w = saved_w.get(t_name, 0)
+                t_score = None
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if t_part == t_name and (c_name in c_part or c_id in c_part or c_part.startswith(c_name)):
+                        t_score = self._calculate_normalized_score(val)
+                        break
+
+                if t_score is not None:
+                    evaluated_test_count += 1
+                    s_str = f"{int(t_score)}%" if t_score == int(t_score) else f"{round(t_score, 1)}%"
+                    test_score_strs.append(s_str)
+                    weighted_sum += (t_score * t_w) / 100.0
+                else:
+                    test_score_strs.append("Pending")
+
+            if evaluated_test_count > 0:
+                final_overall = round(weighted_sum, 1)
+                overall_str = f"{int(final_overall)}%" if final_overall == int(final_overall) else f"{final_overall}%"
+                status = "Passed" if final_overall >= pass_thresh else "Failed"
+            else:
+                overall_str = "—"
+                status = "Pending"
+
+            rows.append({
+                "idx": str(i),
+                "cand_id": c_id,
+                "cand_name": c_name,
+                "candidate_display": f"{c_name} ({c_id})",
+                "scores": test_score_strs,
+                "overall_score": overall_str,
+                "status": status,
+            })
+        return rows
+
     @rx.var(cache=True)
     async def report_remarks_rows(self) -> list[dict]:
-        """Per-candidate remarks/feedback for the selected test."""
+        """Per-candidate remarks/feedback for the selected test or overall assessment."""
         test_name = self.selected_report_test_name
-        if not test_name or "overall" in test_name.lower():
+        asmn = self.selected_assessment_name
+        if not test_name or not asmn:
             return []
+
+        is_overall = "overall" in test_name.lower()
         rows: list[dict] = []
-        for key, val in self.real_ai_results_per_candidate.items():
-            parts = key.split(":")
-            t_part = parts[1].strip() if len(parts) > 1 else ""
-            c_part = parts[0].strip()
-            if t_part != test_name:
-                continue
-            remarks = (
-                val.get("remarks")
-                or val.get("feedback")
-                or val.get("overall_feedback")
-                or val.get("summary")
-                or "—"
-            )
-            rows.append({"candidate": c_part, "remarks": str(remarks)})
+        if is_overall:
+            mine = await self.my_assessments
+            match = next((a for a in mine if a["name"] == asmn), None)
+            if not match:
+                return []
+            for cand in match.get("candidate_details", []):
+                c_name = cand["name"]
+                c_id = cand["emp_id"]
+                cand_remarks = []
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if c_name in c_part or c_id in c_part or c_part.startswith(c_name):
+                        rmk = val.get("remarks") or val.get("feedback") or val.get("overall_feedback") or val.get("summary")
+                        if rmk and rmk != "—":
+                            cand_remarks.append(f"{t_part}: {rmk}")
+                if cand_remarks:
+                    rows.append({
+                        "candidate": f"{c_name} ({c_id})",
+                        "remarks": " | ".join(cand_remarks),
+                    })
+                else:
+                    rows.append({
+                        "candidate": f"{c_name} ({c_id})",
+                        "remarks": "Good overall performance across assessment tests.",
+                    })
+        else:
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                c_part = parts[0].strip()
+                if t_part != test_name:
+                    continue
+                remarks = (
+                    val.get("remarks")
+                    or val.get("feedback")
+                    or val.get("overall_feedback")
+                    or val.get("summary")
+                    or "—"
+                )
+                rows.append({"candidate": c_part, "remarks": str(remarks)})
         return rows
 
     @rx.var
@@ -511,6 +732,87 @@ class FacilitatorState(rx.State):
         except Exception:
             pass
 
+    # ── Assessment Completion State ────────────────────────────────────────────
+    # Tracks which assessments the facilitator has explicitly marked as Complete.
+    # Structure: { assessment_name: True }
+    # Persisted to disk so it survives page refresh.
+    completed_assessments: dict[str, bool] = {}
+
+    @staticmethod
+    def _get_completion_file_path() -> Path:
+        base_dir = Path(__file__).resolve().parent.parent
+        data_dir = base_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "assessment_completions.json"
+
+    def _load_saved_completions(self) -> dict[str, bool]:
+        """Load persisted assessment completion flags from disk."""
+        fp = self._get_completion_file_path()
+        if fp.exists():
+            try:
+                import json
+                with open(fp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _persist_completions(self):
+        """Persist completion flags to disk."""
+        fp = self._get_completion_file_path()
+        try:
+            import json
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(self.completed_assessments, f, indent=2)
+        except Exception:
+            pass
+
+    def mark_assessment_complete(self):
+        """Facilitator explicitly marks the current assessment as Complete from Reports page."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return rx.toast.error("No assessment selected.")
+        if not self.completed_assessments:
+            self.completed_assessments = self._load_saved_completions()
+        updated = dict(self.completed_assessments)
+        updated[asmn] = True
+        self.completed_assessments = updated
+        self._persist_completions()
+        return rx.toast.success(f"Assessment '{asmn}' marked as Complete.")
+
+    def unmark_assessment_complete(self):
+        """Facilitator resets completion status (e.g. to add more tests or fix configuration)."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return
+        if not self.completed_assessments:
+            self.completed_assessments = self._load_saved_completions()
+        updated = dict(self.completed_assessments)
+        updated[asmn] = False
+        self.completed_assessments = updated
+        self._persist_completions()
+        return rx.toast.info("Assessment completion status reset.")
+
+    def _unmark_assessment_complete(self, asmn: str):
+        """Internal: silently reset completion when a test is added or removed."""
+        if not self.completed_assessments:
+            self.completed_assessments = self._load_saved_completions()
+        if self.completed_assessments.get(asmn):
+            updated = dict(self.completed_assessments)
+            updated[asmn] = False
+            self.completed_assessments = updated
+            self._persist_completions()
+
+    @rx.var
+    def is_assessment_complete(self) -> bool:
+        """True if the facilitator has explicitly marked the current assessment as Complete."""
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return False
+        if not self.completed_assessments:
+            return False
+        return bool(self.completed_assessments.get(asmn, False))
+
     def get_test_pass_percentage(self, test_name: str, assessment_name: str = "") -> float:
         """Get configured pass percentage for a specific test in an assessment (defaults to 50.0)."""
         asmn = assessment_name or self.selected_assessment_name
@@ -521,6 +823,7 @@ class FacilitatorState(rx.State):
             try:
                 return float(cur_inputs[test_name])
             except ValueError:
+                
                 pass
         saved = self.saved_assessment_pass_percentages.get(asmn, {})
         if test_name in saved:
@@ -706,7 +1009,8 @@ class FacilitatorState(rx.State):
 
     def save_weightage(self):
         """Save the weightage configuration for the selected assessment.
-        Allows saving ONLY when the total weightage is exactly 100%."""
+        Saving is allowed at any total percentage — the 100% requirement
+        only applies to unlocking the Overall Assessment Report."""
         asmn = self.selected_assessment_name
         if not asmn:
             return rx.toast.error("No assessment selected.")
@@ -727,9 +1031,6 @@ class FacilitatorState(rx.State):
                 w_int = 0
             parsed_weights[t_name] = w_int
             total += w_int
-
-        if total != 100:
-            return rx.toast.error(f"Total weightage is {total}%. It must be exactly 100% to save.")
 
         # Parse pass percentages for each test
         p_inputs = self.pass_percentage_inputs.get(asmn, {})
@@ -753,7 +1054,13 @@ class FacilitatorState(rx.State):
         self.saved_assessment_pass_percentages = updated_pass
         self._persist_pass_percentages()
 
-        return rx.toast.success(f"Weightage and pass percentage configuration saved successfully.")
+        if total == 100:
+            return rx.toast.success("Weightage and pass percentage configuration saved successfully.")
+        else:
+            remaining = 100 - total
+            return rx.toast.warning(
+                f"Saved (total = {total}%). Overall Report requires 100% — {remaining}% remaining."
+            )
 
     @staticmethod
     def _calculate_normalized_score(res: dict) -> float:
@@ -805,6 +1112,7 @@ class FacilitatorState(rx.State):
     def set_selected_test(self, test_name: str):
         """Select a test to view/upload question paper for in the workspace."""
         self.selected_test_name = test_name
+        self.selected_evaluation_test = test_name  # keep Evaluation tab dropdown in sync
         self.is_replacing_qp = False
         key = f"{self.selected_evaluation_candidate}:{test_name}"
         if key in self.real_ai_results_per_candidate:
@@ -1126,6 +1434,7 @@ class FacilitatorState(rx.State):
             self.selected_assessment_final_test = final_test
             all_t = list(tests) + ([final_test] if final_test else [])
             self.selected_test_name = all_t[0] if all_t else ""
+            self.selected_evaluation_test = self.selected_test_name  # keep Evaluation tab dropdown in sync
             # Cache candidate details for sync vars (e.g. results_candidate_options)
             self._current_assessment_candidates = [
                 {"name": c["name"], "emp_id": c["emp_id"]}
@@ -1369,6 +1678,8 @@ class FacilitatorState(rx.State):
         if not found:
             return rx.toast.error(f"Assessment '{name}' not found.")
 
+        # Reset Overall Report lock — facilitator must re-mark assessment Complete after adding tests
+        self._unmark_assessment_complete(name)
         self.show_add_test_modal = False
         return rx.toast.success(f"Test '{test_name}' created successfully!")
 
@@ -1397,6 +1708,8 @@ class FacilitatorState(rx.State):
                     remaining.append(updated["final_test"])
                 self.selected_test_name = remaining[0] if remaining else ""
                 break
+        # Reset Overall Report lock — facilitator must re-mark assessment Complete after removing tests
+        self._unmark_assessment_complete(name)
         return rx.toast.info(f"Test '{test_name}' removed from {name}.")
 
     # ── AI Evaluation Engine & Candidate Submissions State ───────────────
@@ -2656,6 +2969,8 @@ class FacilitatorState(rx.State):
     # ── Evaluation Tab State ───────────────────────────────────────────
     # Format: "Candidate Name (EMP-ID)"
     selected_evaluation_candidate: str = ""
+    # Currently selected test in the Evaluation page dropdown
+    selected_evaluation_test: str = ""
     show_candidate_response_modal: bool = False
     show_answer_key_upload_modal: bool = False
     show_manual_eval_modal: bool = False
@@ -2717,6 +3032,36 @@ class FacilitatorState(rx.State):
                 return options if options else ["No candidates assigned"]
         return ["No candidates assigned"]
 
+    @rx.var(cache=True)
+    async def evaluation_test_options(self) -> list[str]:
+        """Dynamically derive all test names for the current assessment — used by the Evaluation Select Test dropdown."""
+        mine = await self.my_assessments
+        for a in mine:
+            if a["name"] == self.selected_assessment_name:
+                return [t["name"] for t in a.get("test_items", [])]
+        return []
+
+    def set_evaluation_selected_test(self, test_name: str):
+        """Select a test from the Evaluation page dropdown and sync state so all evaluation data updates."""
+        self.selected_evaluation_test = test_name
+        # Keep the workspace-level selected_test_name in sync so all evaluation queries use this test
+        self.selected_test_name = test_name
+        # Reset AI result display so stale results from the previous test are cleared
+        self.real_ai_score_display = "—"
+        self.real_ai_max_score_display = "—"
+        self.real_ai_percentage_display = "—"
+        self.real_ai_evaluation_date = "Not evaluated"
+        self.real_ai_eval_questions = []
+        # Re-load persisted AI result for the selected candidate + new test if it exists
+        key = f"{self.selected_evaluation_candidate}:{test_name}"
+        if key in self.real_ai_results_per_candidate:
+            saved = self.real_ai_results_per_candidate[key]
+            self.real_ai_score_display = saved.get("score", "—")
+            self.real_ai_max_score_display = saved.get("max_score", "—")
+            self.real_ai_percentage_display = saved.get("percentage", "—")
+            self.real_ai_evaluation_date = saved.get("eval_date", "Not evaluated")
+            self.real_ai_eval_questions = [dict(q) for q in saved.get("questions", [])]
+
     @rx.var
     def current_candidate_eval_data(self) -> dict:
         """Returns real submitted response data if available from candidate_response_service.
@@ -2725,6 +3070,7 @@ class FacilitatorState(rx.State):
         raw = self.selected_evaluation_candidate
         test_name = self.selected_test_name
         assessment_name = self.selected_assessment_name
+
 
         if not raw:
             return {}
