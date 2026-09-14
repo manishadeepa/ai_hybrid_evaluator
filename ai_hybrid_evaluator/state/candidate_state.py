@@ -206,6 +206,12 @@ class CandidateState(rx.State):
     submission_receipt: str = ""
     submitted_at: str = ""
 
+    # ── Candidate Feedback State (Post-submission) ───────────────────────
+    candidate_test_rating: int = 0
+    candidate_test_feedback_text: str = ""
+    candidate_test_feedback_tags: list[str] = []
+    saved_candidate_feedbacks: dict[str, dict] = {}
+
     # ── Candidate Identity Helper ───────────────────────────────────────
     async def _get_current_candidate_id(self) -> str:
         try:
@@ -249,6 +255,10 @@ class CandidateState(rx.State):
     @rx.var
     def current_question_number(self) -> int:
         return self.current_question_index + 1
+
+    @rx.var
+    def candidate_test_feedback_char_count(self) -> int:
+        return len(self.candidate_test_feedback_text)
 
     @rx.var
     def total_questions(self) -> int:
@@ -757,6 +767,99 @@ class CandidateState(rx.State):
             ),
             rx.redirect("/candidate/dashboard"),
         ]
+
+    # ── Candidate Test Feedback Methods ──────────────────────────────────
+    @staticmethod
+    def _get_candidate_feedback_file_path() -> Path:
+        base_dir = Path(__file__).resolve().parent.parent
+        data_dir = base_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "candidate_feedbacks.json"
+
+    def _load_saved_candidate_feedbacks(self) -> dict[str, dict]:
+        fp = CandidateState._get_candidate_feedback_file_path()
+        if fp.exists():
+            try:
+                import json
+                with open(fp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _persist_candidate_feedbacks(self):
+        fp = CandidateState._get_candidate_feedback_file_path()
+        try:
+            import json
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(self.saved_candidate_feedbacks, f, indent=2)
+        except Exception:
+            pass
+
+    def set_candidate_test_rating(self, rating: int):
+        self.candidate_test_rating = rating
+
+    def set_candidate_test_feedback_text(self, text: str):
+        if len(text) <= 500:
+            self.candidate_test_feedback_text = text
+        else:
+            self.candidate_test_feedback_text = text[:500]
+
+    def toggle_candidate_feedback_tag(self, tag: str):
+        tags = list(self.candidate_test_feedback_tags)
+        if tag in tags:
+            tags.remove(tag)
+        else:
+            tags.append(tag)
+        self.candidate_test_feedback_tags = tags
+
+    async def submit_candidate_test_feedback(self):
+        """Save candidate feedback uniquely for Assessment + Test + Candidate, then return to dashboard."""
+        cand_id = await self._get_current_candidate_id()
+        cand_name = "Candidate"
+        try:
+            auth = await self.get_state(AuthState)
+            cand_name = auth.candidate_name or "Candidate"
+        except Exception:
+            pass
+
+        asmn = self.active_assessment_name or "Quality"
+        test_name = self.active_test_name or "Formative 1"
+
+        if not self.saved_candidate_feedbacks:
+            self.saved_candidate_feedbacks = self._load_saved_candidate_feedbacks()
+
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        key = f"{asmn}:{test_name}:{cand_id}"
+        updated = dict(self.saved_candidate_feedbacks)
+        updated[key] = {
+            "assessment": asmn,
+            "test": test_name,
+            "candidate_id": cand_id,
+            "candidate_name": cand_name,
+            "rating": self.candidate_test_rating,
+            "feedback": self.candidate_test_feedback_text.strip(),
+            "tags": list(self.candidate_test_feedback_tags),
+            "submitted_at": now_str,
+        }
+        self.saved_candidate_feedbacks = updated
+        self._persist_candidate_feedbacks()
+
+        # Reset feedback fields
+        self.candidate_test_rating = 0
+        self.candidate_test_feedback_text = ""
+        self.candidate_test_feedback_tags = []
+
+        return self.return_to_dashboard()
+
+    def skip_candidate_feedback(self):
+        """Skip feedback and return to dashboard."""
+        self.candidate_test_rating = 0
+        self.candidate_test_feedback_text = ""
+        self.candidate_test_feedback_tags = []
+        return self.return_to_dashboard()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

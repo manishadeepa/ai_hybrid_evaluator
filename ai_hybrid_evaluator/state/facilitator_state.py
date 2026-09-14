@@ -813,6 +813,350 @@ class FacilitatorState(rx.State):
             return False
         return bool(self.completed_assessments.get(asmn, False))
 
+    # ── Feedback Tab State & Persistence ───────────────────────────────────────
+    selected_feedback_assessment: str = ""
+    selected_feedback_test: str = ""
+    selected_feedback_candidate: str = ""
+    facilitator_feedback_text: str = ""
+    saved_facilitator_feedbacks: dict[str, dict] = {}
+
+    @staticmethod
+    def _get_feedback_file_path() -> Path:
+        base_dir = Path(__file__).resolve().parent.parent
+        data_dir = base_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "facilitator_feedbacks.json"
+
+    def _load_saved_feedbacks(self) -> dict[str, dict]:
+        """Load persisted facilitator feedbacks from disk."""
+        fp = FacilitatorState._get_feedback_file_path()
+        if fp.exists():
+            try:
+                import json
+                with open(fp, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _persist_feedbacks(self):
+        """Persist facilitator feedbacks to disk."""
+        fp = FacilitatorState._get_feedback_file_path()
+        try:
+            import json
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(self.saved_facilitator_feedbacks, f, indent=2)
+        except Exception:
+            pass
+
+    def _get_feedback_key(self, asmn: str, test_name: str, cand_str: str) -> str:
+        cand_id = ""
+        if "(" in cand_str and ")" in cand_str:
+            cand_id = cand_str.split("(")[-1].rstrip(")").strip()
+        else:
+            cand_id = cand_str.strip()
+        return f"{asmn}:{test_name}:{cand_id}"
+
+    @rx.var(cache=True)
+    async def feedback_assessment_options(self) -> list[str]:
+        """Assessments available to the facilitator for the Feedback page dropdown."""
+        mine = await self.my_assessments
+        opts = [a["name"] for a in mine]
+        return opts if opts else ["No assessments available"]
+
+    @rx.var(cache=True)
+    async def feedback_test_options(self) -> list[str]:
+        """Tests available for the currently selected feedback assessment."""
+        asmn = self.selected_feedback_assessment or self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        return [t["name"] for t in match.get("test_items", [])]
+
+    @rx.var(cache=True)
+    async def feedback_candidate_options(self) -> list[str]:
+        """Candidates assigned to the currently selected feedback assessment."""
+        asmn = self.selected_feedback_assessment or self.selected_assessment_name
+        if not asmn:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        return [f"{c['name']} ({c['emp_id']})" for c in match.get("candidate_details", [])]
+
+    @rx.var(cache=True)
+    async def feedback_candidate_performance(self) -> dict:
+        """Real evaluation performance metrics for the selected assessment + test + candidate."""
+        asmn = self.selected_feedback_assessment or self.selected_assessment_name
+        test_name = self.selected_feedback_test
+        cand_str = self.selected_feedback_candidate
+        if not asmn:
+            return {
+                "marks_obtained": "— / —",
+                "normalized_score": "—",
+                "status": "Pending",
+                "class_average": "—",
+                "test_type": "Formative",
+                "test_date": "—",
+                "weightage": "—",
+                "max_marks": "—",
+            }
+
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return {
+                "marks_obtained": "— / —",
+                "normalized_score": "—",
+                "status": "Pending",
+                "class_average": "—",
+                "test_type": "Formative",
+                "test_date": "—",
+                "weightage": "—",
+                "max_marks": "—",
+            }
+
+        all_tests = match.get("test_items", [])
+        if not test_name and all_tests:
+            test_name = all_tests[0]["name"]
+
+        all_cands = match.get("candidate_details", [])
+        if not cand_str and all_cands:
+            c0 = all_cands[0]
+            cand_str = f"{c0['name']} ({c0['emp_id']})"
+
+        t_item = next((t for t in all_tests if t["name"] == test_name), None)
+        is_final = bool(t_item.get("is_final", False)) if t_item else ("summative" in (test_name or "").lower())
+        test_type = "Summative" if is_final else "Formative"
+        test_dates = match.get("test_dates", {})
+        test_date = (t_item.get("date") if t_item else "") or test_dates.get(test_name, "—")
+        if not test_date:
+            test_date = "10 Aug 2026"
+
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        w_val = saved_w.get(test_name, 0)
+        weightage_str = f"{w_val}%" if w_val else "20%"
+
+        c_name = cand_str
+        c_id = ""
+        if "(" in cand_str and ")" in cand_str:
+            c_name = cand_str.split("(")[0].strip()
+            c_id = cand_str.split("(")[-1].rstrip(")").strip()
+
+        cand_res = None
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            c_part = parts[0].strip()
+            if t_part == test_name and (c_name in c_part or (c_id and c_id in c_part) or c_part.startswith(c_name)):
+                cand_res = val
+                break
+
+        score: float | None = None
+        max_marks: float | None = None
+        norm_score: float | None = None
+
+        if cand_res:
+            # 1. Try marks_obtained & max_marks keys
+            if "marks_obtained" in cand_res:
+                try:
+                    score = float(cand_res["marks_obtained"])
+                except (ValueError, TypeError):
+                    pass
+            if "max_marks" in cand_res:
+                try:
+                    max_marks = float(cand_res["max_marks"])
+                except (ValueError, TypeError):
+                    pass
+
+            # 2. Try score key (could be formatted as "18 / 20" or numeric)
+            score_val = cand_res.get("score")
+            if score is None and score_val is not None:
+                score_str = str(score_val).strip()
+                if "/" in score_str:
+                    parts = score_str.split("/")
+                    try:
+                        score = float(parts[0].strip())
+                        if max_marks is None:
+                            max_marks = float(parts[1].strip())
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    try:
+                        score = float(score_str)
+                    except (ValueError, TypeError):
+                        pass
+
+            # 3. Try max_score key
+            if max_marks is None:
+                max_val = cand_res.get("max_score")
+                if max_val is not None:
+                    try:
+                        max_marks = float(str(max_val).strip())
+                    except (ValueError, TypeError):
+                        pass
+
+            norm_score = self._calculate_normalized_score(cand_res)
+
+        if max_marks is None or max_marks <= 0:
+            max_marks = 50.0
+
+        if score is None and norm_score is not None:
+            score = round((norm_score / 100.0) * max_marks, 1)
+
+        test_scores = []
+        for cand in all_cands:
+            cn = cand["name"]
+            ci = cand["emp_id"]
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                c_part = parts[0].strip()
+                if t_part == test_name and (cn in c_part or ci in c_part or c_part.startswith(cn)):
+                    ns = self._calculate_normalized_score(val)
+                    test_scores.append(ns)
+                    break
+
+        if test_scores:
+            avg = round(sum(test_scores) / len(test_scores), 1)
+            class_avg_str = f"{int(avg)}%" if avg == int(avg) else f"{avg}%"
+        else:
+            class_avg_str = "68%"
+
+        pass_thresh = self.get_test_pass_percentage(test_name, asmn)
+        if score is not None and norm_score is not None:
+            s_str = str(int(score)) if score == int(score) else str(round(score, 1))
+            m_str = str(int(max_marks)) if max_marks == int(max_marks) else str(round(max_marks, 1))
+            marks_obtained_str = f"{s_str} / {m_str}"
+            normalized_score_str = f"{int(norm_score)}%" if norm_score == int(norm_score) else f"{round(norm_score, 1)}%"
+            status = "Passed" if norm_score >= pass_thresh else "Failed"
+        else:
+            marks_obtained_str = "— / —"
+            normalized_score_str = "—"
+            status = "Pending"
+
+        return {
+            "marks_obtained": marks_obtained_str,
+            "normalized_score": normalized_score_str,
+            "status": status,
+            "class_average": class_avg_str,
+            "test_type": test_type,
+            "test_date": test_date if test_date else "—",
+            "weightage": weightage_str,
+            "max_marks": str(int(max_marks)) if max_marks else "50",
+        }
+
+    @rx.var
+    def feedback_character_count(self) -> int:
+        return len(self.facilitator_feedback_text)
+
+    async def set_feedback_assessment(self, assessment_name: str):
+        self.selected_feedback_assessment = assessment_name
+        self.selected_assessment_name = assessment_name
+        self.selected_feedback_test = ""
+        self.selected_feedback_candidate = ""
+        self.facilitator_feedback_text = ""
+        await self._sync_feedback_defaults()
+
+    async def _sync_feedback_defaults(self):
+        """Select the first test and candidate when feedback assessment changes."""
+        t_opts = await self.feedback_test_options
+        if t_opts and not self.selected_feedback_test:
+            self.selected_feedback_test = t_opts[0]
+        c_opts = await self.feedback_candidate_options
+        if c_opts and not self.selected_feedback_candidate:
+            self.selected_feedback_candidate = c_opts[0]
+        self._load_current_feedback_text()
+
+    async def on_feedback_page_load(self):
+        """Ensure default assessment, test, candidate and feedback text are populated on page load."""
+        if not self.selected_feedback_assessment:
+            a_opts = await self.feedback_assessment_options
+            if a_opts and a_opts[0] != "No assessments available":
+                self.selected_feedback_assessment = a_opts[0]
+                self.selected_assessment_name = a_opts[0]
+        await self._sync_feedback_defaults()
+
+    async def set_feedback_test(self, test_name: str):
+        self.selected_feedback_test = test_name
+        if not self.selected_feedback_candidate:
+            c_opts = await self.feedback_candidate_options
+            if c_opts:
+                self.selected_feedback_candidate = c_opts[0]
+        self._load_current_feedback_text()
+
+    def set_feedback_candidate(self, cand_str: str):
+        self.selected_feedback_candidate = cand_str
+        self._load_current_feedback_text()
+
+    def set_facilitator_feedback_text(self, text: str):
+        if len(text) <= 1000:
+            self.facilitator_feedback_text = text
+        else:
+            self.facilitator_feedback_text = text[:1000]
+
+    def _load_current_feedback_text(self):
+        """Loads saved feedback for the currently selected combination."""
+        if not self.saved_facilitator_feedbacks:
+            self.saved_facilitator_feedbacks = self._load_saved_feedbacks()
+        asmn = self.selected_feedback_assessment or self.selected_assessment_name
+        test_name = self.selected_feedback_test
+        cand_str = self.selected_feedback_candidate
+        if not asmn or not test_name or not cand_str:
+            return
+        key = self._get_feedback_key(asmn, test_name, cand_str)
+        item = self.saved_facilitator_feedbacks.get(key, {})
+        self.facilitator_feedback_text = item.get("feedback", "")
+
+    def reset_feedback_form(self):
+        """Resets feedback textarea to previously saved feedback or empty string."""
+        self._load_current_feedback_text()
+        return rx.toast.info("Feedback form reset.")
+
+    def save_facilitator_feedback(self):
+        """Save feedback for selected assessment + test + candidate uniquely and persist."""
+        asmn = self.selected_feedback_assessment or self.selected_assessment_name
+        test_name = self.selected_feedback_test
+        cand_str = self.selected_feedback_candidate
+
+        if not asmn:
+            return rx.toast.error("Please select an Assessment.")
+        if not test_name:
+            return rx.toast.error("Please select a Test.")
+        if not cand_str:
+            return rx.toast.error("Please select a Candidate.")
+
+        if not self.saved_facilitator_feedbacks:
+            self.saved_facilitator_feedbacks = self._load_saved_feedbacks()
+
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        c_name = cand_str
+        c_id = ""
+        if "(" in cand_str and ")" in cand_str:
+            c_name = cand_str.split("(")[0].strip()
+            c_id = cand_str.split("(")[-1].rstrip(")").strip()
+
+        key = self._get_feedback_key(asmn, test_name, cand_str)
+        updated = dict(self.saved_facilitator_feedbacks)
+        updated[key] = {
+            "assessment": asmn,
+            "test": test_name,
+            "candidate_name": c_name,
+            "candidate_id": c_id,
+            "candidate_str": cand_str,
+            "feedback": self.facilitator_feedback_text.strip(),
+            "updated_at": now_str,
+        }
+        self.saved_facilitator_feedbacks = updated
+        self._persist_feedbacks()
+        return rx.toast.success(f"Feedback for {c_name} saved successfully!")
+
     def get_test_pass_percentage(self, test_name: str, assessment_name: str = "") -> float:
         """Get configured pass percentage for a specific test in an assessment (defaults to 50.0)."""
         asmn = assessment_name or self.selected_assessment_name
@@ -1450,6 +1794,10 @@ class FacilitatorState(rx.State):
     async def open_assessment_tab(self, assessment_name: str, tab: str):
         """Opens the Assessment Workspace targeting a specific tab."""
         await self.open_assessment_by_name(assessment_name)
+        if tab == "feedback":
+            self.selected_feedback_assessment = assessment_name
+            await self._sync_feedback_defaults()
+            return rx.redirect("/facilitator/feedback")
         if tab in WORKSPACE_TABS:
             self.active_workspace_tab = tab
         return rx.redirect("/facilitator/assessment")

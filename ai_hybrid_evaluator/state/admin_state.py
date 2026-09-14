@@ -5,6 +5,8 @@ and the add_*/update_*/delete_* functions for real API calls. Function names/
 shapes kept stable on purpose so that swap is easy later.
 """
 
+import json
+from pathlib import Path
 import re
 import reflex as rx
 
@@ -1193,3 +1195,350 @@ class AdminReportsState(rx.State):
 
     def mock_export_report(self):
         return rx.toast.info("Report exported as PDF (Mock)!")
+
+
+# ─────────────────────────────────────────────────────────────
+# Admin Feedback State
+# ─────────────────────────────────────────────────────────────
+
+class AdminFeedbackState(rx.State):
+    """State for the Admin Feedback Management page — manages Candidate and Facilitator feedback."""
+
+    active_tab: str = "candidate"  # "candidate" | "facilitator"
+
+    # Filters
+    filter_assessment: str = "All Assessments"
+    filter_test: str = "All Tests"
+    search_query: str = ""
+    filter_rating: str = "All Ratings"
+    filter_date_range: str = ""
+
+    # Selected feedback item for the right-hand inspection details panel
+    selected_entry: dict = {
+        "id": "1",
+        "key": "",
+        "candidate_name": "",
+        "candidate_id": "",
+        "initial": "C",
+        "assessment": "",
+        "test": "",
+        "rating": 0,
+        "rating_str": "—",
+        "star1": False,
+        "star2": False,
+        "star3": False,
+        "star4": False,
+        "star5": False,
+        "feedback": "",
+        "preview": "",
+        "submitted_on": "",
+        "date_line": "",
+        "time_line": "",
+        "tags": [],
+        "type": "candidate",
+        "facilitator": "",
+    }
+    show_details_panel: bool = True
+
+    # Pagination
+    current_page: int = 1
+    items_per_page: int = 8
+
+    # In-memory storage cache loaded from disk
+    raw_candidate_feedbacks: dict = {}
+    raw_facilitator_feedbacks: dict = {}
+
+    @staticmethod
+    def _get_data_dir() -> Path:
+        base_dir = Path(__file__).resolve().parent.parent
+        data_dir = base_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
+    def _load_data_from_disk(self):
+        c_path = self._get_data_dir() / "candidate_feedbacks.json"
+        if c_path.exists():
+            try:
+                with open(c_path, "r", encoding="utf-8") as f:
+                    self.raw_candidate_feedbacks = json.load(f)
+            except Exception:
+                self.raw_candidate_feedbacks = {}
+        else:
+            self.raw_candidate_feedbacks = {}
+
+        f_path = self._get_data_dir() / "facilitator_feedbacks.json"
+        if f_path.exists():
+            try:
+                with open(f_path, "r", encoding="utf-8") as f:
+                    self.raw_facilitator_feedbacks = json.load(f)
+            except Exception:
+                self.raw_facilitator_feedbacks = {}
+        else:
+            self.raw_facilitator_feedbacks = {}
+
+    def on_load(self):
+        """Sync latest feedback data from disk on page load."""
+        self._load_data_from_disk()
+        entries = self.filtered_entries
+        if entries:
+            self.selected_entry = entries[0]
+            self.show_details_panel = True
+
+    @rx.var
+    def candidate_entries(self) -> list[dict]:
+        entries: list[dict] = []
+        i = 1
+        for key, item in self.raw_candidate_feedbacks.items():
+            c_name = item.get("candidate_name") or "Candidate"
+            c_id = item.get("candidate_id") or "CAND-2031"
+            asmn = item.get("assessment") or "Quality"
+            test_name = item.get("test") or "Formative 1"
+            rating = int(item.get("rating") or 0)
+            fb = (item.get("feedback") or "").strip()
+            preview = f'"{fb[:42]}..."' if len(fb) > 42 else (f'"{fb}"' if fb else "—")
+            sub_on = item.get("submitted_at") or "14 Sep 2026 11:26 PM"
+
+            date_line = sub_on
+            time_line = ""
+            if " " in sub_on:
+                parts = sub_on.split(" ")
+                date_line = " ".join(parts[:3]) if len(parts) >= 3 else parts[0]
+                time_line = " ".join(parts[3:]) if len(parts) >= 3 else parts[-1]
+
+            entries.append({
+                "id": str(i),
+                "key": key,
+                "candidate_name": c_name,
+                "candidate_id": c_id,
+                "initial": c_name[0].upper() if c_name else "C",
+                "assessment": asmn,
+                "test": test_name,
+                "rating": rating,
+                "rating_str": f"{rating}/5",
+                "star1": rating >= 1,
+                "star2": rating >= 2,
+                "star3": rating >= 3,
+                "star4": rating >= 4,
+                "star5": rating >= 5,
+                "feedback": fb if fb else "No feedback text provided.",
+                "preview": preview,
+                "submitted_on": sub_on,
+                "date_line": date_line,
+                "time_line": time_line,
+                "tags": item.get("tags") or [],
+                "type": "candidate",
+                "facilitator": "",
+            })
+            i += 1
+        return entries
+
+    @rx.var
+    def facilitator_entries(self) -> list[dict]:
+        entries: list[dict] = []
+        i = 1
+        for key, item in self.raw_facilitator_feedbacks.items():
+            c_name = item.get("candidate_name") or "Candidate"
+            c_id = item.get("candidate_id") or "CAND-2031"
+            asmn = item.get("assessment") or "Quality"
+            test_name = item.get("test") or "Formative 1"
+            fac = item.get("facilitator") or "Ravi Kumar"
+            fb = (item.get("feedback") or "").strip()
+            preview = f'"{fb[:42]}..."' if len(fb) > 42 else (f'"{fb}"' if fb else "—")
+            sub_on = item.get("updated_at") or "14 Sep 2026 10:15 PM"
+
+            date_line = sub_on
+            time_line = ""
+            if " " in sub_on:
+                parts = sub_on.split(" ")
+                date_line = " ".join(parts[:3]) if len(parts) >= 3 else parts[0]
+                time_line = " ".join(parts[3:]) if len(parts) >= 3 else parts[-1]
+
+            entries.append({
+                "id": str(i),
+                "key": key,
+                "candidate_name": c_name,
+                "candidate_id": c_id,
+                "initial": c_name[0].upper() if c_name else "C",
+                "assessment": asmn,
+                "test": test_name,
+                "facilitator": fac,
+                "rating": 0,
+                "rating_str": "—",
+                "star1": False,
+                "star2": False,
+                "star3": False,
+                "star4": False,
+                "star5": False,
+                "feedback": fb if fb else "No feedback text provided.",
+                "preview": preview,
+                "submitted_on": sub_on,
+                "date_line": date_line,
+                "time_line": time_line,
+                "tags": [],
+                "type": "facilitator",
+            })
+            i += 1
+        return entries
+
+    @rx.var
+    def filtered_entries(self) -> list[dict]:
+        source = self.candidate_entries if self.active_tab == "candidate" else self.facilitator_entries
+        res = []
+        for e in source:
+            # Filter by assessment
+            if self.filter_assessment != "All Assessments" and e.get("assessment", "").lower() != self.filter_assessment.lower():
+                continue
+            # Filter by test
+            if self.filter_test != "All Tests" and e.get("test", "").lower() != self.filter_test.lower():
+                continue
+            # Filter by rating (Candidate tab only)
+            if self.active_tab == "candidate" and self.filter_rating != "All Ratings":
+                try:
+                    target_star = int(self.filter_rating.split()[0])
+                    if e.get("rating") != target_star:
+                        continue
+                except Exception:
+                    pass
+            # Filter by candidate search query
+            if self.search_query.strip():
+                q = self.search_query.strip().lower()
+                matched = (
+                    q in e.get("candidate_name", "").lower()
+                    or q in e.get("candidate_id", "").lower()
+                    or q in e.get("assessment", "").lower()
+                    or q in e.get("test", "").lower()
+                    or q in e.get("feedback", "").lower()
+                )
+                if not matched:
+                    continue
+            res.append(e)
+        return res
+
+    @rx.var
+    def total_candidate_count(self) -> int:
+        return len(self.raw_candidate_feedbacks)
+
+    @rx.var
+    def total_facilitator_count(self) -> int:
+        return len(self.raw_facilitator_feedbacks)
+
+    @rx.var
+    def current_tab_count(self) -> int:
+        return len(self.filtered_entries)
+
+    @rx.var
+    def paginated_entries(self) -> list[dict]:
+        start = (self.current_page - 1) * self.items_per_page
+        end = start + self.items_per_page
+        return self.filtered_entries[start:end]
+
+    @rx.var
+    def total_pages(self) -> int:
+        total = len(self.filtered_entries)
+        return max(1, (total + self.items_per_page - 1) // self.items_per_page)
+
+    @rx.var
+    def pagination_info_str(self) -> str:
+        total = len(self.filtered_entries)
+        if total == 0:
+            return "Showing 0 entries"
+        start = (self.current_page - 1) * self.items_per_page + 1
+        end = min(self.current_page * self.items_per_page, total)
+        return f"Showing {start}–{end} of {total} entries"
+
+    @rx.var
+    def selected_entry_tags(self) -> list[str]:
+        if not isinstance(self.selected_entry, dict):
+            return []
+        tags = self.selected_entry.get("tags")
+        return list(tags) if isinstance(tags, (list, tuple)) else []
+
+    @rx.var
+    def selected_has_tags(self) -> bool:
+        return len(self.selected_entry_tags) > 0
+
+    @rx.var
+    def assessment_options(self) -> list[str]:
+        opts = {"All Assessments"}
+        for e in self.candidate_entries + self.facilitator_entries:
+            if e.get("assessment"):
+                opts.add(e["assessment"])
+        sorted_opts = sorted(list(opts - {"All Assessments"}))
+        return ["All Assessments"] + sorted_opts
+
+    @rx.var
+    def test_options(self) -> list[str]:
+        opts = {"All Tests"}
+        for e in self.candidate_entries + self.facilitator_entries:
+            if self.filter_assessment == "All Assessments" or e.get("assessment", "").lower() == self.filter_assessment.lower():
+                if e.get("test"):
+                    opts.add(e["test"])
+        sorted_opts = sorted(list(opts - {"All Tests"}))
+        return ["All Tests"] + sorted_opts
+
+    def set_active_tab(self, tab: str):
+        self.active_tab = tab
+        self.current_page = 1
+        self._load_data_from_disk()
+        entries = self.filtered_entries
+        if entries:
+            self.selected_entry = entries[0]
+            self.show_details_panel = True
+        else:
+            self.selected_entry = {}
+
+    def set_filter_assessment(self, val: str):
+        self.filter_assessment = val
+        self.filter_test = "All Tests"
+        self.current_page = 1
+
+    def set_filter_test(self, val: str):
+        self.filter_test = val
+        self.current_page = 1
+
+    def set_search_query(self, val: str):
+        self.search_query = val
+        self.current_page = 1
+
+    def set_filter_rating(self, val: str):
+        self.filter_rating = val
+        self.current_page = 1
+
+    def set_filter_date_range(self, val: str):
+        self.filter_date_range = val
+        self.current_page = 1
+
+    def reset_filters(self):
+        self.filter_assessment = "All Assessments"
+        self.filter_test = "All Tests"
+        self.search_query = ""
+        self.filter_rating = "All Ratings"
+        self.filter_date_range = ""
+        self.current_page = 1
+        entries = self.filtered_entries
+        if entries:
+            self.selected_entry = entries[0]
+
+    def select_entry(self, entry: dict):
+        self.selected_entry = entry
+        self.show_details_panel = True
+
+    def close_details_panel(self):
+        self.show_details_panel = False
+
+    def set_page(self, page: int):
+        self.current_page = page
+
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+
+    def next_page(self):
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+
+    def export_feedback(self):
+        count = len(self.filtered_entries)
+        tab_name = "Candidate" if self.active_tab == "candidate" else "Facilitator"
+        return rx.toast.success(f"{count} {tab_name} feedback records exported successfully!")
+

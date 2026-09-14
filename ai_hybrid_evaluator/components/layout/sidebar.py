@@ -127,6 +127,7 @@ def sidebar(active: str) -> rx.Component:
             ),
             nav_link("Assessments", "/admin/assessments", "clipboard-list", active == "assessments"),
             nav_link("Reports", "/admin/reports", "bar-chart-2", active == "reports"),
+            nav_link("Feedback", "/admin/feedback", "message-square", active == "feedback"),
             nav_link("Settings", "/admin/settings", "settings", active == "settings"),
             rx.spacer(),
             logout_item(),

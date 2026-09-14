@@ -275,6 +275,7 @@ def facilitator_sidebar(active: str) -> rx.Component:
                     align_items="stretch",
                 ),
             ),
+            nav_link("Feedback", "/facilitator/feedback", "message-square", active == "feedback"),
             nav_link("Profile", "/facilitator/profile", "user", active == "profile"),
             rx.spacer(),
             # Logout

@@ -909,6 +909,185 @@ def submit_confirmation_dialog() -> rx.Component:
     )
 
 
+FEEDBACK_SUGGESTION_TAGS = [
+    "Question clarity",
+    "Difficulty level",
+    "Time duration",
+    "Technical issues",
+    "Overall experience",
+]
+
+
+def star_rating_item(star_num: int) -> rx.Component:
+    is_active = CandidateState.candidate_test_rating >= star_num
+    return rx.box(
+        rx.cond(
+            is_active,
+            rx.icon("star", size=26, color="#F59E0B", fill="#F59E0B"),
+            rx.icon("star", size=26, color="#94A3B8"),
+        ),
+        cursor="pointer",
+        on_click=CandidateState.set_candidate_test_rating(star_num),
+        transition="transform 0.12s ease",
+        _hover={"transform": "scale(1.15)"},
+    )
+
+
+def feedback_suggestion_tag(tag: str) -> rx.Component:
+    is_selected = CandidateState.candidate_test_feedback_tags.contains(tag)
+    return rx.box(
+        rx.text(
+            tag,
+            font_family=FONT_BODY,
+            size="1",
+            weight="medium",
+            color=rx.cond(is_selected, "#5B21B6", "#6D28D9"),
+        ),
+        background=rx.cond(is_selected, "#EDE9FE", "#F5F3FF"),
+        border=rx.cond(is_selected, "1px solid #7C3AED", "1px solid #DDD6FE"),
+        border_radius="999px",
+        padding="0.32em 0.85em",
+        cursor="pointer",
+        on_click=CandidateState.toggle_candidate_feedback_tag(tag),
+        _hover={"background": "#EDE9FE", "border_color": "#7C3AED"},
+        transition="all 0.15s ease",
+    )
+
+
+def candidate_feedback_section() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            # Header
+            rx.hstack(
+                rx.box(
+                    rx.icon("message-square", size=20, color="#6366F1"),
+                    background="#EDE9FE",
+                    padding="0.45em",
+                    border_radius="8px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                ),
+                rx.vstack(
+                    rx.text(
+                        "Share Your Feedback",
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color="#0F172A",
+                    ),
+                    rx.text(
+                        "Help us improve! Tell us about your experience with this test.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color="#64748B",
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="center",
+                width="100%",
+            ),
+
+            # Rating Section
+            rx.vstack(
+                rx.text(
+                    "How would you rate this test?",
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color="#0F172A",
+                ),
+                rx.vstack(
+                    rx.hstack(
+                        star_rating_item(1),
+                        star_rating_item(2),
+                        star_rating_item(3),
+                        star_rating_item(4),
+                        star_rating_item(5),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.text("Very Poor", font_family=FONT_BODY, size="1", color="#64748B"),
+                        rx.spacer(),
+                        rx.text("Excellent", font_family=FONT_BODY, size="1", color="#64748B"),
+                        width="170px",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                ),
+                spacing="2",
+                align_items="start",
+                width="100%",
+                margin_top="0.8em",
+            ),
+
+            # Feedback Textarea
+            rx.vstack(
+                rx.text(
+                    "Your Feedback (Optional)",
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color="#0F172A",
+                ),
+                rx.text_area(
+                    value=CandidateState.candidate_test_feedback_text,
+                    on_change=CandidateState.set_candidate_test_feedback_text,
+                    placeholder="Tell us about your experience with this test. What did you like? What could be improved?",
+                    rows="4",
+                    max_length=500,
+                    width="100%",
+                    font_family=FONT_BODY,
+                    size="2",
+                    border="1px solid #CBD5E1",
+                    border_radius="8px",
+                    background="white",
+                ),
+                rx.hstack(
+                    rx.spacer(),
+                    rx.text(
+                        CandidateState.candidate_test_feedback_char_count,
+                        " / 500",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color="#64748B",
+                    ),
+                    width="100%",
+                ),
+                spacing="1",
+                align_items="start",
+                width="100%",
+                margin_top="0.8em",
+            ),
+
+            # Suggestion Tags Row
+            rx.hstack(
+                rx.foreach(
+                    FEEDBACK_SUGGESTION_TAGS,
+                    feedback_suggestion_tag,
+                ),
+                spacing="2",
+                wrap="wrap",
+                width="100%",
+                margin_top="0.5em",
+            ),
+
+            spacing="0",
+            align_items="start",
+            width="100%",
+        ),
+        background="#FAF5FF",
+        border="1px solid #EDE9FE",
+        border_radius="12px",
+        padding="1.3em 1.4em",
+        width="100%",
+        margin_top="1.2em",
+    )
+
+
 def test_submitted_screen() -> rx.Component:
     return rx.box(
         rx.vstack(
@@ -948,7 +1127,7 @@ def test_submitted_screen() -> rx.Component:
                             rx.cond(
                                 CandidateState.is_time_expired,
                                 "Time Expired — Test Automatically Submitted",
-                                "Test Submitted Successfully",
+                                "Test Submitted Successfully!",
                             ),
                         ),
                         font_family=FONT_DISPLAY,
@@ -999,7 +1178,13 @@ def test_submitted_screen() -> rx.Component:
                             rx.hstack(
                                 rx.text("Assessment", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                                 rx.spacer(),
-                                rx.text(CandidateState.active_assessment_name + " — " + CandidateState.display_test_name, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"]),
+                                rx.text(CandidateState.active_assessment_name, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"]),
+                                width="100%",
+                            ),
+                            rx.hstack(
+                                rx.text("Test", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                rx.spacer(),
+                                rx.text(CandidateState.display_test_name, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"]),
                                 width="100%",
                             ),
                             rx.hstack(
@@ -1024,16 +1209,66 @@ def test_submitted_screen() -> rx.Component:
                         margin_y="1.2em",
                         width="100%",
                     ),
-                    rx.button(
-                        rx.icon("arrow-left", size=14),
-                        "Return to My Assessments",
-                        on_click=CandidateState.return_to_dashboard,
-                        size="3",
-                        background=COLORS["primary"],
-                        color="white",
-                        font_family=FONT_BODY,
-                        margin_top="1.5em",
-                        _hover={"background": COLORS["primary_hover"]},
+
+                    # Feedback section shown for successful submissions
+                    rx.cond(
+                        ~CandidateState.is_disqualified,
+                        candidate_feedback_section(),
+                    ),
+
+                    # Action buttons
+                    rx.cond(
+                        CandidateState.is_disqualified,
+                        rx.button(
+                            rx.icon("arrow-left", size=14),
+                            "Return to My Assessments",
+                            on_click=CandidateState.return_to_dashboard,
+                            size="3",
+                            background=COLORS["primary"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            margin_top="1.5em",
+                            _hover={"background": COLORS["primary_hover"]},
+                        ),
+                        rx.hstack(
+                            rx.spacer(),
+                            rx.button(
+                                "Skip for now",
+                                on_click=CandidateState.skip_candidate_feedback,
+                                size="2",
+                                variant="outline",
+                                color="#6366F1",
+                                border="1px solid #6366F1",
+                                background="white",
+                                font_family=FONT_BODY,
+                                weight="medium",
+                                border_radius="8px",
+                                cursor="pointer",
+                                _hover={"background": "#F5F3FF"},
+                                padding_x="1.4em",
+                                padding_y="0.6em",
+                            ),
+                            rx.button(
+                                rx.icon("send", size=14),
+                                "Submit Feedback",
+                                on_click=CandidateState.submit_candidate_test_feedback,
+                                size="2",
+                                background="#6366F1",
+                                color="white",
+                                font_family=FONT_BODY,
+                                weight="medium",
+                                border_radius="8px",
+                                cursor="pointer",
+                                _hover={"background": "#4F46E5"},
+                                box_shadow="0 1px 3px rgba(99, 102, 241, 0.25)",
+                                padding_x="1.4em",
+                                padding_y="0.6em",
+                            ),
+                            spacing="3",
+                            align_items="center",
+                            width="100%",
+                            margin_top="1.4em",
+                        ),
                     ),
                     spacing="3",
                     align_items="center",
@@ -1043,7 +1278,7 @@ def test_submitted_screen() -> rx.Component:
                 border=f"1px solid {COLORS['line']}",
                 border_radius="16px",
                 padding="3em 2.5em",
-                max_width="560px",
+                max_width="660px",
                 width="100%",
                 box_shadow="0 10px 25px -5px rgba(0, 0, 0, 0.05)",
             ),
