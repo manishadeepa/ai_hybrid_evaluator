@@ -297,12 +297,7 @@ def active_test_dropzone_card() -> rx.Component:
                         type="button",
                         _hover={"background": COLORS["primary_hover"]},
                     ),
-                    rx.text(
-                        "Supported: .xlsx, .xls, .pdf, .docx, .doc, .csv  ·  Max 10MB",
-                        font_family=FONT_BODY,
-                        size="1",
-                        color=COLORS["placeholder"],
-                    ),
+
                     align_items="center",
                     spacing="2",
                 ),
@@ -909,13 +904,7 @@ def question_paper_right_column() -> rx.Component:
                             align_items="center",
                             padding_top="0.5em",
                         ),
-                        rx.text(
-                            "Supported formats: .xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
-                            font_family=FONT_BODY,
-                            size="1",
-                            color=COLORS["placeholder"],
-                            padding_top="0.8em",
-                        ),
+
                         spacing="2",
                         align_items="center",
                         width="100%",
@@ -985,13 +974,7 @@ def question_paper_right_column() -> rx.Component:
                                     border_radius="8px",
                                     cursor="pointer",
                                 ),
-                                rx.text(
-                                    "Supported formats: .xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
-                                    font_family=FONT_BODY,
-                                    size="1",
-                                    color=COLORS["placeholder"],
-                                    padding_top="0.5em",
-                                ),
+
                                 spacing="2",
                                 align_items="center",
                                 width="100%",
@@ -1397,37 +1380,6 @@ def tests_tab() -> rx.Component:
             rx.foreach(test_items, tests_tab_card),
             spacing="3",
             width="100%",
-        ),
-        # Supported formats banner (matching reference design)
-        rx.box(
-            rx.hstack(
-                rx.icon("info", size=20, color="#6366F1"),
-                rx.vstack(
-                    rx.text(
-                        "Supported Formats",
-                        font_family=FONT_BODY,
-                        size="2",
-                        weight="bold",
-                        color=COLORS["ink"],
-                    ),
-                    rx.text(
-                        ".xlsx, .xls, .pdf, .docx, .doc, .csv  •  Max size: 10MB",
-                        font_family=FONT_BODY,
-                        size="2",
-                        color=COLORS["slate"],
-                    ),
-                    spacing="0",
-                    align_items="start",
-                ),
-                spacing="3",
-                align_items="center",
-            ),
-            padding="1.1em 1.4em",
-            background="#F8FAFC",
-            border="1px solid #E2E8F0",
-            border_radius="12px",
-            width="100%",
-            margin_top="1em",
         ),
         spacing="0",
         width="100%",
