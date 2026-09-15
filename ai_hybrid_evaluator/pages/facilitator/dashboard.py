@@ -97,7 +97,45 @@ def approval_action_row(a: dict, idx: int) -> rx.Component:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Assessment card — clean design, NO test info
+# ─────────────────────────────────────────────────────────────────────
+# Candidate list item for assessment card
+# ─────────────────────────────────────────────────────────────────────
+def candidate_row_item(c: dict) -> rx.Component:
+    return rx.hstack(
+        rx.avatar(
+            fallback=rx.cond(c["name"] != "", c["name"][0], "C"),
+            size="2",
+            radius="full",
+            color_scheme="purple",
+        ),
+        rx.vstack(
+            rx.text(
+                c["name"],
+                font_family=FONT_BODY,
+                size="2",
+                weight="bold",
+                color=COLORS["ink"],
+            ),
+            rx.text(
+                c["emp_id"],
+                font_family=FONT_BODY,
+                size="1",
+                color=COLORS["slate"],
+            ),
+            spacing="0",
+            align_items="start",
+        ),
+        spacing="3",
+        align_items="center",
+        padding="0.55em 0.9em",
+        background="#F8FAFC",
+        border_radius="8px",
+        width="100%",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Assessment card — shows full candidate list, NO date
 # ─────────────────────────────────────────────────────────────────────
 def assessment_card(a: dict, idx: int) -> rx.Component:
     return rx.box(
@@ -113,47 +151,29 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                 justify_content="center",
                 flex_shrink=0,
             ),
-            # Centre: name + meta
+            # Centre: name + candidate list
             rx.vstack(
                 rx.text(
                     a["name"],
-                    font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"],
+                    font_family=FONT_BODY, size="4", weight="bold", color=COLORS["ink"],
                 ),
-                rx.hstack(
-                    rx.icon("users", size=12, color=COLORS["slate"]),
-                    rx.text(
-                        a["candidate_details"].length().to_string() + " candidates",
-                        font_family=FONT_BODY, size="2", color=COLORS["slate"],
-                    ),
-                    rx.text("·", font_family=FONT_BODY, size="2", color=COLORS["placeholder"]),
-                    rx.icon("user", size=12, color=COLORS["slate"]),
-                    rx.text(
-                        rx.cond(
-                            AuthState.facilitator_name != "",
-                            AuthState.facilitator_name + " (Facilitator)",
-                            a["facilitator_name"] + " (Facilitator)",
-                        ),
-                        font_family=FONT_BODY, size="2", color=COLORS["slate"],
-                    ),
-                    spacing="1", align_items="center", flex_wrap="wrap",
+                rx.text(
+                    "Candidates (", a["candidate_details"].length().to_string(), ")",
+                    font_family=FONT_BODY, size="2", color=COLORS["slate"],
                 ),
-                # Date row
-                rx.hstack(
-                    rx.icon("calendar", size=12, color=COLORS["slate"]),
-                    rx.cond(
-                        a["assessment_date"] != "",
-                        rx.text(
-                            a["assessment_date"],
-                            font_family=FONT_BODY, size="1", color=COLORS["placeholder"],
-                        ),
-                        rx.text(
-                            "Date not set",
-                            font_family=FONT_BODY, size="1", color=COLORS["placeholder"],
-                        ),
+                # Dynamic list of all assigned candidates
+                rx.vstack(
+                    rx.foreach(
+                        a["candidate_details"],
+                        candidate_row_item,
                     ),
-                    spacing="1", align_items="center",
+                    spacing="2",
+                    width="100%",
+                    margin_top="0.4em",
                 ),
-                spacing="1", align_items="start", flex="1",
+                spacing="1",
+                align_items="start",
+                flex="1",
             ),
             rx.spacer(),
             # Right: status badge + Open button (hidden when declined)
@@ -177,6 +197,7 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                 ),
                 align_items="end",
                 spacing="1",
+                flex_shrink=0,
             ),
             align_items="start",
             width="100%",
