@@ -206,6 +206,15 @@ class CandidateState(rx.State):
     submission_receipt: str = ""
     submitted_at: str = ""
 
+    # ── Score snapshot (populated on dashboard load from FacilitatorState) ──
+    # Flat dicts with composite keys to work cleanly inside rx.foreach vars.
+    # Key for test-level: "AssessmentName::TestName"
+    # Key for overall: "AssessmentName"
+    candidate_test_scores: dict[str, str] = {}      # -> score_str e.g. "72%" or "-"
+    candidate_test_evaluated: dict[str, bool] = {}  # -> True / False
+    candidate_overall_scores: dict[str, str] = {}   # -> score_str or "-"
+    candidate_overall_available: dict[str, bool] = {}  # -> True / False
+
     # ── Candidate Feedback State (Post-submission) ───────────────────────
     candidate_test_rating: int = 0
     candidate_test_feedback_text: str = ""
@@ -410,6 +419,106 @@ class CandidateState(rx.State):
                     dqs[a_name][t_name] = rec.get("submitted_at", "")
         self.submitted_tests = subs
         self.disqualified_tests = dqs
+        await self.refresh_candidate_scores()
+
+    async def refresh_candidate_scores(self):
+        """Read evaluation results + weightages from FacilitatorState and build
+        a per-assessment score snapshot for the currently logged-in candidate.
+        Only reads data — never writes to any submission or proctoring store."""
+        from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
+        from ai_hybrid_evaluator.state.admin_state import AdminState as _AdminState
+
+        cand_id = self.candidate_id or "CAND-2031"
+
+        try:
+            fac_st = await self.get_state(FacilitatorState)
+            admin_st = await self.get_state(_AdminState)
+        except Exception:
+            return
+
+        results = fac_st.real_ai_results_per_candidate  # {"Name (ID):test_name": {...}}
+        weightages = fac_st.saved_assessment_weightages  # {asmn: {test_name: int}}
+        completions = fac_st.completed_assessments        # {asmn: True}
+
+        new_test_scores: dict[str, str] = {}
+        new_test_evaluated: dict[str, bool] = {}
+        new_overall_scores: dict[str, str] = {}
+        new_overall_available: dict[str, bool] = {}
+
+        for a in admin_st.assessments:
+            asmn = a.get("name", "")
+            if not asmn:
+                continue
+            # Only process assessments the candidate is assigned to
+            if cand_id not in a.get("assigned_candidates", []):
+                continue
+
+            all_test_names: list[str] = list(a.get("tests", []))
+            final_test = a.get("final_test", "")
+            if final_test:
+                all_test_names.append(final_test)
+
+            if not all_test_names:
+                continue
+
+            # Build per-test score entries
+            for t_name in all_test_names:
+                flat_key = f"{asmn}::{t_name}"
+                norm: float | None = None
+                for rkey, rval in results.items():
+                    # Key format: "CandidateName (EMP-ID):test_name"
+                    parts = rkey.split(":")
+                    if len(parts) < 2:
+                        continue
+                    r_cand_label = parts[0].strip()
+                    r_test_name = ":".join(parts[1:]).strip()
+                    if r_test_name != t_name:
+                        continue
+                    if cand_id in r_cand_label:
+                        try:
+                            norm = FacilitatorState._calculate_normalized_score(rval)
+                        except Exception:
+                            norm = None
+                        break
+                if norm is not None:
+                    score_int = int(round(norm))
+                    new_test_scores[flat_key] = f"{score_int}%"
+                    new_test_evaluated[flat_key] = True
+                else:
+                    new_test_scores[flat_key] = "-"
+                    new_test_evaluated[flat_key] = False
+
+            # Overall score
+            is_complete = bool(completions.get(asmn, False))
+            saved_w = weightages.get(asmn, {})
+            total_w = sum(saved_w.values())
+            all_evaluated = all(
+                new_test_evaluated.get(f"{asmn}::{t}", False) for t in all_test_names
+            )
+            overall_avail = is_complete and all_evaluated and total_w == 100
+            new_overall_available[asmn] = overall_avail
+
+            if overall_avail:
+                total_weighted = 0.0
+                for t_name in all_test_names:
+                    flat_key = f"{asmn}::{t_name}"
+                    score_s = new_test_scores.get(flat_key, "-")
+                    if score_s != "-":
+                        norm_val = float(score_s.replace("%", ""))
+                        w_val = float(saved_w.get(t_name, 0))
+                        total_weighted += (norm_val * w_val) / 100.0
+                if total_weighted == int(total_weighted):
+                    new_overall_scores[asmn] = f"{int(round(total_weighted))}%"
+                else:
+                    new_overall_scores[asmn] = f"{round(total_weighted, 1)}%"
+            else:
+                new_overall_scores[asmn] = "-"
+
+        self.candidate_test_scores = new_test_scores
+        self.candidate_test_evaluated = new_test_evaluated
+        self.candidate_overall_scores = new_overall_scores
+        self.candidate_overall_available = new_overall_available
+
 
     async def on_test_page_load(self):
         """Called when candidate test page loads to ensure timer is active or lock submitted/disqualified test."""
