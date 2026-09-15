@@ -97,6 +97,23 @@ class FacilitatorState(rx.State):
     selected_test_name: str = ""
     is_replacing_qp: bool = False
 
+    # ── Question Paper Upload Validation Popup (UI Only) ──────────────
+    qp_validation_popup_open: bool = False
+    qp_validation_status: str = "success"  # "success" | "error"
+
+    def open_qp_validation_popup(self, status: str = "success"):
+        """Open the QP validation result popup with 'success' or 'error' status."""
+        self.qp_validation_status = status
+        self.qp_validation_popup_open = True
+
+    def close_qp_validation_popup(self):
+        """Close the QP validation result popup."""
+        self.qp_validation_popup_open = False
+
+    def set_qp_validation_popup_open(self, value: bool):
+        """Setter for qp_validation_popup_open (used by dialog on_open_change)."""
+        self.qp_validation_popup_open = value
+
     # ── Reports Configuration (UI Only) ───────────────────────────────
     reports_pass_percentage: str = "50"
     # Name of the test whose report detail is currently open (e.g. "Formative 1")
@@ -1511,6 +1528,9 @@ class FacilitatorState(rx.State):
             self.question_papers[assessment_name][test_name] = file.filename
 
         self.is_replacing_qp = False
+        # Validation result popup (UI only; isolated state for backend developer connection)
+        self.qp_validation_status = "success"
+        self.qp_validation_popup_open = True
         return rx.toast.success(f"Question paper uploaded for {test_name}: {files[0].filename}")
 
     def remove_test_question_paper(self, test_name: str):

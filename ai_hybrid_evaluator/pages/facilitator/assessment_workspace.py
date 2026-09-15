@@ -6624,6 +6624,110 @@ def qp_upload_dialog() -> rx.Component:
     )
 
 
+def qp_validation_result_dialog() -> rx.Component:
+    """Centered validation-result popup modal displayed after Question Paper upload."""
+    is_success = FacilitatorState.qp_validation_status == "success"
+
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Status icon badge (✓ or ✕)
+                rx.box(
+                    rx.cond(
+                        is_success,
+                        rx.icon("check", size=28, color="#059669", stroke_width=2.5),
+                        rx.icon("x", size=28, color="#DC2626", stroke_width=2.5),
+                    ),
+                    background=rx.cond(is_success, COLORS["success_soft"], COLORS["danger_soft"]),
+                    border=rx.cond(is_success, "1px solid #A6F4C5", "1px solid #FECACA"),
+                    width="60px",
+                    height="60px",
+                    border_radius="50%",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    margin_bottom="0.2em",
+                ),
+                # Title
+                rx.dialog.title(
+                    rx.cond(
+                        is_success,
+                        "Question Paper Uploaded Successfully",
+                        "Invalid Question Paper Format",
+                    ),
+                    font_family=FONT_DISPLAY,
+                    size="4",
+                    weight="bold",
+                    color=COLORS["ink"],
+                    text_align="center",
+                ),
+                # Description
+                rx.dialog.description(
+                    rx.cond(
+                        is_success,
+                        rx.text(
+                            "Your question paper is in the correct format.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                            text_align="center",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "The uploaded question paper is not in the correct format.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                                text_align="center",
+                            ),
+                            rx.text(
+                                "Please upload the correct format.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                                text_align="center",
+                            ),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                    ),
+                    text_align="center",
+                    width="100%",
+                ),
+                # Action Button
+                rx.button(
+                    "OK",
+                    on_click=FacilitatorState.close_qp_validation_popup,
+                    size="3",
+                    width="100%",
+                    background=COLORS["primary"],
+                    color="white",
+                    font_family=FONT_BODY,
+                    font_weight="600",
+                    border_radius="10px",
+                    cursor="pointer",
+                    _hover={"background": COLORS["primary_hover"]},
+                    margin_top="0.8em",
+                ),
+                spacing="3",
+                align_items="center",
+                width="100%",
+            ),
+            style={
+                "maxWidth": "420px",
+                "width": "90vw",
+                "padding": "2.2em 2em 1.8em",
+                "borderRadius": "16px",
+                "textAlign": "center",
+                "backgroundColor": COLORS["surface"],
+                "boxShadow": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)",
+            },
+        ),
+        open=FacilitatorState.qp_validation_popup_open,
+        on_open_change=FacilitatorState.set_qp_validation_popup_open,
+    )
+
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Report Detail Tab  (opened via "View Report" from the Reports tab)
@@ -7474,6 +7578,7 @@ def assessment_workspace_page() -> rx.Component:
         ),
         qp_preview_dialog(),
         qp_upload_dialog(),
+        qp_validation_result_dialog(),
         add_new_test_dialog(),
         spacing="0",
         width="100%",
