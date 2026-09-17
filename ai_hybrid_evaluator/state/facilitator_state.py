@@ -83,10 +83,12 @@ class FacilitatorState(rx.State):
     # One of: "tests" | "evaluation" | "weightage" | "results" | "reports"
     active_workspace_tab: str = "tests"
 
-    def set_workspace_tab(self, tab: str):
+    async def set_workspace_tab(self, tab: str):
         """Switch the active tab inside the Assessment Workspace."""
         if tab in WORKSPACE_TABS:
             self.active_workspace_tab = tab
+            if tab == "weightage" and self.selected_assessment_name:
+                await self.sync_assessment_weightage(self.selected_assessment_name)
         return rx.redirect("/facilitator/assessment")
 
     # ── Question Paper uploads (Test-wise) ─────────────────────────────
@@ -470,7 +472,9 @@ class FacilitatorState(rx.State):
             t_name = t["name"]
             is_final = t.get("is_final", False) or "summative" in t_name.lower()
             t_type = "Summative" if is_final else "Formative"
-            t_date = t.get("date") or test_dates.get(t_name, "—")
+            t_date = (t.get("date") or "").strip() or (test_dates.get(t_name, "") or "").strip()
+            if not t_date or t_date == "—":
+                t_date = (match.get("date", "") or match.get("assessment_date", "") or "15 Sep 2026").strip()
             weight = f"{saved_w.get(t_name, 0)}%"
 
             # Gather candidate evaluation scores for this test
@@ -555,7 +559,7 @@ class FacilitatorState(rx.State):
                 else:
                     test_score_strs.append("Pending")
 
-            if evaluated_test_count > 0:
+            if evaluated_test_count > 0 and evaluated_test_count == len(all_tests):
                 final_overall = round(weighted_sum, 1)
                 overall_str = f"{int(final_overall)}%" if final_overall == int(final_overall) else f"{final_overall}%"
                 status = "Passed" if final_overall >= pass_thresh else "Failed"
@@ -689,6 +693,7 @@ class FacilitatorState(rx.State):
     # Transient input values: { assessment_name: { test_name: percentage_str } }
     weightage_inputs: dict[str, dict[str, str]] = {}
     pass_percentage_inputs: dict[str, dict[str, str]] = {}
+    weightage_manually_edited: dict[str, list[str]] = {}
     selected_assessment_final_test: str = ""
 
     @staticmethod
@@ -784,18 +789,210 @@ class FacilitatorState(rx.State):
         except Exception:
             pass
 
-    def mark_assessment_complete(self):
-        """Facilitator explicitly marks the current assessment as Complete from Reports page."""
+    async def mark_assessment_complete(self):
+        """Facilitator explicitly marks the current assessment as Complete from Reports page.
+        If all conditions are met (all tests evaluated, weightage = 100%), also submits
+        the Overall Assessment Report to AdminReportsState for Admin visibility.
+        """
         asmn = self.selected_assessment_name
         if not asmn:
-            return rx.toast.error("No assessment selected.")
+            yield rx.toast.error("No assessment selected.")
+            return
         if not self.completed_assessments:
             self.completed_assessments = self._load_saved_completions()
         updated = dict(self.completed_assessments)
         updated[asmn] = True
         self.completed_assessments = updated
         self._persist_completions()
-        return rx.toast.success(f"Assessment '{asmn}' marked as Complete.")
+        yield rx.toast.success(f"Assessment '{asmn}' marked as Complete.")
+        # Attempt to build and push the overall report to Admin if conditions are met
+        yield FacilitatorState.submit_overall_report_to_admin
+
+    async def submit_overall_report_to_admin(self):
+        """Build the Overall Assessment Report from existing evaluation data and push it
+        to AdminReportsState so it appears on the Admin Reports page.
+        Only succeeds when: assessment is marked Complete + all tests evaluated + weightage = 100%.
+        """
+        from ai_hybrid_evaluator.state.admin_state import AdminReportsState
+        from ai_hybrid_evaluator.state.auth_state import AuthState
+        import uuid
+        from datetime import datetime
+
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return
+
+        # Gate: assessment must be marked complete
+        if not self.completed_assessments.get(asmn, False):
+            return
+
+        # Gate: weightage must total exactly 100%
+        saved_w: dict[str, int] = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        if total_w != 100 or not saved_w:
+            return
+
+        # Gate: must have real evaluation data
+        if not self.real_ai_results_per_candidate:
+            return
+
+        # Get facilitator identity
+        auth_state = await self.get_state(AuthState)
+        fac_name = auth_state.facilitator_name or "Facilitator"
+        fac_id = auth_state.facilitator_emp_id or "F001"
+
+        # Get assessment details
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return
+
+        all_tests = match.get("test_items", [])
+        # Gate: all tests must be evaluated
+        for t in all_tests:
+            t_name = t["name"]
+            has_eval = any(
+                key.split(":")[1].strip() == t_name
+                for key in self.real_ai_results_per_candidate
+                if ":" in key
+            )
+            if not has_eval:
+                return
+
+        candidate_details = match.get("candidate_details", [])
+        n_candidates = len(candidate_details)
+        pass_thresh = self.get_assessment_overall_pass_percentage(asmn)
+
+        # ── Build test_scores list (per-test average) ──
+        test_scores_list: list[dict] = []
+        all_candidate_overall_scores: list[float] = []
+        t_dates = match.get("test_dates", {})
+
+        for t in all_tests:
+            t_name = t["name"]
+            is_final = t.get("is_final", False) or "summative" in t_name.lower()
+            t_w = saved_w.get(t_name, 0)
+            # Resolve test date: prefer explicit test_dates map, then the test item's own date field, then assessment date, then current date
+            t_date = (t_dates.get(t_name, "") or "").strip() or (t.get("date", "") or "").strip()
+            if not t_date or t_date == "—":
+                t_date = (match.get("date", "") or match.get("assessment_date", "") or datetime.now().strftime("%d %b %Y")).strip()
+            scores: list[float] = []
+            for cand in candidate_details:
+                c_name = cand["name"]
+                c_id = cand["emp_id"]
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if t_part == t_name and (c_name in c_part or c_id in c_part or c_part.startswith(c_name)):
+                        scores.append(self._calculate_normalized_score(val))
+                        break
+            avg = round(sum(scores) / len(scores), 1) if scores else 0.0
+            avg_str = f"{int(avg)}%" if avg == int(avg) else f"{avg}%"
+            test_scores_list.append({
+                "name": t_name,
+                "type": "Summative" if is_final else "Formative",
+                "date": t_date,
+                "weightage": t_w,
+                "avg_score": avg,
+                "avg_score_str": avg_str,
+                "evaluated": len(scores),
+                "total": n_candidates,
+            })
+
+        # ── Build per-candidate rows ──
+        candidates_list: list[dict] = []
+        for i, cand in enumerate(candidate_details, 1):
+            c_name = cand["name"]
+            c_id = cand["emp_id"]
+            weighted_sum = 0.0
+            test_score_strs: list[str] = []
+            for t in all_tests:
+                t_name = t["name"]
+                t_w = saved_w.get(t_name, 0)
+                t_score = None
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    c_part = parts[0].strip()
+                    if t_part == t_name and (c_name in c_part or c_id in c_part or c_part.startswith(c_name)):
+                        t_score = self._calculate_normalized_score(val)
+                        break
+                if t_score is not None:
+                    s_str = f"{int(t_score)}%" if t_score == int(t_score) else f"{round(t_score, 1)}%"
+                    test_score_strs.append(s_str)
+                    weighted_sum += (t_score * t_w) / 100.0
+                else:
+                    test_score_strs.append("—")
+            final_overall = round(weighted_sum, 1)
+            overall_str = f"{int(final_overall)}%" if final_overall == int(final_overall) else f"{final_overall}%"
+            # Only mark Passed/Failed if ALL tests were evaluated for this candidate
+            has_missing = "—" in test_score_strs
+            if has_missing:
+                status = "Pending"
+                overall_str = "—"
+            elif final_overall >= pass_thresh:
+                status = "Passed"
+            else:
+                status = "Failed"
+            all_candidate_overall_scores.append(final_overall)
+            candidates_list.append({
+                "idx": str(i),
+                "cand_id": c_id,
+                "cand_name": c_name,
+                "scores": test_score_strs,
+                "overall_score": overall_str,
+                "status": status,
+            })
+
+        # ── Compute overall average and pass counts ──
+        if all_candidate_overall_scores:
+            avg_overall = round(sum(all_candidate_overall_scores) / len(all_candidate_overall_scores), 1)
+        else:
+            avg_overall = 0.0
+        passed_count = sum(1 for s in all_candidate_overall_scores if s >= pass_thresh)
+        passing_rate_str = f"{round(passed_count / n_candidates * 100)}%" if n_candidates > 0 else "0%"
+        passing_count_str = f"{passed_count} of {n_candidates} Candidate(s) Passed"
+
+        # ── Aggregate CO / LO / Knowledge Type / Domain / RBT across all results ──
+        def _agg_dim(dim_key: str) -> list[dict]:
+            agg: dict[str, list] = {}
+            for val in self.real_ai_results_per_candidate.values():
+                for item in val.get(dim_key, []):
+                    agg.setdefault(item.get("name", ""), []).append(float(item.get("score", 0)))
+            return [{"name": k, "code": k, "score": round(sum(v) / len(v), 1)} for k, v in agg.items()]
+
+        now = datetime.now()
+        report_id = f"RPT-{asmn[:4].upper().replace(' ', '')}-{now.strftime('%Y%m%d%H%M%S')}"
+
+        report_data = {
+            "report_id": report_id,
+            "assessment_name": asmn,
+            "facilitator_name": fac_name,
+            "facilitator_id": fac_id,
+            "assessment_date": match.get("date", ""),
+            "submitted_date": now.strftime("%d %b %Y"),
+            "submitted_time": now.strftime("%I:%M %p"),
+            "candidate_count": n_candidates,
+            "overall_score": int(round(avg_overall)),
+            "final_test_score": int(round(avg_overall)),
+            "passing_rate": passing_rate_str,
+            "passing_count": passing_count_str,
+            "insight_diff": 0,
+            "insight_start": "",
+            "insight_end": f"Cohort Average ({int(round(avg_overall))}%)",
+            "test_scores": test_scores_list,
+            "candidates": candidates_list,
+            "co": _agg_dim("co"),
+            "lo": _agg_dim("lo"),
+            "knowledge_type": _agg_dim("knowledge_type"),
+            "domain": _agg_dim("domain"),
+            "rbt_level": _agg_dim("rbt_level"),
+        }
+
+        # Push to AdminReportsState
+        admin_reports_state = await self.get_state(AdminReportsState)
+        admin_reports_state.consume_facilitator_overall_report(report_data)
 
     def unmark_assessment_complete(self):
         """Facilitator resets completion status (e.g. to add more tests or fix configuration)."""
@@ -1213,32 +1410,153 @@ class FacilitatorState(rx.State):
             return round(sum(vals) / len(vals), 1)
         return 50.0
 
-    def restore_assessment_weightage(self, assessment_name: str):
-        """Restore saved weightages and pass percentages for the given assessment into inputs."""
+    async def sync_assessment_weightage(
+        self,
+        assessment_name: str = "",
+        edited_test: str = "",
+        new_value: str = "",
+    ):
+        """Synchronize, initialize, or dynamically recalculate test weightages for an assessment.
+        Guarantees that total weightage is always 100%, newly added/unconfigured tests receive
+        their dynamic share, and any edit to a test's weightage immediately rebalances the other tests."""
+        asmn = assessment_name or self.selected_assessment_name
+        if not asmn:
+            return
+
         if not self.saved_assessment_weightages:
             self.saved_assessment_weightages = self._load_saved_weightages()
-        saved = self.saved_assessment_weightages.get(assessment_name, {})
-        cur = {t: str(w) for t, w in saved.items()} if saved else {}
-        updated = dict(self.weightage_inputs)
-        updated[assessment_name] = cur
-        self.weightage_inputs = updated
-
         if not self.saved_assessment_pass_percentages:
             self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
-        saved_p = self.saved_assessment_pass_percentages.get(assessment_name, {})
-        cur_p = {t: str(p) for t, p in saved_p.items()} if saved_p else {}
+
+        saved_w = dict(self.saved_assessment_weightages.get(asmn, {}))
+        saved_p = dict(self.saved_assessment_pass_percentages.get(asmn, {}))
+
+        admin_state = await self.get_state(AdminState)
+        target_a = next((a for a in admin_state.assessments if a.get("name") == asmn), None)
+
+        if target_a:
+            all_tests = list(target_a.get("tests", []))
+            final_test = target_a.get("final_test", "")
+            if final_test and final_test not in all_tests:
+                all_tests.append(final_test)
+        else:
+            all_tests = list(dict.fromkeys(
+                list(self.weightage_inputs.get(asmn, {}).keys()) +
+                list(saved_w.keys())
+            ))
+
+        if not all_tests:
+            return
+
+        cur_w = dict(self.weightage_inputs.get(asmn, {}))
+        cur_p = dict(self.pass_percentage_inputs.get(asmn, {}))
+
+        # Seed pass percentages if not present
+        for t in all_tests:
+            if t not in cur_p or not str(cur_p[t]).strip():
+                cur_p[t] = str(saved_p.get(t, "50"))
         updated_p = dict(self.pass_percentage_inputs)
-        updated_p[assessment_name] = cur_p
+        updated_p[asmn] = cur_p
         self.pass_percentage_inputs = updated_p
 
-    def set_weightage_input(self, test_name: str, value: str):
-        """Update the weightage % string for a specific test in the current assessment."""
+        # Single test case: always 100%
+        if len(all_tests) == 1:
+            cur_w[all_tests[0]] = "100"
+            updated_w = dict(self.weightage_inputs)
+            updated_w[asmn] = cur_w
+            self.weightage_inputs = updated_w
+            return
+
+        manually_edited = list(self.weightage_manually_edited.get(asmn, []))
+
+        if edited_test:
+            # User actively editing a test input
+            if edited_test not in manually_edited:
+                manually_edited.append(edited_test)
+                self.weightage_manually_edited[asmn] = manually_edited
+
+            cur_w[edited_test] = new_value
+
+            val_clean = new_value.strip()
+            if val_clean != "":
+                try:
+                    v_int = int(val_clean)
+                except ValueError:
+                    v_int = 0
+                v_int = max(0, min(100, v_int))
+            else:
+                v_int = 0
+
+            other_tests = [t for t in all_tests if t != edited_test]
+            unconfigured = [t for t in other_tests if t not in manually_edited]
+            if not unconfigured:
+                unconfigured = other_tests
+
+            explicit_sum = v_int
+            for t in all_tests:
+                if t != edited_test and t not in unconfigured:
+                    try:
+                        explicit_sum += int(cur_w.get(t, 0))
+                    except (ValueError, TypeError):
+                        pass
+
+            remaining = max(0, 100 - explicit_sum)
+            share = remaining // len(unconfigured)
+            rem = remaining % len(unconfigured)
+            for i, ut in enumerate(unconfigured):
+                cur_w[ut] = str(share + (1 if i < rem else 0))
+        else:
+            # Assessment loaded, test added/removed, or tab opened
+            all_in_saved = all(t in saved_w for t in all_tests)
+            saved_sum = sum(saved_w.get(t, 0) for t in all_tests)
+            all_positive = all(saved_w.get(t, 0) > 0 for t in all_tests)
+
+            if all_in_saved and saved_sum == 100 and all_positive and not cur_w:
+                for t in all_tests:
+                    cur_w[t] = str(saved_w[t])
+            else:
+                configured = {}
+                for t in all_tests:
+                    raw_val = cur_w.get(t, "")
+                    if not str(raw_val).strip() and t in saved_w:
+                        raw_val = str(saved_w[t])
+                    try:
+                        parsed_val = int(raw_val)
+                    except (ValueError, TypeError):
+                        parsed_val = 0
+                    if parsed_val > 0:
+                        configured[t] = parsed_val
+
+                unconfigured = [t for t in all_tests if t not in configured]
+                if not unconfigured and sum(configured.values()) != 100 and all_tests:
+                    unconfigured = [all_tests[-1]]
+                    del configured[all_tests[-1]]
+
+                explicit_sum = sum(configured.values())
+                remaining = max(0, 100 - explicit_sum)
+                if unconfigured:
+                    share = remaining // len(unconfigured)
+                    rem = remaining % len(unconfigured)
+                    for i, ut in enumerate(unconfigured):
+                        cur_w[ut] = str(share + (1 if i < rem else 0))
+                for t, val in configured.items():
+                    cur_w[t] = str(val)
+
+        updated_w = dict(self.weightage_inputs)
+        updated_w[asmn] = cur_w
+        self.weightage_inputs = updated_w
+
+    async def restore_assessment_weightage(self, assessment_name: str):
+        """Restore saved weightages and pass percentages for the given assessment into inputs."""
+        await self.sync_assessment_weightage(assessment_name)
+
+    async def set_weightage_input(self, test_name: str, value: str):
+        """Update the weightage % string for a specific test in the current assessment,
+        and dynamically balance all other tests to ensure total weightage equals 100%."""
         asmn = self.selected_assessment_name
-        cur = dict(self.weightage_inputs.get(asmn, {}))
-        cur[test_name] = value
-        updated = dict(self.weightage_inputs)
-        updated[asmn] = cur
-        self.weightage_inputs = updated
+        if not asmn:
+            return
+        await self.sync_assessment_weightage(asmn, edited_test=test_name, new_value=value)
 
     def set_pass_percentage_input(self, test_name: str, value: str):
         """Update the pass percentage string for a specific test in the current assessment."""
@@ -1250,25 +1568,23 @@ class FacilitatorState(rx.State):
         self.pass_percentage_inputs = updated
 
     @rx.var
-    def current_assessment_total_weightage(self) -> int:
+    async def current_assessment_total_weightage(self) -> int:
         """Sum of current weightage inputs for the selected assessment."""
-        asmn = self.selected_assessment_name
-        if not asmn:
-            return 0
-        inputs = self.weightage_inputs.get(asmn, {})
-        if not inputs and asmn in self.saved_assessment_weightages:
-            inputs = {t: str(w) for t, w in self.saved_assessment_weightages[asmn].items()}
+        items = await self.current_assessment_weightage_items
         total = 0
-        for val in inputs.values():
-            try:
-                total += int(val) if str(val).strip() else 0
-            except ValueError:
-                pass
+        for item in items:
+            val = item.get("weightage", "0")
+            if str(val).strip():
+                try:
+                    total += int(val)
+                except ValueError:
+                    pass
         return total
 
     @rx.var
-    def current_assessment_total_weightage_str(self) -> str:
-        return f"{self.current_assessment_total_weightage}%"
+    async def current_assessment_total_weightage_str(self) -> str:
+        val = await self.current_assessment_total_weightage
+        return f"{val}%"
 
     def _get_test_normalized_score(self, test_name: str) -> float | None:
         """Get normalized score for a test from existing evaluation results."""
@@ -1296,20 +1612,19 @@ class FacilitatorState(rx.State):
         return None
 
     @rx.var
-    def current_assessment_total_weighted_score_str(self) -> str:
+    async def current_assessment_total_weighted_score_str(self) -> str:
         """Sum of weighted scores for evaluated tests in the current assessment."""
         asmn = self.selected_assessment_name
         if not asmn:
             return "—"
-        inputs = dict(self.weightage_inputs.get(asmn, {}))
-        if asmn in self.saved_assessment_weightages:
-            for t, w in self.saved_assessment_weightages[asmn].items():
-                if t not in inputs:
-                    inputs[t] = str(w)
-
+            
+        items = await self.current_assessment_weightage_items
+        
         total_weighted = 0.0
         has_any = False
-        for t_name, w_val in inputs.items():
+        for item in items:
+            t_name = item["name"]
+            w_val = item["weightage"]
             norm_score = self._get_test_normalized_score(t_name)
             if norm_score is not None:
                 has_any = True
@@ -1344,18 +1659,49 @@ class FacilitatorState(rx.State):
         saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
         cur_p = self.pass_percentage_inputs.get(asmn, {})
         test_items = match.get("test_items", [])
+        all_test_names = [t["name"] for t in test_items if t.get("name")]
+        if not all_test_names:
+            return []
 
-        # If only one test and no weightage saved/entered yet, default to 100%
-        if len(test_items) == 1 and not saved_w and not cur_w:
-            single_name = test_items[0]["name"]
-            cur_w = {single_name: "100"}
+        # If weightage_inputs does not contain all tests or is empty, run auto-balance
+        missing_tests = [tn for tn in all_test_names if tn not in cur_w or not str(cur_w[tn]).strip()]
+        if missing_tests or not cur_w:
+            auto_weights = dict(cur_w)
+            if len(all_test_names) == 1:
+                auto_weights[all_test_names[0]] = "100"
+            else:
+                configured = {}
+                for tn in all_test_names:
+                    raw = cur_w.get(tn, str(saved_w.get(tn, "")))
+                    try:
+                        p_val = int(raw)
+                    except (ValueError, TypeError):
+                        p_val = 0
+                    if p_val > 0:
+                        configured[tn] = p_val
+
+                unconfigured = [tn for tn in all_test_names if tn not in configured]
+                if not unconfigured and sum(configured.values()) != 100 and all_test_names:
+                    unconfigured = [all_test_names[-1]]
+                    del configured[all_test_names[-1]]
+
+                rem = max(0, 100 - sum(configured.values()))
+                for tn, val in configured.items():
+                    auto_weights[tn] = str(val)
+                if unconfigured:
+                    share = rem // len(unconfigured)
+                    remainder = rem % len(unconfigured)
+                    for i, ut in enumerate(unconfigured):
+                        auto_weights[ut] = str(share + (1 if i < remainder else 0))
+        else:
+            auto_weights = cur_w
 
         items = []
         for t in test_items:
             t_name = t["name"]
             is_final = t.get("is_final", False)
             d = t.get("date", "")
-            w_val = cur_w.get(t_name, str(saved_w.get(t_name, t.get("weightage", ""))))
+            w_val = auto_weights.get(t_name, cur_w.get(t_name, str(saved_w.get(t_name, "0"))))
             p_val = cur_p.get(t_name, str(saved_p.get(t_name, "50")))
 
             items.append({
@@ -1368,7 +1714,7 @@ class FacilitatorState(rx.State):
             })
         return items
 
-    def save_weightage(self):
+    async def save_weightage(self):
         """Save the weightage configuration for the selected assessment.
         Saving is allowed at any total percentage — the 100% requirement
         only applies to unlocking the Overall Assessment Report."""
@@ -1378,26 +1724,39 @@ class FacilitatorState(rx.State):
 
         if not self.saved_assessment_weightages:
             self.saved_assessment_weightages = self._load_saved_weightages()
+        if not self.saved_assessment_pass_percentages:
+            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
+
+        admin_state = await self.get_state(AdminState)
+        target_a = next((a for a in admin_state.assessments if a.get("name") == asmn), None)
+        if target_a:
+            all_tests = list(target_a.get("tests", []))
+            final_test = target_a.get("final_test", "")
+            if final_test and final_test not in all_tests:
+                all_tests.append(final_test)
+        else:
+            all_tests = list(dict.fromkeys(
+                list(self.weightage_inputs.get(asmn, {}).keys()) +
+                list(self.saved_assessment_weightages.get(asmn, {}).keys())
+            ))
 
         inputs = self.weightage_inputs.get(asmn, {})
-        if not inputs and asmn in self.saved_assessment_weightages:
-            inputs = {t: str(w) for t, w in self.saved_assessment_weightages[asmn].items()}
+        p_inputs = self.pass_percentage_inputs.get(asmn, {})
+        saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
 
         total = 0
         parsed_weights: dict[str, int] = {}
-        for t_name, val_str in inputs.items():
+        parsed_pass: dict[str, int] = {}
+
+        for t_name in all_tests:
+            val_str = inputs.get(t_name, "")
             try:
                 w_int = int(val_str) if str(val_str).strip() else 0
             except ValueError:
                 w_int = 0
-            parsed_weights[t_name] = w_int
-            total += w_int
+            parsed_weights[t_name] = max(0, min(100, w_int))
+            total += parsed_weights[t_name]
 
-        # Parse pass percentages for each test
-        p_inputs = self.pass_percentage_inputs.get(asmn, {})
-        saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
-        parsed_pass: dict[str, int] = {}
-        for t_name in parsed_weights.keys():
             val_p = p_inputs.get(t_name, str(saved_p.get(t_name, "50")))
             try:
                 p_int = int(val_p) if str(val_p).strip() else 50
@@ -1805,8 +2164,8 @@ class FacilitatorState(rx.State):
                 for c in admin_state.candidates
                 if c["emp_id"] in assessments[index].get("assigned_candidates", [])
             ]
-            # Restore saved weightage values for this assessment
-            self.restore_assessment_weightage(assessments[index]["name"])
+            # Restore and dynamically balance weightage values for this assessment
+            await self.sync_assessment_weightage(assessments[index]["name"])
         # Always land on the Tests tab when opening a workspace
         self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
@@ -1843,8 +2202,8 @@ class FacilitatorState(rx.State):
                     for c in admin_state.candidates
                     if c["emp_id"] in a.get("assigned_candidates", [])
                 ]
-                # Restore saved weightage values for this assessment
-                self.restore_assessment_weightage(assessment_name)
+                # Restore and dynamically balance weightage values for this assessment
+                await self.sync_assessment_weightage(assessment_name)
                 break
         self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
@@ -1924,6 +2283,7 @@ class FacilitatorState(rx.State):
                     for c in admin_state.candidates
                     if c["emp_id"] in a.get("assigned_candidates", [])
                 ]
+                await self.sync_assessment_weightage(assessment_name)
                 break
         self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
@@ -2048,6 +2408,7 @@ class FacilitatorState(rx.State):
 
         # Reset Overall Report lock — facilitator must re-mark assessment Complete after adding tests
         self._unmark_assessment_complete(name)
+        await self.sync_assessment_weightage(name)
         self.show_add_test_modal = False
         return rx.toast.success(f"Test '{test_name}' created successfully!")
 
@@ -2078,6 +2439,7 @@ class FacilitatorState(rx.State):
                 break
         # Reset Overall Report lock — facilitator must re-mark assessment Complete after removing tests
         self._unmark_assessment_complete(name)
+        await self.sync_assessment_weightage(name)
         return rx.toast.info(f"Test '{test_name}' removed from {name}.")
 
     # ── AI Evaluation Engine & Candidate Submissions State ───────────────
@@ -2089,6 +2451,7 @@ class FacilitatorState(rx.State):
 
     # ── AI Evaluation Progress Modal State ──────────────────────────────
     show_eval_progress_modal: bool = False
+    eval_cancelled: bool = False
     eval_progress_questions: list[dict] = []  # [{label, status}] status: pending|evaluating|completed
     eval_progress_current: int = 0  # number completed so far
 
@@ -2244,15 +2607,32 @@ class FacilitatorState(rx.State):
 
 
     def close_eval_progress_modal(self):
-        """Dismiss the AI evaluation progress dialog."""
+        """Immediately cancel/stop the ongoing AI evaluation and discard all partial results."""
+        self.eval_cancelled = True
+        self.is_ai_evaluating = False
         self.show_eval_progress_modal = False
+        self.eval_progress_questions = []
+        self.eval_progress_current = 0
+
+        # Discard all partial/current evaluation results for this candidate & test
+        self.real_ai_score_display = "—"
+        self.real_ai_max_score_display = "—"
+        self.real_ai_percentage_display = "—"
+        self.real_ai_evaluation_date = "Not evaluated"
+        self.real_ai_eval_questions = []
+
+        key = f"{self.selected_evaluation_candidate}:{self.selected_test_name}"
+        if key in self.real_ai_results_per_candidate:
+            del self.real_ai_results_per_candidate[key]
+
+        return rx.toast.info("AI evaluation cancelled. All partial results discarded.")
 
     async def run_ai_evaluation(self):
-
         """Run the real AI Evaluation Engine using Azure OpenAI.
         Reads the uploaded Question Paper and the latest candidate response file.
         Falls back gracefully to mock data if files or API credentials are missing.
         """
+        self.eval_cancelled = False
         self.is_ai_evaluating = True
         self.show_eval_progress_modal = False
         self.eval_progress_questions = []
@@ -2316,6 +2696,9 @@ class FacilitatorState(rx.State):
             # Animate progress question-by-question while waiting for the real result
             per_q_delay = max(1.0, 4.0)  # seconds per question step shown (min 1s)
             for qi in range(q_count):
+                if self.eval_cancelled:
+                    future.cancel()
+                    return
                 # Mark current question as evaluating
                 updated = list(self.eval_progress_questions)
                 updated[qi] = {"label": updated[qi]["label"], "status": "evaluating"}
@@ -2327,10 +2710,17 @@ class FacilitatorState(rx.State):
                 elapsed = 0.0
                 step = 0.3
                 while elapsed < per_q_delay:
+                    if self.eval_cancelled:
+                        future.cancel()
+                        return
                     if future.done():
                         break
                     await asyncio.sleep(step)
                     elapsed += step
+
+                if self.eval_cancelled:
+                    future.cancel()
+                    return
 
                 # Mark as completed
                 updated = list(self.eval_progress_questions)
@@ -2349,9 +2739,17 @@ class FacilitatorState(rx.State):
                     yield
                     break
 
+            if self.eval_cancelled:
+                future.cancel()
+                return
+
             # Close progress modal as soon as all questions are visually complete
             self.show_eval_progress_modal = False
             yield
+
+            if self.eval_cancelled:
+                future.cancel()
+                return
 
             # Await the actual result (already done or still running)
             result = await asyncio.wrap_future(future)
@@ -2531,10 +2929,51 @@ class FacilitatorState(rx.State):
 
     # ── Results Tab Analytics State ────────────────────────────────────
     results_selected_candidate: str = "All Candidates"
-    results_active_dimension_tab: str = "overall"  # "overall", "co", "lo", "knowledge_type", "domain", "rbt_level"
-    results_selected_test: str = ""  # empty = all tests; otherwise specific test name
+    results_view_mode: str = "individual"  # "individual" or "all"
+    results_active_dimension_tab: str = "overall"  # "overall", "test_wise", "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
+    results_selected_test: str = ""  # empty = first test / all tests; otherwise specific test name
+    results_selected_analysis_test: str = ""  # specific test for Test-wise / Question-wise analysis
+    results_test_wise_sub_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
+    results_search_candidate: str = ""
+    show_all_questions: bool = False
+    show_results_report_modal: bool = False
     # Sync cache of the current assessment's candidates — populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
+
+    def set_results_view_mode(self, mode: str):
+        self.results_view_mode = mode
+        if mode == "individual":
+            if self.results_selected_candidate in ("All Candidates", ""):
+                if self._current_assessment_candidates:
+                    c = self._current_assessment_candidates[0]
+                    self.results_selected_candidate = f"{c['name']} ({c['emp_id']})"
+        else:
+            self.results_selected_candidate = "All Candidates"
+
+    def back_to_assessments(self):
+        return rx.redirect("/facilitator/dashboard")
+
+    def set_results_search_candidate(self, val: str):
+        self.results_search_candidate = val
+
+    def toggle_show_all_questions(self):
+        self.show_all_questions = not self.show_all_questions
+
+    def open_results_report_modal(self):
+        self.show_results_report_modal = True
+
+    def close_results_report_modal(self):
+        self.show_results_report_modal = False
+
+    def view_individual_candidate_results(self, name: str, emp_id: str):
+        self.results_selected_candidate = f"{name} ({emp_id})"
+        self.results_view_mode = "individual"
+
+    def results_report_print(self):
+        return rx.call_script("if (window.printReportDocument) window.printReportDocument(); else window.print();")
+
+    def results_report_download_pdf(self):
+        return rx.call_script("if (window.printReportDocument) window.printReportDocument(); else window.print();")
 
     def set_results_selected_candidate(self, candidate_name: str):
         self.results_selected_candidate = candidate_name
@@ -2544,13 +2983,45 @@ class FacilitatorState(rx.State):
 
     def set_results_selected_test(self, test_name: str):
         """Update the results test filter and also sync selected_test_name."""
-        self.results_selected_test = test_name
-        self.selected_test_name = test_name
+        if test_name in ("All Tests (Overall)", ""):
+            self.results_selected_test = ""
+            self.selected_test_name = ""
+        else:
+            self.results_selected_test = test_name
+            self.selected_test_name = test_name
+
+    def set_results_selected_analysis_test(self, test_name: str):
+        self.results_selected_analysis_test = test_name
+
+    def set_results_test_wise_sub_tab(self, sub_tab: str):
+        self.results_test_wise_sub_tab = sub_tab
+
+    @rx.var
+    async def results_effective_analysis_test(self) -> str:
+        if self.results_selected_analysis_test:
+            return self.results_selected_analysis_test
+        tests = await self.results_assessment_tests
+        if tests:
+            return tests[0]["name"]
+        return ""
+
+    @rx.var
+    async def results_effective_test(self) -> str:
+        if self.results_selected_test:
+            return self.results_selected_test
+        tests = await self.results_assessment_tests
+        if tests:
+            return tests[0]["name"]
+        return ""
+
+    @rx.var
+    def results_selected_test_display(self) -> str:
+        return self.results_selected_test if self.results_selected_test else "All Tests (Overall)"
 
     @rx.var(cache=True)
     async def results_candidate_options(self) -> list[str]:
         """Derive Results candidate dropdown dynamically from the actual candidates assigned to the currently selected assessment."""
-        options = ["All Candidates"]
+        options = []
         admin_state = await self.get_state(AdminState)
 
         # 1. Match assessment by selected_assessment_name, or fall back to first assessment in admin_state
@@ -2591,19 +3062,47 @@ class FacilitatorState(rx.State):
         # Also include any evaluated candidates from real_ai_results_per_candidate
         for key in self.real_ai_results_per_candidate.keys():
             cand_part = key.split(":")[0].strip()
-            if cand_part and cand_part not in options:
+            if cand_part and cand_part != "All Candidates" and cand_part not in options:
                 options.append(cand_part)
 
         return options
 
     @rx.var(cache=True)
+    async def results_effective_candidate(self) -> str:
+        if self.results_view_mode == "individual":
+            if self.results_selected_candidate and self.results_selected_candidate != "All Candidates":
+                return self.results_selected_candidate
+            opts = await self.results_candidate_options
+            return opts[0] if opts else "Priya Sharma (CAND-2031)"
+        return "All Candidates"
+
+    @rx.var(cache=True)
+    async def results_effective_candidate_name(self) -> str:
+        cand = await self.results_effective_candidate
+        return cand.split("(")[0].strip() if "(" in cand else cand
+
+    @rx.var(cache=True)
     async def results_test_options(self) -> list[str]:
         """List of test names in the selected assessment for the Results test dropdown."""
+        options = ["All Tests (Overall)"]
         mine = await self.my_assessments
         for a in mine:
             if a["name"] == self.selected_assessment_name:
-                return [t["name"] for t in a.get("test_items", [])]
-        return []
+                for t in a.get("test_items", []):
+                    if t["name"] not in options:
+                        options.append(t["name"])
+                break
+        saved_w = self.saved_assessment_weightages.get(self.selected_assessment_name, {})
+        for t_name in saved_w.keys():
+            if t_name not in options:
+                options.append(t_name)
+        for key in self.real_ai_results_per_candidate.keys():
+            parts = key.split(":")
+            if len(parts) > 1:
+                t_name = parts[1].strip()
+                if t_name and t_name not in options:
+                    options.append(t_name)
+        return options
 
     @rx.var
     def results_eval_status(self) -> str:
@@ -2645,12 +3144,108 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def results_question_analysis_items(self) -> list[dict]:
-        """Question-wise breakdown for the selected single candidate + test.
-        Each item: q_no, question, marks_obtained, max_marks, score_pct_num, score_pct, remarks, bar_pct."""
+        """Question-wise breakdown for the selected candidate + test, or average question performance across all candidates for the selected test.
+        Each item: q_no, q_display, question, marks_obtained, max_marks, score_pct_num, score_pct, remarks, bar_pct, r_color, r_bg, justification."""
+        is_ind = (self.results_view_mode == "individual")
         cand = self.results_selected_candidate
-        test = self.results_selected_test or self.selected_test_name
-        if cand == "All Candidates" or not cand or not test:
+
+        # In individual mode, ensure a specific candidate is targeted
+        if is_ind and (not cand or cand == "All Candidates"):
+            if self._current_assessment_candidates:
+                first_c = self._current_assessment_candidates[0]
+                cand = f"{first_c['name']} ({first_c['emp_id']})"
+            else:
+                for key in self.real_ai_results_per_candidate.keys():
+                    cand = key.split(":")[0].strip()
+                    break
+
+        test = (self.results_selected_analysis_test or self.results_selected_test or self.selected_test_name or "").strip()
+        if not test or test == "All Tests (Overall)":
+            saved_w = self.saved_assessment_weightages.get(self.selected_assessment_name, {})
+            if saved_w:
+                test = list(saved_w.keys())[0]
+            if not test:
+                for key in self.real_ai_results_per_candidate.keys():
+                    parts = key.split(":")
+                    if len(parts) > 1 and parts[1].strip():
+                        test = parts[1].strip()
+                        break
+
+        if not test:
             return []
+
+        pass_pct = self.results_pass_percentage
+
+        # ── All Candidates Mode: Average score for each question across candidates ──
+        if not is_ind or cand in ("All Candidates", ""):
+            q_agg: dict[str, dict] = {}
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                if t_part.lower() == test.lower():
+                    for i, q in enumerate(val.get("questions", []), 1):
+                        q_raw = str(q.get("q_no", i))
+                        q_key = q_raw.lstrip("Q") if q_raw.startswith("Q") and q_raw[1:].isdigit() else q_raw
+                        q_disp = f"Q{q_key}" if q_key.isdigit() else q_key
+                        if q_key not in q_agg:
+                            try:
+                                mx = float(q.get("max_marks", q.get("maximum_marks", 0)) or 0)
+                            except (ValueError, TypeError):
+                                mx = 0.0
+                            q_agg[q_key] = {
+                                "question": str(q.get("question", f"Question {q_key}")),
+                                "marks": [],
+                                "max": mx,
+                                "q_no": q_key,
+                                "q_display": q_disp,
+                            }
+                        try:
+                            obt = float(q.get("ai_score", q.get("awarded_marks", 0)) or 0)
+                        except (ValueError, TypeError):
+                            obt = 0.0
+                        q_agg[q_key]["marks"].append(obt)
+
+            items = []
+            for q_key, info in q_agg.items():
+                m_list = info["marks"]
+                mx = info["max"]
+                avg_obt = round(sum(m_list) / len(m_list), 1) if m_list else 0.0
+                pct = round((avg_obt / mx) * 100, 1) if mx > 0 else 0.0
+                pct_int = int(pct) if pct == int(pct) else pct
+                pct_str = f"{pct_int}%"
+                if pct >= max(85, pass_pct + 15):
+                    remarks = "Excellent"
+                    r_color = "#059669"
+                    r_bg = "#ECFDF5"
+                elif pct >= pass_pct:
+                    remarks = "Good"
+                    r_color = "#2563EB"
+                    r_bg = "#EFF6FF"
+                elif pct >= max(0, pass_pct - 15):
+                    remarks = "Average"
+                    r_color = "#D97706"
+                    r_bg = "#FFFBEB"
+                else:
+                    remarks = "Needs Work"
+                    r_color = "#DC2626"
+                    r_bg = "#FEF2F2"
+                items.append({
+                    "q_no": info["q_no"],
+                    "q_display": info["q_display"],
+                    "question": info["question"],
+                    "marks_obtained": str(avg_obt),
+                    "max_marks": str(int(mx) if mx == int(mx) else mx),
+                    "score_pct": pct_str,
+                    "score_pct_num": pct,
+                    "remarks": remarks,
+                    "r_color": r_color,
+                    "r_bg": r_bg,
+                    "bar_pct": pct,
+                    "justification": "",
+                })
+            return items
+
+        # ── Individual Candidate Mode: Single candidate's question results ──
         cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
         cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
         for key, val in self.real_ai_results_per_candidate.items():
@@ -2659,19 +3254,17 @@ class FacilitatorState(rx.State):
             t_part = parts[1].strip() if len(parts) > 1 else ""
             pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
             pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
-            if t_part == test and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower()):
+            if t_part.lower() == test.lower() and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower() or cand == c_part):
                 items = []
                 for i, q in enumerate(val.get("questions", []), 1):
                     try:
-                        obt = float(q.get("ai_score", 0) or 0)
-                        mx = float(q.get("max_marks", 0) or 0)
+                        obt = float(q.get("ai_score", q.get("awarded_marks", 0)) or 0)
+                        mx = float(q.get("max_marks", q.get("maximum_marks", 0)) or 0)
                         pct = round((obt / mx) * 100, 1) if mx > 0 else 0.0
                     except (ValueError, TypeError):
                         obt, mx, pct = 0.0, 0.0, 0.0
                     pct_int = int(pct) if pct == int(pct) else pct
                     pct_str = f"{pct_int}%"
-                    pass_pct = self.results_pass_percentage
-                    # Derive remarks from score percentage relative to configured pass mark
                     if pct >= max(85, pass_pct + 15):
                         remarks = "Excellent"
                         r_color = "#059669"
@@ -2688,8 +3281,17 @@ class FacilitatorState(rx.State):
                         remarks = "Needs Work"
                         r_color = "#DC2626"
                         r_bg = "#FEF2F2"
+
+                    q_raw = str(q.get("q_no", i))
+                    q_disp = f"Q{q_raw}" if q_raw.isdigit() else (q_raw if q_raw.startswith("Q") else f"Q{q_raw}")
+                    q_num = q_raw.lstrip("Q") if q_raw.startswith("Q") and q_raw[1:].isdigit() else q_raw
+
+                    raw_just = q.get("justification") or q.get("feedback") or q.get("ai_feedback") or q.get("reasoning") or q.get("remarks") or ""
+                    justification = str(raw_just).strip() if raw_just else "—"
+
                     items.append({
-                        "q_no": str(q.get("q_no", i)),
+                        "q_no": q_num,
+                        "q_display": q_disp,
                         "question": str(q.get("question", f"Question {i}")),
                         "marks_obtained": str(int(obt) if obt == int(obt) else obt),
                         "max_marks": str(int(mx) if mx == int(mx) else mx),
@@ -2699,6 +3301,7 @@ class FacilitatorState(rx.State):
                         "r_color": r_color,
                         "r_bg": r_bg,
                         "bar_pct": pct,
+                        "justification": justification,
                     })
                 return items
         return []
@@ -2779,11 +3382,12 @@ class FacilitatorState(rx.State):
             domain_agg: dict[str, list] = {}
             kt_agg: dict[str, list] = {}
 
-            target_test = self.selected_test_name.strip()
+            # Filter by selected analysis test when user has chosen one from the selector
+            target_test = (self.results_selected_analysis_test or self.results_selected_test or "").strip()
             for key, res in self.real_ai_results_per_candidate.items():
                 parts = key.split(":")
                 test_name = parts[1].strip() if len(parts) > 1 else ""
-                # Filter by selected test if test is selected
+                # Filter by selected test if test_wise is active
                 if target_test and test_name and target_test != test_name:
                     continue
 
@@ -2853,7 +3457,12 @@ class FacilitatorState(rx.State):
             }
         else:
             # Per-candidate: find actual evaluation results for this candidate + selected assessment + test
-            target_test = self.selected_test_name.strip()
+            # Filter by selected analysis test when user has chosen one from the selector
+            target_test = (self.results_selected_analysis_test or self.results_selected_test or "").strip()
+            if self.results_view_mode == "individual" and (cand in ("All Candidates", "") or not cand):
+                if self._current_assessment_candidates:
+                    first_c = self._current_assessment_candidates[0]
+                    cand = f"{first_c['name']} ({first_c['emp_id']})"
             cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
             cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
 
@@ -3075,7 +3684,9 @@ class FacilitatorState(rx.State):
         elif tab == "rbt_level":
             return f"Revised Bloom's Taxonomy (RBT) Level ({cand})"
         elif tab == "question_wise":
-            return f"Question-wise Analysis ({cand})"
+            test = (self.results_selected_analysis_test or self.results_selected_test or "").strip()
+            test_str = f" - {test}" if test else ""
+            return f"Question-wise Analysis{test_str} ({cand})"
         return f"Performance Analysis ({cand})"
 
     @rx.var
@@ -3083,6 +3694,8 @@ class FacilitatorState(rx.State):
         """Returns summary stats for the currently active dimension tab:
         total_label, total_val, passing_label, passing_val, avg_label, avg_val, status, is_passed, info_text."""
         tab = self.results_active_dimension_tab
+        if tab == "test_wise":
+            tab = self.results_test_wise_sub_tab
         pass_pct = self.results_pass_percentage
 
         if tab == "overall":
@@ -3222,6 +3835,8 @@ class FacilitatorState(rx.State):
     @rx.var
     def results_current_dimension_items(self) -> list[dict]:
         tab = self.results_active_dimension_tab
+        if tab == "test_wise":
+            tab = self.results_test_wise_sub_tab
         data = self.current_results_data
         if tab == "co":
             return data.get("co", [])
@@ -3333,8 +3948,479 @@ class FacilitatorState(rx.State):
             r["rank"] = i + 1
         return rows
 
+    # ── Results Dynamic Computed Vars for Unified Reporting ───────────
+    @rx.var(cache=True)
+    async def results_assessment_tests(self) -> list[dict]:
+        """List of all actual tests created under the selected assessment (Formative 1, 2, ..., Summative)."""
+        asmn = self.selected_assessment_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        
+        tests = []
+        seen = set()
+        if match:
+            for t in match.get("test_items", []):
+                t_name = t["name"]
+                if t_name not in seen:
+                    seen.add(t_name)
+                    w = saved_w.get(t_name, t.get("weightage", 0))
+                    tests.append({
+                        "name": t_name,
+                        "is_final": t.get("is_final", False) or "summative" in t_name.lower(),
+                        "weightage": int(w) if str(w).isdigit() else 0,
+                    })
+        return tests
 
-    # ── Evaluation Tab State ───────────────────────────────────────────
+    @rx.var(cache=True)
+    async def results_all_tests_headers(self) -> list[str]:
+        tests = await self.results_assessment_tests
+        return [t["name"] for t in tests]
+
+    @rx.var(cache=True)
+    async def results_individual_test_cards(self) -> list[dict]:
+        """Dynamically build test cards for the selected candidate."""
+        tests = await self.results_assessment_tests
+        cand = await self.results_effective_candidate
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        pass_pct = self.results_pass_percentage
+
+        cards = []
+        for t in tests:
+            t_name = t["name"]
+            score_val = None
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                c_part = parts[0].strip()
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+                pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+                if t_part == t_name and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower() or cand == c_part):
+                    score_val = int(round(self._calculate_normalized_score(val)))
+                    break
+
+            w = t["weightage"]
+            if score_val is not None:
+                is_fail = score_val < pass_pct
+                score_str = f"{score_val}%"
+            else:
+                is_fail = False
+                score_str = "Not Evaluated"
+            cards.append({
+                "name": t_name,
+                "score_str": score_str,
+                "score_val": score_val if score_val is not None else -1,
+                "weightage_str": f"(Weightage: {w}%)",
+                "is_fail": is_fail,
+            })
+        return cards
+
+    @rx.var(cache=True)
+    async def results_individual_overall_card(self) -> dict:
+        cand = await self.results_effective_candidate
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+
+        tests = await self.results_assessment_tests
+        saved_w = self.saved_assessment_weightages.get(self.selected_assessment_name, {})
+        total_w = sum(saved_w.values())
+        use_weightage = (total_w == 100 and bool(saved_w))
+
+        weighted_sum = 0.0
+        evaluated_weight_sum = 0.0
+        scores = []
+        for t in tests:
+            t_name = t["name"]
+            w = saved_w.get(t_name, t.get("weightage", 0))
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                c_part = parts[0].strip()
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+                pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+                if t_part == t_name and ((cand_id and cand_id == pid) or cand_name.lower() == pname.lower() or cand == c_part):
+                    s = self._calculate_normalized_score(val)
+                    scores.append(s)
+                    if use_weightage:
+                        weighted_sum += (s * w) / 100.0
+                        evaluated_weight_sum += w
+                    else:
+                        weighted_sum += s
+                    break
+
+        pass_pct = self.results_pass_percentage
+        if scores:
+            if use_weightage and evaluated_weight_sum > 0:
+                final_num = int(round(weighted_sum / (evaluated_weight_sum / 100.0)))
+            elif scores:
+                final_num = int(round(sum(scores) / len(scores)))
+            else:
+                final_num = 0
+            is_passed = final_num >= pass_pct
+            return {
+                "score_str": f"{final_num}%",
+                "score_val": final_num,
+                "status_str": "Pass" if is_passed else "Fail",
+                "is_passed": is_passed,
+                "pass_mark_str": f"Pass Mark: {pass_pct}%",
+            }
+        else:
+            return {
+                "score_str": "Not Evaluated",
+                "score_val": 0,
+                "status_str": "Not Evaluated",
+                "is_passed": False,
+                "pass_mark_str": f"Pass Mark: {pass_pct}%",
+            }
+
+    @rx.var(cache=True)
+    async def results_all_test_avg_cards(self) -> list[dict]:
+        tests = await self.results_assessment_tests
+        cards = []
+        for t in tests:
+            t_name = t["name"]
+            scores = []
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                if t_part == t_name:
+                    scores.append(self._calculate_normalized_score(val))
+            if scores:
+                avg = int(round(sum(scores) / len(scores)))
+                score_str = f"{avg}%"
+            else:
+                avg = -1
+                score_str = "Not Evaluated"
+            cards.append({
+                "name": t_name,
+                "score_str": score_str,
+                "score_val": avg,
+                "subtext": "(Average Score)",
+            })
+        return cards
+
+    @rx.var(cache=True)
+    async def results_all_overall_avg_card(self) -> dict:
+        tests = await self.results_assessment_tests
+        asmn = self.selected_assessment_name
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        use_weightage = (total_w == 100 and bool(saved_w))
+
+        test_averages = {}
+        for t in tests:
+            t_name = t["name"]
+            scores = []
+            for key, val in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                if t_part == t_name:
+                    scores.append(self._calculate_normalized_score(val))
+            if scores:
+                test_averages[t_name] = sum(scores) / len(scores)
+
+        if not test_averages:
+            return {
+                "score_str": "Not Evaluated",
+                "score_val": 0,
+                "subtext": "(Average Score)",
+            }
+
+        if use_weightage:
+            eval_weights = sum(t["weightage"] for t in tests if t["name"] in test_averages)
+            if eval_weights > 0:
+                overall_avg = int(round(sum(test_averages[t["name"]] * t["weightage"] for t in tests if t["name"] in test_averages) / (eval_weights / 100.0) / 100.0))
+            else:
+                overall_avg = int(round(sum(test_averages.values()) / len(test_averages)))
+        else:
+            overall_avg = int(round(sum(test_averages.values()) / len(test_averages)))
+
+        return {
+            "score_str": f"{overall_avg}%",
+            "score_val": overall_avg,
+            "subtext": "(Average Score)",
+        }
+
+    @rx.var(cache=True)
+    async def results_displayed_questions(self) -> list[dict]:
+        cand = await self.results_effective_candidate
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+
+        target_test = (self.results_selected_test or "").strip()
+        if not target_test or target_test == "All Tests (Overall)":
+            tests = await self.results_assessment_tests
+            if tests:
+                target_test = tests[0]["name"]
+
+        questions = []
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+
+            if target_test and t_part != target_test:
+                continue
+
+            if (cand_id and cand_id == pid) or (cand_name and cand_name.lower() == pname.lower()) or (cand == c_part):
+                for i, q in enumerate(val.get("questions", []), 1):
+                    q_num = str(q.get("q_no", i))
+                    if not q_num.startswith("Q") and q_num.isdigit():
+                        q_display = f"Q{q_num}"
+                    else:
+                        q_display = q_num
+                    try:
+                        obt = float(q.get("ai_score", q.get("awarded_marks", 0)) or 0)
+                        mx = float(q.get("max_marks", q.get("maximum_marks", 0)) or 0)
+                        pct = round((obt / mx) * 100) if mx > 0 else 0
+                    except (ValueError, TypeError):
+                        obt, mx, pct = 0.0, 0.0, 0
+                    obt_str = str(int(obt)) if obt == int(obt) else str(obt)
+                    mx_str = str(int(mx)) if mx == int(mx) else str(mx)
+                    justification = q.get("justification") or q.get("feedback") or q.get("remarks") or "—"
+                    questions.append({
+                        "q_no": q_display,
+                        "marks_obtained": obt_str,
+                        "max_marks": mx_str,
+                        "score_pct": f"{pct}%",
+                        "justification": justification,
+                    })
+                if target_test or questions:
+                    break
+
+        if not self.show_all_questions and len(questions) > 5:
+            return questions[:5]
+        return questions
+
+    @rx.var(cache=True)
+    async def results_has_more_questions(self) -> bool:
+        cand = await self.results_effective_candidate
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+        target_test = (self.results_selected_test or "").strip()
+        if not target_test or target_test == "All Tests (Overall)":
+            tests = await self.results_assessment_tests
+            if tests:
+                target_test = tests[0]["name"]
+        total = 0
+        for key, val in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if target_test and t_part != target_test:
+                continue
+            if (cand_id and cand_id == pid) or (cand_name and cand_name.lower() == pname.lower()) or (cand == c_part):
+                total = len(val.get("questions", []))
+                break
+        return total > 5
+
+    @rx.var(cache=True)
+    async def results_all_candidates_table_rows(self) -> list[dict]:
+        asmn = self.selected_assessment_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        tests = await self.results_assessment_tests
+        pass_pct = self.results_pass_percentage
+
+        saved_w = self.saved_assessment_weightages.get(asmn, {})
+        total_w = sum(saved_w.values())
+        use_weightage = (total_w == 100 and bool(saved_w))
+
+        candidates_list = []
+        seen_ids = set()
+
+        if match:
+            for c in match.get("candidate_details", []):
+                cid = c.get("emp_id", "")
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    candidates_list.append({"name": c.get("name", cid), "emp_id": cid})
+
+        for key in self.real_ai_results_per_candidate.keys():
+            c_part = key.split(":")[0].strip()
+            cid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            cname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if cid and cid != "All Candidates" and cid not in seen_ids:
+                seen_ids.add(cid)
+                candidates_list.append({"name": cname, "emp_id": cid})
+
+        query = (self.results_search_candidate or "").strip().lower()
+        rows = []
+        for cand in candidates_list:
+            cname = cand["name"]
+            cid = cand["emp_id"]
+            if query and (query not in cname.lower() and query not in cid.lower()):
+                continue
+
+            test_scores = []
+            weighted_sum = 0.0
+            evaluated_count = 0
+            evaluated_weight_sum = 0.0
+
+            for t in tests:
+                t_name = t["name"]
+                t_w = t["weightage"]
+                score_val = None
+                for key, val in self.real_ai_results_per_candidate.items():
+                    parts = key.split(":")
+                    c_part = parts[0].strip()
+                    t_part = parts[1].strip() if len(parts) > 1 else ""
+                    pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+                    pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+                    if t_part == t_name and ((cid and cid == pid) or cname.lower() == pname.lower() or f"{cname} ({cid})" == c_part):
+                        score_val = int(round(self._calculate_normalized_score(val)))
+                        break
+
+                if score_val is not None:
+                    evaluated_count += 1
+                    is_fail = score_val < pass_pct
+                    test_scores.append({
+                        "test_name": t_name,
+                        "score_str": f"{score_val}%",
+                        "is_fail": is_fail,
+                    })
+                    weighted_sum += (score_val * t_w) / 100.0 if use_weightage else score_val
+                    evaluated_weight_sum += t_w
+                else:
+                    test_scores.append({
+                        "test_name": t_name,
+                        "score_str": "Not Evaluated",
+                        "is_fail": False,
+                    })
+
+            if evaluated_count > 0:
+                if use_weightage and evaluated_weight_sum > 0:
+                    overall_num = int(round(weighted_sum / (evaluated_weight_sum / 100.0)))
+                else:
+                    overall_num = int(round(weighted_sum / evaluated_count))
+                overall_str = f"{overall_num}%"
+                is_passed = overall_num >= pass_pct
+                status_str = "Pass" if is_passed else "Fail"
+            else:
+                overall_str = "Not Evaluated"
+                is_passed = False
+                status_str = "Not Evaluated"
+
+            rows.append({
+                "cand_id": cid,
+                "cand_name": cname,
+                "scores": test_scores,
+                "overall_score": overall_str,
+                "status": status_str,
+                "is_passed": is_passed,
+            })
+
+        for i, r in enumerate(rows, 1):
+            r["idx"] = str(i)
+
+        return rows
+
+    @rx.var(cache=True)
+    async def results_all_candidates_count_str(self) -> str:
+        rows = await self.results_all_candidates_table_rows
+        return f"Showing 1 to {len(rows)} of {len(rows)} candidates"
+
+    @rx.var(cache=True)
+    async def results_summary_stat_cards(self) -> dict:
+        test_cards = await self.results_individual_test_cards
+        pass_pct = self.results_pass_percentage
+        total_tests = len(test_cards)
+        passed_tests = sum(1 for t in test_cards if t["score_val"] >= pass_pct)
+        overall_card = await self.results_individual_overall_card
+        return {
+            "total_tests": str(total_tests),
+            "passed_tests": str(passed_tests),
+            "pass_label": f"Tests ≥ {pass_pct}%",
+            "overall_score": overall_card["score_str"],
+            "status": overall_card["status_str"],
+            "is_passed": overall_card["is_passed"],
+        }
+
+    @rx.var(cache=True)
+    async def results_bar_chart_items(self) -> list[dict]:
+        tab = self.results_active_dimension_tab
+        if tab == "test_wise":
+            sub_tab = self.results_test_wise_sub_tab
+            data = self.current_results_data
+            if sub_tab == "co":
+                return data.get("co", [])
+            elif sub_tab == "lo":
+                return data.get("lo", [])
+            elif sub_tab == "knowledge_type":
+                return data.get("knowledge_type", [])
+            elif sub_tab == "domain":
+                return data.get("domain", [])
+            elif sub_tab == "rbt_level":
+                return data.get("rbt_level", [])
+            return []
+        if tab == "overall":
+            if self.results_view_mode == "individual":
+                test_cards = await self.results_individual_test_cards
+                return [
+                    {
+                        "name": c["name"],
+                        "score": c["score_val"],
+                    }
+                    for c in test_cards
+                    if c.get("score_val", -1) >= 0
+                ]
+            else:
+                avg_cards = await self.results_all_test_avg_cards
+                items = []
+                for c in avg_cards:
+                    val = c.get("score_val", -1)
+                    if val >= 0:
+                        items.append({"name": c["name"], "score": val})
+                return items
+        return self.results_current_dimension_items
+
+    @rx.var(cache=True)
+    async def results_chart_main_title(self) -> str:
+        tab = self.results_active_dimension_tab
+        if tab == "test_wise":
+            t_name = await self.results_effective_analysis_test
+            sub = self.results_test_wise_sub_tab
+            sub_title = {
+                "co": "Course Outcomes (CO) - Attainment",
+                "lo": "Learning Outcomes (LO) - Attainment",
+                "knowledge_type": "Knowledge Type Proficiency",
+                "domain": "Domain & Topic Competency",
+                "rbt_level": "Revised Bloom's Taxonomy (RBT) Level",
+                "question_wise": "Question-wise Analysis",
+            }.get(sub, "Performance Analysis")
+            return f"{sub_title} ({t_name})"
+        elif tab == "overall":
+            if self.results_view_mode == "individual":
+                cname = await self.results_effective_candidate_name
+                return f"Overall Performance Across Tests ({cname})"
+            else:
+                return "Average Performance Across Tests"
+        elif tab == "co":
+            return "Course Outcomes (CO) - Attainment"
+        elif tab == "lo":
+            return "Learning Outcomes (LO) - Attainment"
+        elif tab == "knowledge_type":
+            return "Knowledge Type Proficiency"
+        elif tab == "domain":
+            return "Domain & Topic Competency"
+        elif tab == "rbt_level":
+            return "Revised Bloom's Taxonomy (RBT) Level"
+        elif tab == "question_wise":
+            t_name = await self.results_effective_analysis_test
+            return f"Question-wise Analysis ({t_name})"
+        return "Performance Analysis"
+
+    @rx.var
+    def results_pass_badge_label(self) -> str:
+        if self.results_view_mode == "individual":
+            return f"Pass Mark: {self.results_pass_percentage}%"
+        return f"Target / Pass Mark: {self.results_pass_percentage}%"
+
     # Format: "Candidate Name (EMP-ID)"
     selected_evaluation_candidate: str = ""
     # Currently selected test in the Evaluation page dropdown
@@ -3367,6 +4453,8 @@ class FacilitatorState(rx.State):
         self.real_ai_percentage_display = "\u2014"
         self.real_ai_evaluation_date = "Not evaluated"
         self.real_ai_eval_questions = []
+        if candidate_name == "All Candidates":
+            return
         # Re-load persisted real result if it exists
         key = f"{candidate_name}:{self.selected_test_name}"
         if key in self.real_ai_results_per_candidate:
@@ -3387,9 +4475,14 @@ class FacilitatorState(rx.State):
                         q["score_pct"] = "0%"
             self.real_ai_eval_questions = qs
 
-    @rx.var(cache=True)
+    @rx.var
+    def is_all_candidates_evaluation(self) -> bool:
+        """True when 'All Candidates' is selected in the Evaluation page candidate dropdown."""
+        return self.selected_evaluation_candidate == "All Candidates"
+
+    @rx.var
     async def evaluation_candidate_options(self) -> list[str]:
-        """Derive candidate options from the real assigned candidates in the current assessment."""
+        """Derive candidate options from the real assigned candidates in the current assessment, with 'All Candidates' included."""
         mine = await self.my_assessments
         for a in mine:
             if a["name"] == self.selected_assessment_name:
@@ -3397,8 +4490,8 @@ class FacilitatorState(rx.State):
                 for c in a.get("candidate_details", []):
                     label = f"{c['name']} ({c['emp_id']})"
                     options.append(label)
-                return options if options else ["No candidates assigned"]
-        return ["No candidates assigned"]
+                return ["All Candidates"] + options if options else ["All Candidates"]
+        return ["All Candidates"]
 
     @rx.var(cache=True)
     async def evaluation_test_options(self) -> list[str]:
@@ -3439,8 +4532,7 @@ class FacilitatorState(rx.State):
         test_name = self.selected_test_name
         assessment_name = self.selected_assessment_name
 
-
-        if not raw:
+        if not raw or raw == "All Candidates":
             return {}
 
         # Search for real response file matching candidate + assessment + test
@@ -3453,7 +4545,9 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def has_submitted_response(self) -> bool:
-        """True if the selected candidate has a real submitted response."""
+        """True if the selected candidate has a real submitted response, or True for All Candidates cohort."""
+        if self.selected_evaluation_candidate == "All Candidates":
+            return True
         return bool(self.current_candidate_eval_data.get("responses"))
 
     @rx.var
@@ -3477,10 +4571,14 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def current_candidate_submitted_on(self) -> str:
+        if self.selected_evaluation_candidate == "All Candidates":
+            return "All Assigned Candidates"
         return self.current_candidate_eval_data.get("submitted_on", "Not Submitted")
 
     @rx.var
     def current_candidate_excel_file(self) -> str:
+        if self.selected_evaluation_candidate == "All Candidates":
+            return "All candidate responses (Batch)"
         return self.current_candidate_eval_data.get("excel_file", "No response file available")
 
     @rx.var
