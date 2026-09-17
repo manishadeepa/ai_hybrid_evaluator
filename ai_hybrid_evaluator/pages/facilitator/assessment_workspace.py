@@ -2017,7 +2017,11 @@ def evaluation_ai_results_card() -> rx.Component:
                             rx.text(
                                 rx.cond(
                                     FacilitatorState.has_ai_evaluated_current_candidate,
-                                    "Completed",
+                                    rx.cond(
+                                        FacilitatorState.current_candidate_ai_score_display == "Incomplete",
+                                        "Incomplete",
+                                        "Completed",
+                                    ),
                                     "Pending",
                                 ),
                                 font_family=FONT_DISPLAY,

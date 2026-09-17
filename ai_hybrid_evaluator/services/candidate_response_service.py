@@ -39,12 +39,18 @@ def save_candidate_response(
 
     safe_candidate = candidate_name.replace(" ", "_")
     safe_test = test_name.replace(" ", "_")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
     filename = f"{safe_candidate}_{safe_test}_{timestamp}_Response.xlsx"
     output_path = output_dir / filename
 
-    df.to_excel(output_path, index=False)
+    # Keep answers on the first sheet for existing readers. Identity is explicit.
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Responses", index=False)
+        pd.DataFrame([{
+            "candidate_id": str(candidate_id), "candidate_name": str(candidate_name),
+            "assessment_name": assessment_name, "test_name": test_name,
+        }]).to_excel(writer, sheet_name="Submission", index=False)
 
     return str(output_path)
 
@@ -60,11 +66,14 @@ def find_candidate_response_file(
     candidate_name: str = "",
     assessment_name: str = "",
     test_name: str = "",
+    require_assessment_scope: bool = False,
 ) -> Path | None:
     """Find the candidate response file in uploaded_files/candidate_responses/
     strictly matching candidate_id or candidate_name, and test_name.
     Returns None if no matching file exists. Never reuses another candidate's response.
     """
+    if require_assessment_scope and (not candidate_id or not assessment_name or not test_name):
+        raise ValueError("Strict lookup requires candidate ID, assessment and test")
     output_dir = Path("uploaded_files") / "candidate_responses"
     if not output_dir.exists():
         return None
@@ -84,6 +93,31 @@ def find_candidate_response_file(
     matched: list[Path] = []
 
     for f in files:
+        # Never use a known mismatched identity, even in legacy lookup mode.
+        try:
+            with pd.ExcelFile(f) as workbook:
+                identity = (pd.read_excel(workbook, sheet_name="Submission", dtype=str).fillna("")
+                            if "Submission" in workbook.sheet_names else None)
+        except Exception:
+            continue
+        if identity is not None:
+            if len(identity) != 1:
+                continue
+            metadata = identity.iloc[0].to_dict()
+            if assessment_name and metadata.get("assessment_name") != assessment_name:
+                continue
+            if test_name and metadata.get("test_name") != test_name:
+                continue
+            if candidate_id:
+                identity_matches = metadata.get("candidate_id") == str(candidate_id)
+            else:
+                identity_matches = metadata.get("candidate_name") == candidate_name
+            if identity_matches:
+                matched.append(f)
+            continue
+        if require_assessment_scope:
+            # A filename cannot prove assessment ownership for old workbooks.
+            continue
         f_slug = _safe_slug(f.stem)
 
         # Candidate MUST match: either ID or Name
@@ -119,6 +153,7 @@ def get_latest_candidate_response(
     candidate_name: str = "",
     assessment_name: str = "",
     test_name: str = "",
+    require_assessment_scope: bool = False,
 ) -> dict:
     """Load the latest candidate response file from candidate_response_service
     and return structured response data for Facilitator UI.
@@ -129,12 +164,13 @@ def get_latest_candidate_response(
         candidate_name=candidate_name,
         assessment_name=assessment_name,
         test_name=test_name,
+        require_assessment_scope=require_assessment_scope,
     )
     if path is None:
         return {}
 
     try:
-        df = pd.read_excel(path)
+        df = pd.read_excel(path).fillna("")
         responses = []
         for _, row in df.iterrows():
             responses.append({
@@ -144,6 +180,11 @@ def get_latest_candidate_response(
                 "ai_score": "",
                 "max_marks": str(row.get("Marks", "") or ""),
                 "justification": "",
+                "CO": str(row.get("CO", "") or ""),
+                "LO": str(row.get("LO", "") or ""),
+                "Knowledge Type": str(row.get("Knowledge Type", "") or ""),
+                "Domain": str(row.get("Domain", "") or ""),
+                "RBT level": str(row.get("RBT level", "") or ""),
             })
         mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y, %I:%M %p")
         return {
@@ -155,4 +196,4 @@ def get_latest_candidate_response(
             "file_path": str(path),
         }
     except Exception:
-        return {}
+        return {}

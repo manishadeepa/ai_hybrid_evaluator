@@ -1,0 +1,122 @@
+[
+    {
+        "candidate_id": "CAND-TEST",
+        "assessment_name": "Quality",
+        "test_name": "Formative 1",
+        "evaluation_type": "manual",
+        "evaluated_at": "2026-09-16T09:33:12",
+        "total_marks": 15.0,
+        "max_marks": 20.0,
+        "percentage": 75.0,
+        "questions": [
+            {
+                "q_no": "1",
+                "question": "Explain quality control.",
+                "candidate_response": "Quality control ensures products meet required standards.",
+                "marks_obtained": 4.0,
+                "max_marks": 5.0,
+                "percentage": 80.0,
+                "justification": "Good explanation.",
+                "CO": "CO1",
+                "LO": "LO1",
+                "Knowledge Type": "Conceptual",
+                "Domain": "Quality",
+                "RBT level": "Understand"
+            },
+            {
+                "q_no": "2",
+                "question": "Explain SPC.",
+                "candidate_response": "SPC uses statistical methods to monitor processes.",
+                "marks_obtained": 3.0,
+                "max_marks": 5.0,
+                "percentage": 60.0,
+                "justification": "Partially complete.",
+                "CO": "CO2",
+                "LO": "LO2",
+                "Knowledge Type": "Conceptual",
+                "Domain": "SPC",
+                "RBT level": "Understand"
+            },
+            {
+                "q_no": "3",
+                "question": "What is FMEA?",
+                "candidate_response": "FMEA identifies possible failures and their effects.",
+                "marks_obtained": 8.0,
+                "max_marks": 10.0,
+                "percentage": 80.0,
+                "justification": "Good answer with minor missing details.",
+                "CO": "CO3",
+                "LO": "LO3",
+                "Knowledge Type": "Procedural",
+                "Domain": "FMEA",
+                "RBT level": "Apply"
+            }
+        ]
+    },
+    {
+        "candidate_id": "CAND-API-TEST",
+        "assessment_name": "Quality",
+        "test_name": "Formative 1",
+        "evaluation_type": "manual",
+        "evaluated_at": "2026-09-16T09:39:58",
+        "total_marks": 7.0,
+        "max_marks": 10.0,
+        "percentage": 70.0,
+        "questions": [
+            {
+                "q_no": "1",
+                "question": "What is quality control?",
+                "candidate_response": "It ensures products meet required standards.",
+                "marks_obtained": 4.0,
+                "max_marks": 5.0,
+                "percentage": 80.0,
+                "justification": "Good answer.",
+                "CO": "CO1",
+                "LO": "LO1",
+                "Knowledge Type": "Conceptual",
+                "Domain": "Quality",
+                "RBT level": "Understand"
+            },
+            {
+                "q_no": "2",
+                "question": "What is SPC?",
+                "candidate_response": "SPC uses statistics to monitor a process.",
+                "marks_obtained": 3.0,
+                "max_marks": 5.0,
+                "percentage": 60.0,
+                "justification": "Partially complete.",
+                "CO": "CO2",
+                "LO": "LO2",
+                "Knowledge Type": "Conceptual",
+                "Domain": "SPC",
+                "RBT level": "Understand"
+            }
+        ]
+    },
+    {
+        "candidate_id": "string",
+        "assessment_name": "string",
+        "test_name": "string",
+        "evaluation_type": "manual",
+        "evaluated_at": "2026-09-16T11:52:48",
+        "total_marks": 0.0,
+        "max_marks": 0.0,
+        "percentage": 0.0,
+        "questions": [
+            {
+                "q_no": "1",
+                "question": "",
+                "candidate_response": "",
+                "marks_obtained": 0.0,
+                "max_marks": 0.0,
+                "percentage": 0.0,
+                "justification": "",
+                "CO": "",
+                "LO": "",
+                "Knowledge Type": "",
+                "Domain": "",
+                "RBT level": ""
+            }
+        ]
+    }
+]

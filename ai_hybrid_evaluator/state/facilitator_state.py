@@ -11,6 +11,7 @@ and to enrich it with resolved candidate details.
 import asyncio
 import base64
 from datetime import datetime
+from backend.services.manual_evaluation_service import ManualEvaluationService
 from pathlib import Path
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
@@ -20,6 +21,11 @@ try:
     from ai_hybrid_evaluator.services.ai_evaluation_service import evaluate_candidate as _evaluate_candidate
 except ImportError:
     _evaluate_candidate = None
+
+try:
+    from ai_hybrid_evaluator.services.ai_evaluation_service import evaluate_candidates_questionwise as _evaluate_candidates_questionwise
+except ImportError:
+    _evaluate_candidates_questionwise = None
 
 # Valid workspace tab keys
 WORKSPACE_TABS = ["tests", "question_paper", "evaluation", "weightage", "results", "reports", "report_detail"]
@@ -65,6 +71,100 @@ def _find_candidate_response(candidate_name: str, test_name: str, assessment_nam
         assessment_name=assessment_name,
         test_name=test_name,
     )
+
+
+
+def _evaluation_candidate_id(label: str) -> str:
+    return label.split("(")[-1].rstrip(")").strip() if "(" in label else label.strip()
+
+
+def _assessment_result_view(results: dict, assessment: str) -> dict:
+    """Legacy-shaped, assessment-scoped view for existing completed-result readers.
+
+    Keep underlying old keys; prefer scoped records and never count a partial run
+    as a completed score. An existing scoped record supersedes its legacy alias.
+    """
+    view = {}
+    scoped_pairs = set()
+    for key, value in results.items():
+        if "assessment_name" in value and "candidate_id" in value:
+            scoped_pairs.add((str(value["candidate_id"]), value.get("test_name", "")))
+    for key, value in results.items():
+        if "assessment_name" in value and "candidate_id" in value:
+            if value["assessment_name"] != assessment:
+                continue
+            candidate_id = str(value["candidate_id"])
+            label = value.get("candidate_label") or candidate_id
+            test = value.get("test_name", "")
+        else:
+            label, separator, test = key.partition(":")
+            if not separator or (_evaluation_candidate_id(label), test) in scoped_pairs:
+                continue
+        if value.get("status", "completed") != "completed":
+            continue
+        view[f"{label}:{test}"] = value
+    return view
+
+
+def _saved_evaluation(results: dict, label: str, assessment: str, test: str) -> dict:
+    if not label or label == "All Candidates":
+        return {}
+    scoped = results.get(f"{_evaluation_candidate_id(label)}:{assessment}:{test}")
+    if scoped is not None:
+        return scoped
+    return _assessment_result_view(results, assessment).get(f"{label}:{test}", {})
+
+
+def _batch_candidate_display(candidate_id, label, assessment, test, rows):
+    """Adapt ONE candidate's detailed batch results into the existing display shape."""
+    successful = [r for r in rows if r["status"] in ("completed", "unanswered")]
+    complete = len(successful) == len(rows) and bool(rows)
+    total = sum(float(r["awarded_marks"]) for r in successful)
+    maximum = sum(float(r["maximum_marks"]) for r in rows)
+    percentage = round(total / maximum * 100, 1) if maximum else 0.0
+    def number(value):
+        return str(int(value)) if value == int(value) else str(value)
+    questions = []
+    for row in rows:
+        valid = row["status"] in ("completed", "unanswered")
+        questions.append({
+            **row, "q_no": str(row["question_no"]),
+            "response": row.get("candidate_answer") or "",
+            "ai_score": number(float(row["awarded_marks"])) if valid else "—",
+            "max_marks": number(float(row["maximum_marks"])),
+            "score_pct": f"{number(float(row['percentage']))}%" if valid else "—",
+            "justification": row.get("justification") or row.get("error", ""),
+        })
+    result = {
+        "candidate_id": candidate_id, "candidate_label": label,
+        "assessment_name": assessment, "test_name": test, "evaluation_type": "ai",
+        "status": "completed" if complete else "partial",
+        "score": f"{number(total)} / {number(maximum)}" if complete else "Incomplete",
+        "marks_obtained": total if complete else None, "successful_marks": total,
+        "max_marks": maximum, "max_score": number(maximum),
+        "normalized_score": percentage if complete else None,
+        "percentage": f"{number(percentage)}%" if complete else "Incomplete",
+        "eval_date": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        "questions": questions,
+    }
+    for dimension in ("co", "lo", "rbt_level", "domain", "knowledge_type"):
+        groups = {}
+        for row in rows:
+            code = str(row.get(dimension, "") or "")
+            if code:
+                groups.setdefault(code, []).append(row)
+        items = []
+        for code, members in groups.items():
+            # Do not present incomplete dimensions as zero or inflated attainment.
+            if any(r["status"] == "failed" for r in members):
+                continue
+            max_marks = sum(float(r["maximum_marks"]) for r in members)
+            awarded = sum(float(r["awarded_marks"]) for r in members)
+            name = f"{dimension.upper()} - {code}" if dimension in ("co", "lo") else code
+            items.append({"name": name, "code": code,
+                          "score": int(round(awarded / max_marks * 100)) if max_marks else 0})
+        result[dimension] = items
+    return result
 
 
 class FacilitatorState(rx.State):
@@ -238,7 +338,7 @@ class FacilitatorState(rx.State):
         if total_w != 100:
             return False
         # D — valid evaluation data exists
-        return bool(self.real_ai_results_per_candidate)
+        return bool(self.assessment_evaluation_results)
 
     @rx.var(cache=True)
     async def overall_report_lock_reason(self) -> str:
@@ -268,7 +368,7 @@ class FacilitatorState(rx.State):
             return f"Total weightage is {total_w}% (must be 100%)"
 
         # Check D — evaluation data
-        if not self.real_ai_results_per_candidate:
+        if not self.assessment_evaluation_results:
             return "No evaluation data found"
 
         return ""  # All conditions met — report is ready.
@@ -308,7 +408,7 @@ class FacilitatorState(rx.State):
                     t_name = t["name"]
                     t_w = saved_w.get(t_name, 0)
                     t_score = None
-                    for key, val in self.real_ai_results_per_candidate.items():
+                    for key, val in self.assessment_evaluation_results.items():
                         parts = key.split(":")
                         t_part = parts[1].strip() if len(parts) > 1 else ""
                         c_part = parts[0].strip()
@@ -334,7 +434,7 @@ class FacilitatorState(rx.State):
             else:
                 score: float | None = None
                 # Search real_ai_results_per_candidate for a matching key
-                for key, val in self.real_ai_results_per_candidate.items():
+                for key, val in self.assessment_evaluation_results.items():
                     parts = key.split(":")
                     t_part = parts[1].strip() if len(parts) > 1 else ""
                     c_part = parts[0].strip()
@@ -403,7 +503,7 @@ class FacilitatorState(rx.State):
             return []
         # Collect all question arrays for this test
         all_qs: dict[int, list[dict]] = {}
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             t_part = parts[1].strip() if len(parts) > 1 else ""
             if t_part != test_name:
@@ -478,7 +578,7 @@ class FacilitatorState(rx.State):
             for cand in cands:
                 c_name = cand["name"]
                 c_id = cand["emp_id"]
-                for key, val in self.real_ai_results_per_candidate.items():
+                for key, val in self.assessment_evaluation_results.items():
                     parts = key.split(":")
                     t_part = parts[1].strip() if len(parts) > 1 else ""
                     c_part = parts[0].strip()
@@ -539,7 +639,7 @@ class FacilitatorState(rx.State):
                 t_name = t["name"]
                 t_w = saved_w.get(t_name, 0)
                 t_score = None
-                for key, val in self.real_ai_results_per_candidate.items():
+                for key, val in self.assessment_evaluation_results.items():
                     parts = key.split(":")
                     t_part = parts[1].strip() if len(parts) > 1 else ""
                     c_part = parts[0].strip()
@@ -593,7 +693,7 @@ class FacilitatorState(rx.State):
                 c_name = cand["name"]
                 c_id = cand["emp_id"]
                 cand_remarks = []
-                for key, val in self.real_ai_results_per_candidate.items():
+                for key, val in self.assessment_evaluation_results.items():
                     parts = key.split(":")
                     t_part = parts[1].strip() if len(parts) > 1 else ""
                     c_part = parts[0].strip()
@@ -612,7 +712,7 @@ class FacilitatorState(rx.State):
                         "remarks": "Good overall performance across assessment tests.",
                     })
         else:
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 c_part = parts[0].strip()
@@ -965,7 +1065,7 @@ class FacilitatorState(rx.State):
             c_id = cand_str.split("(")[-1].rstrip(")").strip()
 
         cand_res = None
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             t_part = parts[1].strip() if len(parts) > 1 else ""
             c_part = parts[0].strip()
@@ -1029,7 +1129,7 @@ class FacilitatorState(rx.State):
         for cand in all_cands:
             cn = cand["name"]
             ci = cand["emp_id"]
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 c_part = parts[0].strip()
@@ -1275,19 +1375,19 @@ class FacilitatorState(rx.State):
         cand = self.selected_evaluation_candidate
         if cand:
             key = f"{cand}:{test_name}"
-            if key in self.real_ai_results_per_candidate:
-                return self._calculate_normalized_score(self.real_ai_results_per_candidate[key])
+            if key in self.assessment_evaluation_results:
+                return self._calculate_normalized_score(self.assessment_evaluation_results[key])
 
         res_cand = self.results_selected_candidate
         if res_cand and res_cand != "All Candidates":
-            for k, v in self.real_ai_results_per_candidate.items():
+            for k, v in self.assessment_evaluation_results.items():
                 parts = k.split(":")
                 c_part = parts[0].strip()
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 if t_part == test_name and (res_cand in c_part or c_part in res_cand):
                     return self._calculate_normalized_score(v)
 
-        for k, v in self.real_ai_results_per_candidate.items():
+        for k, v in self.assessment_evaluation_results.items():
             parts = k.split(":")
             t_part = parts[1].strip() if len(parts) > 1 else ""
             if t_part == test_name:
@@ -1475,9 +1575,8 @@ class FacilitatorState(rx.State):
         self.selected_test_name = test_name
         self.selected_evaluation_test = test_name  # keep Evaluation tab dropdown in sync
         self.is_replacing_qp = False
-        key = f"{self.selected_evaluation_candidate}:{test_name}"
-        if key in self.real_ai_results_per_candidate:
-            saved = self.real_ai_results_per_candidate[key]
+        saved = _saved_evaluation(self.real_ai_results_per_candidate, self.selected_evaluation_candidate, self.selected_assessment_name, test_name)
+        if saved:
             self.real_ai_score_display = saved.get("score", "—")
             self.real_ai_max_score_display = saved.get("max_score", "—")
             self.real_ai_percentage_display = saved.get("percentage", "—")
@@ -2247,12 +2346,145 @@ class FacilitatorState(rx.State):
         """Dismiss the AI evaluation progress dialog."""
         self.show_eval_progress_modal = False
 
+    @rx.var
+    def assessment_evaluation_results(self) -> dict[str, dict]:
+        return _assessment_result_view(self.real_ai_results_per_candidate, self.selected_assessment_name)
+
+    batch_evaluation_errors: list[dict] = []
+
+    async def run_all_candidates_ai_evaluation(self):
+        """Use one question-wise engine run for the selected assessment's submissions."""
+        import queue
+
+        assessment = self.selected_assessment_name
+        test = self.selected_test_name
+        self.is_ai_evaluating = True
+        self.show_eval_progress_modal = False
+        self.eval_progress_questions = []
+        self.eval_progress_current = 0
+        self.batch_evaluation_errors = []
+        yield
+        errors = []
+        try:
+            if _evaluate_candidates_questionwise is None:
+                raise ImportError("Question-wise AI evaluation service is unavailable")
+            filename = self.question_papers.get(assessment, {}).get(test, "")
+            if not filename:
+                raise ValueError("Upload a question paper for the selected assessment and test.")
+            qp_path = Path(rx.get_upload_dir()) / filename
+            if not qp_path.exists():
+                qp_path = Path("uploaded_files") / filename
+            if not qp_path.exists():
+                raise FileNotFoundError("The selected question paper is missing.")
+            answer_key = self.answer_key_uploaded_path if self.answer_key_uploaded and self.answer_key_uploaded_path else None
+            mine = await self.my_assessments
+            assigned = next((a.get("candidate_details", []) for a in mine if a["name"] == assessment), [])
+            records = []
+            labels = {}
+            for candidate in assigned:
+                candidate_id = str(candidate["emp_id"])
+                if candidate_id in labels:
+                    continue
+                label = f"{candidate['name']} ({candidate_id})"
+                labels[candidate_id] = label
+                response = await asyncio.to_thread(
+                    get_latest_candidate_response, candidate_id=candidate_id,
+                    candidate_name=candidate["name"], assessment_name=assessment,
+                    test_name=test, require_assessment_scope=True,
+                )
+                if not response.get("responses"):
+                    errors.append({"candidate_id": candidate_id, "status": "skipped",
+                                   "error": "No readable response verified for this assessment/test; legacy files need resubmission."})
+                    continue
+                for row in response["responses"]:
+                    records.append({
+                        "candidate_id": candidate_id, "candidate_name": candidate["name"],
+                        "assessment_name": assessment, "test_name": test,
+                        "question_no": row["q_no"], "question": row["question"],
+                        "candidate_answer": row["response"], "maximum_marks": row["max_marks"],
+                        **{field: row.get(field, "") for field in ("CO", "LO", "Knowledge Type", "Domain", "RBT level")},
+                    })
+            self.batch_evaluation_errors = errors
+            if not records:
+                yield rx.toast.warning("No assessment-verified candidate responses are available for evaluation.")
+                return
+            progress = queue.Queue()
+            future = asyncio.create_task(asyncio.to_thread(
+                _evaluate_candidates_questionwise, str(qp_path), records, answer_key,
+                progress_callback=progress.put,
+            ))
+            self.show_eval_progress_modal = True
+            yield
+            while True:
+                while not progress.empty():
+                    event = progress.get_nowait()
+                    total = event["total"]
+                    if len(self.eval_progress_questions) != total:
+                        self.eval_progress_questions = [{"label": f"Question {i + 1}", "status": "pending"} for i in range(total)]
+                    updated = list(self.eval_progress_questions)
+                    index = event["question_index"] - 1
+                    updated[index] = {"label": f"Question {index + 1} / {total}", "status": event["status"]}
+                    self.eval_progress_questions = updated
+                    self.eval_progress_current = index + (1 if event["status"] == "completed" else 0)
+                    yield
+                if future.done():
+                    # The worker enqueues its last update before completing.
+                    if progress.empty():
+                        break
+                    continue
+                await asyncio.sleep(0.1)
+            result = await future
+            saved = dict(self.real_ai_results_per_candidate)
+            candidate_data = dict(self.ai_candidates_data)
+            for candidate_id, rows in result["results_by_candidate"].items():
+                if candidate_id not in labels or candidate_id == "All Candidates":
+                    raise ValueError("Batch returned an unexpected candidate identity")
+                display = _batch_candidate_display(candidate_id, labels[candidate_id], assessment, test, rows)
+                saved[f"{candidate_id}:{assessment}:{test}"] = display
+                if display["status"] == "completed":
+                    candidate_data[candidate_id] = {
+                        **candidate_data.get(candidate_id, {}),
+                        "total_score": int(display["marks_obtained"]), "ai_confidence": "Real AI",
+                    }
+            self.real_ai_results_per_candidate = saved
+            self.ai_candidates_data = candidate_data
+            errors.extend({"candidate_id": r["candidate_id"], "question_no": r["question_no"],
+                           "status": "failed", "error": r["error"]} for r in result["errors"])
+            self.batch_evaluation_errors = errors
+            if self.selected_assessment_name == assessment and self.selected_test_name == test:
+                self.set_selected_evaluation_candidate(self.selected_evaluation_candidate)
+            self.ai_evaluation_done = not bool(errors)
+            if errors:
+                affected = ", ".join(dict.fromkeys(e["candidate_id"] for e in errors))
+                yield rx.toast.warning(f"Batch finished with {len(errors)} skipped/failed entries ({affected}). Successful results were retained.")
+            else:
+                yield rx.toast.success(f"AI evaluation completed for {len(result['results_by_candidate'])} candidates.")
+        except Exception as exc:
+            self.batch_evaluation_errors = errors + [{"status": "failed", "error": str(exc)}]
+            self.ai_evaluation_done = False
+            yield rx.toast.error(f"Batch evaluation failed: {str(exc)[:180]}")
+        finally:
+            self.is_ai_evaluating = False
+            self.show_eval_progress_modal = False
+            yield
+
     async def run_ai_evaluation(self):
 
         """Run the real AI Evaluation Engine using Azure OpenAI.
         Reads the uploaded Question Paper and the latest candidate response file.
         Falls back gracefully to mock data if files or API credentials are missing.
         """
+        if self.is_ai_evaluating:
+            yield rx.toast.info("An AI evaluation is already running.")
+            return
+        if self.selected_evaluation_candidate == "All Candidates":
+            async for update in self.run_all_candidates_ai_evaluation():
+                yield update
+            return
+        # Capture identity before asynchronous work; selection changes must not relabel results.
+        run_candidate = self.selected_evaluation_candidate
+        run_assessment = self.selected_assessment_name
+        run_test = self.selected_test_name
         self.is_ai_evaluating = True
         self.show_eval_progress_modal = False
         self.eval_progress_questions = []
@@ -2264,7 +2496,7 @@ class FacilitatorState(rx.State):
                 raise ImportError("ai_evaluation_service not available")
 
             # Determine question paper path - strictly from uploaded question paper for this assessment + test
-            qp_filename = self.question_papers.get(self.selected_assessment_name, {}).get(self.selected_test_name, "")
+            qp_filename = self.question_papers.get(run_assessment, {}).get(run_test, "")
             if not qp_filename:
                 raise FileNotFoundError(
                     f"No question paper uploaded for assessment '{self.selected_assessment_name}' "
@@ -2280,9 +2512,9 @@ class FacilitatorState(rx.State):
                 )
 
             # Find candidate response file filtered by selected candidate + assessment + test
-            raw = self.selected_evaluation_candidate
-            test_name = self.selected_test_name
-            asmn_name = self.selected_assessment_name
+            raw = run_candidate
+            test_name = run_test
+            asmn_name = run_assessment
             candidate_response_path = _find_response_file_path(raw, test_name, asmn_name)
             if candidate_response_path is None:
                 raise FileNotFoundError(
@@ -2449,11 +2681,14 @@ class FacilitatorState(rx.State):
                             pct = int(round((awd / mx) * 100)) if mx > 0 else 0
                             kt_items.append({"name": str(kt_val), "code": str(kt_val), "score": pct})
 
-            # Persist real result per candidate+test key
-            key = f"{self.selected_evaluation_candidate}:{self.selected_test_name}"
+            # Persist new AI results under stable candidate + assessment + test.
+            key = f"{_evaluation_candidate_id(run_candidate)}:{run_assessment}:{run_test}"
             saved_results = dict(self.real_ai_results_per_candidate)
             norm_pct = round((total_awarded / total_max) * 100.0, 1) if total_max > 0 else 0.0
             saved_results[key] = {
+                "candidate_id": _evaluation_candidate_id(run_candidate),
+                "candidate_label": run_candidate, "assessment_name": run_assessment,
+                "test_name": run_test, "evaluation_type": "ai", "status": "completed",
                 "score": self.real_ai_score_display,
                 "marks_obtained": total_awarded,
                 "max_marks": total_max,
@@ -2471,7 +2706,7 @@ class FacilitatorState(rx.State):
             self.real_ai_results_per_candidate = saved_results
 
             # Update ai_candidates_data with real result for the selected candidate emp_id
-            raw = self.selected_evaluation_candidate
+            raw = run_candidate
             cand_id = raw.split("(")[-1].rstrip(")").strip() if "(" in raw else raw.strip()
             existing = dict(self.ai_candidates_data.get(cand_id, {}))
             existing["total_score"] = int(float(self.real_ai_score_display.split("/")[0].strip())) if "/" in self.real_ai_score_display else 0
@@ -2589,7 +2824,7 @@ class FacilitatorState(rx.State):
                     options.append(label)
 
         # Also include any evaluated candidates from real_ai_results_per_candidate
-        for key in self.real_ai_results_per_candidate.keys():
+        for key in self.assessment_evaluation_results.keys():
             cand_part = key.split(":")[0].strip()
             if cand_part and cand_part not in options:
                 options.append(cand_part)
@@ -2614,7 +2849,7 @@ class FacilitatorState(rx.State):
             return ""
         cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
         cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
-        for key in self.real_ai_results_per_candidate:
+        for key in self.assessment_evaluation_results:
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -2633,7 +2868,7 @@ class FacilitatorState(rx.State):
             return ""
         cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
         cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -2653,7 +2888,7 @@ class FacilitatorState(rx.State):
             return []
         cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
         cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -2723,7 +2958,7 @@ class FacilitatorState(rx.State):
             }
         cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
         cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -2780,7 +3015,7 @@ class FacilitatorState(rx.State):
             kt_agg: dict[str, list] = {}
 
             target_test = self.selected_test_name.strip()
-            for key, res in self.real_ai_results_per_candidate.items():
+            for key, res in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 test_name = parts[1].strip() if len(parts) > 1 else ""
                 # Filter by selected test if test is selected
@@ -2858,7 +3093,7 @@ class FacilitatorState(rx.State):
             cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
 
             matched_tests: dict[str, dict] = {}
-            for key, res in self.real_ai_results_per_candidate.items():
+            for key, res in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 cand_part = parts[0].strip()
                 test_part = parts[1].strip() if len(parts) > 1 else ""
@@ -3276,7 +3511,7 @@ class FacilitatorState(rx.State):
         total_w = sum(saved_w.values())
         use_weightage = (total_w == 100 and bool(saved_w))
 
-        for key, res in self.real_ai_results_per_candidate.items():
+        for key, res in self.assessment_evaluation_results.items():
             cand_part = key.split(":")[0]
             test_part = key.split(":")[1].strip() if ":" in key else ""
             cand_name = cand_part.split("(")[0].strip() if "(" in cand_part else cand_part.strip()
@@ -3356,7 +3591,7 @@ class FacilitatorState(rx.State):
     answer_key_uploaded: bool = False
     answer_key_filename: str = ""
 
-    # Per-candidate real AI results (keyed by "Name (EMP-ID)" + ":" + test_name)
+    # New AI keys: candidate_id:assessment_name:test_name; legacy keys remain readable.
     real_ai_results_per_candidate: dict[str, dict] = {}
 
     def set_selected_evaluation_candidate(self, candidate_name: str):
@@ -3368,9 +3603,8 @@ class FacilitatorState(rx.State):
         self.real_ai_evaluation_date = "Not evaluated"
         self.real_ai_eval_questions = []
         # Re-load persisted real result if it exists
-        key = f"{candidate_name}:{self.selected_test_name}"
-        if key in self.real_ai_results_per_candidate:
-            saved = self.real_ai_results_per_candidate[key]
+        saved = _saved_evaluation(self.real_ai_results_per_candidate, candidate_name, self.selected_assessment_name, self.selected_test_name)
+        if saved:
             self.real_ai_score_display = saved.get("score", "\u2014")
             self.real_ai_max_score_display = saved.get("max_score", "\u2014")
             self.real_ai_percentage_display = saved.get("percentage", "\u2014")
@@ -3397,7 +3631,7 @@ class FacilitatorState(rx.State):
                 for c in a.get("candidate_details", []):
                     label = f"{c['name']} ({c['emp_id']})"
                     options.append(label)
-                return options if options else ["No candidates assigned"]
+                return ["All Candidates", *options] if options else ["No candidates assigned"]
         return ["No candidates assigned"]
 
     @rx.var(cache=True)
@@ -3421,9 +3655,8 @@ class FacilitatorState(rx.State):
         self.real_ai_evaluation_date = "Not evaluated"
         self.real_ai_eval_questions = []
         # Re-load persisted AI result for the selected candidate + new test if it exists
-        key = f"{self.selected_evaluation_candidate}:{test_name}"
-        if key in self.real_ai_results_per_candidate:
-            saved = self.real_ai_results_per_candidate[key]
+        saved = _saved_evaluation(self.real_ai_results_per_candidate, self.selected_evaluation_candidate, self.selected_assessment_name, test_name)
+        if saved:
             self.real_ai_score_display = saved.get("score", "—")
             self.real_ai_max_score_display = saved.get("max_score", "—")
             self.real_ai_percentage_display = saved.get("percentage", "—")
@@ -3440,7 +3673,7 @@ class FacilitatorState(rx.State):
         assessment_name = self.selected_assessment_name
 
 
-        if not raw:
+        if not raw or raw == "All Candidates":
             return {}
 
         # Search for real response file matching candidate + assessment + test
@@ -3604,6 +3837,8 @@ class FacilitatorState(rx.State):
         return rx.toast.success(f"Answer Key '{file.filename}' uploaded successfully!")
 
     def open_manual_eval_modal(self):
+        if self.selected_evaluation_candidate == "All Candidates":
+            return rx.toast.warning("Select one candidate for manual evaluation.")
         self.manual_eval_q_index = 0
         self.show_manual_eval_modal = True
 
@@ -3619,62 +3854,138 @@ class FacilitatorState(rx.State):
             self.manual_eval_q_index -= 1
 
     def save_manual_evaluation(self):
+        """Save the current candidate's manual evaluation through the backend service."""
+        if self.selected_evaluation_candidate == "All Candidates":
+            return rx.toast.warning("Select one candidate for manual evaluation.")
         resps = self.current_candidate_responses
+
         if not resps:
             self.show_manual_eval_modal = False
             return rx.toast.info("No candidate responses to evaluate.")
 
-        total_awarded = 0.0
-        total_max = 0.0
-        breakdown = []
+        candidate_id = str(self.selected_evaluation_candidate or "").strip()
+        assessment_name = str(self.selected_assessment_name or "").strip()
+        test_name = str(self.selected_test_name or "").strip()
+
+        if not candidate_id:
+            return rx.toast.error("No candidate selected.")
+
+        if not assessment_name:
+            return rx.toast.error("No assessment selected.")
+
+        if not test_name:
+            return rx.toast.error("No test selected.")
+
+        responses = []
+
         for i, r in enumerate(resps):
             key = str(i)
-            raw_mark = self.manual_marks.get(key, "0")
-            raw_just = self.manual_justifications.get(key, "")
-            try:
-                obt = float(raw_mark)
-            except (ValueError, TypeError):
-                obt = 0.0
-            try:
-                mx = float(r.get("marks", r.get("Marks", 0)) or 0)
-            except (ValueError, TypeError):
-                mx = 10.0 if obt > 0 else 0.0
-            if mx <= 0 and obt > 0:
-                mx = max(obt, 10.0)
 
-            total_awarded += obt
-            total_max += mx
+            responses.append(
+                {
+                    "q_no": str(
+                        r.get("q_no")
+                        or f"Q{i + 1}"
+                    ),
+                    "question": str(
+                        r.get("question")
+                        or ""
+                    ),
+                    "response": str(
+                        r.get("response")
+                        or ""
+                    ),
+                    "max_marks": r.get(
+                        "max_marks",
+                        0,
+                    ),
+                    "awarded_marks": self.manual_marks.get(key, "0"),
+                    "justification": self.manual_justifications.get(key, ""),
+                    "CO": r.get("CO", ""),
+                    "LO": r.get("LO", ""),
+                    "Knowledge Type": r.get("Knowledge Type", ""),
+                    "Domain": r.get("Domain", ""),
+                    "RBT level": r.get("RBT level", ""),
+                }
+            )
 
-            q_pct = (obt / mx) * 100.0 if mx > 0 else 0.0
-            pct_str = f"{int(q_pct)}%" if q_pct == int(q_pct) else f"{round(q_pct, 1)}%"
+        try:
+            service = ManualEvaluationService()
+            evaluation = service.evaluate_and_save(
+                candidate_id=candidate_id,
+                assessment_name=assessment_name,
+                test_name=test_name,
+                responses=responses,
+            )
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
+        except Exception as exc:
+            return rx.toast.error(f"Manual evaluation failed: {exc}")
 
-            q_num = str(r.get("title", r.get("Question No", f"Q{i+1}")))
-            q_txt = str(r.get("text", r.get("Question", "")))
-            c_ans = str(r.get("response", r.get("Candidate Answer", "")))
+        total_awarded = float(evaluation.get("total_marks", 0) or 0)
+        total_max = float(evaluation.get("max_marks", 0) or 0)
+        norm_pct = float(evaluation.get("percentage", 0) or 0)
 
-            breakdown.append({
-                "q_no": q_num,
-                "question": q_txt,
-                "response": c_ans,
-                "ai_score": str(int(obt) if obt == int(obt) else obt),
-                "max_marks": str(int(mx) if mx == int(mx) else mx),
-                "score_pct": pct_str,
-                "justification": raw_just if raw_just else "Manual evaluation",
-            })
+        def display_number(value: float):
+            return int(value) if value == int(value) else value
 
-        norm_pct = round((total_awarded / total_max) * 100.0, 1) if total_max > 0 else 0.0
-        norm_str = f"{int(norm_pct)}%" if norm_pct == int(norm_pct) else f"{norm_pct}%"
-        disp_awarded = int(total_awarded) if total_awarded == int(total_awarded) else total_awarded
-        disp_max = int(total_max) if total_max == int(total_max) else total_max
+        disp_awarded = display_number(total_awarded)
+        disp_max = display_number(total_max)
         disp_score = f"{disp_awarded} / {disp_max}"
+
+        norm_str = (
+            f"{int(norm_pct)}%"
+            if norm_pct == int(norm_pct)
+            else f"{norm_pct}%"
+        )
+
+        breakdown = []
+
+        for question in evaluation.get("questions", []):
+            q_pct = float(question.get("percentage", 0) or 0)
+            q_pct_str = (
+                f"{int(q_pct)}%"
+                if q_pct == int(q_pct)
+                else f"{q_pct}%"
+            )
+
+            breakdown.append(
+                {
+                    "q_no": str(question.get("q_no", "")),
+                    "question": str(question.get("question", "")),
+                    "response": str(question.get("candidate_response", "")),
+                    "ai_score": str(
+                        display_number(
+                            float(question.get("marks_obtained", 0) or 0)
+                        )
+                    ),
+                    "max_marks": str(
+                        display_number(
+                            float(question.get("max_marks", 0) or 0)
+                        )
+                    ),
+                    "score_pct": q_pct_str,
+                    "justification": str(
+                        question.get("justification", "")
+                        or "Manual evaluation"
+                    ),
+                    "CO": question.get("CO", ""),
+                    "LO": question.get("LO", ""),
+                    "Knowledge Type": question.get("Knowledge Type", ""),
+                    "Domain": question.get("Domain", ""),
+                    "RBT level": question.get("RBT level", ""),
+                }
+            )
 
         self.real_ai_score_display = disp_score
         self.real_ai_max_score_display = str(disp_max)
         self.real_ai_percentage_display = norm_str
-        self.real_ai_evaluation_date = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        self.real_ai_evaluation_date = datetime.now().strftime(
+            "%d %b %Y, %I:%M %p"
+        )
         self.real_ai_eval_questions = breakdown
 
-        k = f"{self.selected_evaluation_candidate}:{self.selected_test_name}"
+        k = f"{candidate_id}:{test_name}"
         saved_results = dict(self.real_ai_results_per_candidate)
         saved_results[k] = {
             "score": disp_score,
@@ -3684,13 +3995,16 @@ class FacilitatorState(rx.State):
             "max_score": self.real_ai_max_score_display,
             "percentage": norm_str,
             "eval_date": self.real_ai_evaluation_date,
+            "evaluation_type": "manual",
             "questions": breakdown,
         }
         self.real_ai_results_per_candidate = saved_results
 
         self.show_manual_eval_modal = False
-        return rx.toast.success(f"Manual evaluation saved! Score: {disp_score} ({norm_str})")
 
+        return rx.toast.success(
+            f"Manual evaluation saved! Score: {disp_score} ({norm_str})"
+        )
     def open_ai_eval_modal(self):
         self.show_ai_eval_modal = True
 
@@ -3861,3 +4175,5 @@ class FacilitatorProfileState(rx.State):
         # Save photo to shared store
         save_facilitator_profile(self.emp_id, {"profile_photo_url": self.profile_photo_url})
         return rx.toast.success(f"Profile photo updated: {file.filename}")
+
+
