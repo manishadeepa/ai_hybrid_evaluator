@@ -44,14 +44,20 @@ def _status_badge(status: str) -> rx.Component:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Component:
-    """A single test row showing availability, submission status, and Start Test / Submitted / Locked button."""
+    """A single test row showing availability, submission status, Start Test / Submitted / Locked button,
+    and — once evaluated — the candidate's normalized score."""
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
     is_submitted = CandidateState.submitted_tests.get(assessment_name, {}).contains(test_name)
     is_disqualified = CandidateState.disqualified_tests.get(assessment_name, {}).contains(test_name)
 
+    # Score data from the pre-computed flat dicts (composite key: "asmn::test_name")
+    _score_key = assessment_name + "::" + test_name
+    score_str = CandidateState.candidate_test_scores.get(_score_key, "-")
+    is_evaluated = CandidateState.candidate_test_evaluated.get(_score_key, False)
+
     return rx.box(
         rx.hstack(
-            # Left: icon + test name
+            # Left: icon + test name + availability status
             rx.hstack(
                 rx.cond(
                     is_final,
@@ -109,9 +115,90 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                 ),
                 spacing="2",
                 align_items="center",
+                flex="1",
             ),
             rx.spacer(),
-            # Right: Start Test / Submitted / Disqualified / Locked button
+            # Centre: Score + Evaluation status (shown once submitted)
+            rx.cond(
+                is_submitted | is_disqualified,
+                rx.cond(
+                    is_evaluated,
+                    # Evaluated: show score + green badge
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(
+                                score_str,
+                                font_family=FONT_DISPLAY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["primary"],
+                            ),
+                            rx.text(
+                                "Score",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color=COLORS["slate"],
+                            ),
+                            align_items="center",
+                            spacing="0",
+                        ),
+                        rx.box(
+                            rx.text(
+                                "Evaluated",
+                                font_family=FONT_BODY,
+                                size="1",
+                                weight="medium",
+                                color="#027A48",
+                            ),
+                            background="#ECFDF5",
+                            border="1px solid #A7F3D0",
+                            padding="0.3em 0.75em",
+                            border_radius="999px",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                        margin_right="0.5em",
+                    ),
+                    # Submitted but not yet evaluated: show dash + Pending badge
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(
+                                "-",
+                                font_family=FONT_DISPLAY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["slate"],
+                            ),
+                            rx.text(
+                                "Not Evaluated",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color=COLORS["slate"],
+                            ),
+                            align_items="center",
+                            spacing="0",
+                        ),
+                        rx.box(
+                            rx.text(
+                                "Pending",
+                                font_family=FONT_BODY,
+                                size="1",
+                                weight="medium",
+                                color="#B45309",
+                            ),
+                            background="#FFFBEB",
+                            border="1px solid #FDE68A",
+                            padding="0.3em 0.75em",
+                            border_radius="999px",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                        margin_right="0.5em",
+                    ),
+                ),
+                rx.fragment(),  # Not submitted yet — no score column
+            ),
+            # Right: Action button
             rx.cond(
                 is_submitted,
                 rx.button(
@@ -180,6 +267,7 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
     )
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Assessment Card — shows one assessment with its test list
 # The assessment dict from AdminState has:
@@ -188,6 +276,10 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
 # ─────────────────────────────────────────────────────────────────────────────
 
 def candidate_assessment_card(a: dict) -> rx.Component:
+    asmn = a["name"]
+    overall_score = CandidateState.candidate_overall_scores.get(asmn, "-")
+    overall_available = CandidateState.candidate_overall_available.get(asmn, False)
+
     return rx.box(
         rx.vstack(
             # Header row
@@ -204,11 +296,18 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                     ),
                     rx.vstack(
                         rx.text(a["name"], font_family=FONT_DISPLAY, size="4", weight="bold", color=COLORS["ink"]),
+                        rx.text(
+                            "This assessment consists of multiple tests. You can take the tests as per the schedule. "
+                            "Your scores will be visible here once the evaluation is completed.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
                         spacing="0",
                         align_items="start",
                     ),
                     spacing="2",
-                    align_items="center",
+                    align_items="start",
                 ),
                 rx.spacer(),
                 _status_badge(a["status"]),
@@ -256,10 +355,120 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                 a["tests"],
                 lambda t: _test_row(a["name"], t, False),
             ),
-            # Summative test row (only when configured by Facilitator)
+            # Summative test row (only when configured)
             rx.cond(
                 a["final_test"] != "",
                 _test_row(a["name"], a["final_test"], True),
+            ),
+
+            # ─── Overall Assessment Score section ────────────────────────────────
+            rx.divider(color_scheme="gray", size="4", margin_y="0.6em"),
+            rx.hstack(
+                # Left: icon + label + description
+                rx.hstack(
+                    rx.box(
+                        rx.icon("trophy", size=18, color="#7C3AED"),
+                        background="#F5F3FF",
+                        padding="0.5em",
+                        border_radius="8px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Overall Assessment Score",
+                            font_family=FONT_DISPLAY,
+                            size="3",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "The overall assessment score will be available once all tests are evaluated and the assessment is completed.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                    flex="1",
+                ),
+                rx.spacer(),
+                # Right: score box
+                rx.cond(
+                    overall_available,
+                    # Show actual score
+                    rx.box(
+                        rx.vstack(
+                            rx.text(
+                                overall_score,
+                                font_family=FONT_DISPLAY,
+                                size="5",
+                                weight="bold",
+                                color="#7C3AED",
+                            ),
+                            rx.text(
+                                "Overall Score",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color="#7C3AED",
+                            ),
+                            spacing="0",
+                            align_items="center",
+                        ),
+                        background="#F5F3FF",
+                        border="1px solid #DDD6FE",
+                        border_radius="10px",
+                        padding="0.8em 1.4em",
+                    ),
+                    # Not yet available
+                    rx.box(
+                        rx.vstack(
+                            rx.text(
+                                "-",
+                                font_family=FONT_DISPLAY,
+                                size="5",
+                                weight="bold",
+                                color=COLORS["slate"],
+                            ),
+                            rx.text(
+                                "Not Available Yet",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="0",
+                            align_items="center",
+                        ),
+                        background="#F9FAFB",
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="10px",
+                        padding="0.8em 1.4em",
+                    ),
+                ),
+                width="100%",
+                align_items="center",
+            ),
+
+            # Info note
+            rx.hstack(
+                rx.icon("info", size=13, color=COLORS["primary"]),
+                rx.text(
+                    "Your overall score will be calculated based on the finalized weightage for each test as defined by your facilitator.",
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                ),
+                spacing="2",
+                align_items="start",
+                background=COLORS["primary_soft"],
+                border=f"1px solid #DDD6FE",
+                border_radius="8px",
+                padding="0.6em 0.9em",
+                width="100%",
             ),
 
             spacing="0",
@@ -275,6 +484,7 @@ def candidate_assessment_card(a: dict) -> rx.Component:
         _hover={"box_shadow": "0 4px 12px rgba(0,0,0,0.07)"},
         transition="box-shadow 0.15s ease",
     )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
