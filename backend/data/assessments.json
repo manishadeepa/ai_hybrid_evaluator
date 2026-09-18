@@ -1,0 +1,27 @@
+[
+    {
+        "name": "Quality",
+        "facilitator_ids": [
+            "F001",
+            "F002"
+        ],
+        "facilitator_names": [
+            "Ravi Kumar",
+            "Meena Iyer"
+        ],
+        "facilitator_id": "F001",
+        "facilitator_name": "Ravi Kumar",
+        "assigned_candidates": [
+            "CAND-2031",
+            "CAND-2054",
+            "CAND-2061"
+        ],
+        "status": "Scheduled",
+        "approval_status": "approved",
+        "facilitator_approvals": {
+            "F001": "approved",
+            "F002": "approved"
+        },
+        "assessment_id": "5aa721c2229b4bd5b6409bc8a8f889d8"
+    }
+]

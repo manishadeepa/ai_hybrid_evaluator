@@ -183,6 +183,14 @@ class FacilitatorState(rx.State):
     # One of: "tests" | "evaluation" | "weightage" | "results" | "reports"
     active_workspace_tab: str = "tests"
 
+    async def load_persisted_assessment_workspace(self):
+        admin_state = await self.get_state(AdminState)
+        admin_state._load_persisted_assessments(self.question_papers)
+        self.question_papers = {
+            a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments
+        }
+        self.selected_evaluation_test = self.selected_test_name
+
     def set_workspace_tab(self, tab: str):
         """Switch the active tab inside the Assessment Workspace."""
         if tab in WORKSPACE_TABS:
@@ -1614,6 +1622,10 @@ class FacilitatorState(rx.State):
 
         test_name = self.selected_test_name or "Test 1"
 
+        admin_state = await self.get_state(AdminState)
+        assessment = next((dict(a) for a in admin_state.assessments if a["name"] == assessment_name), None)
+        if assessment is None or test_name not in list(assessment.get("tests", [])) + [assessment.get("final_test", "")]:
+            return rx.toast.error("Select an existing assessment and test before uploading.")
         for file in files:
             upload_data = await file.read()
             out_dir = rx.get_upload_dir()
@@ -1622,9 +1634,11 @@ class FacilitatorState(rx.State):
             with open(out_path, "wb") as f:
                 f.write(upload_data)
 
-            if assessment_name not in self.question_papers:
-                self.question_papers[assessment_name] = {}
-            self.question_papers[assessment_name][test_name] = file.filename
+            qps = dict(assessment.get("question_papers", {}))
+            qps[test_name] = file.filename
+            assessment["question_papers"] = qps
+            assessment = admin_state._persist_assessment_record(assessment)
+            self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
 
         self.is_replacing_qp = False
         # Validation result popup (UI only; isolated state for backend developer connection)
@@ -1632,17 +1646,24 @@ class FacilitatorState(rx.State):
         self.qp_validation_popup_open = True
         return rx.toast.success(f"Question paper uploaded for {test_name}: {files[0].filename}")
 
-    def remove_test_question_paper(self, test_name: str):
-        """Clear the uploaded question paper for a specific test."""
-        name = self.selected_assessment_name
-        if name in self.question_papers and test_name in self.question_papers[name]:
-            del self.question_papers[name][test_name]
-            self.is_replacing_qp = False
-            return rx.toast.info(f"Question paper removed for {test_name}.")
+    async def remove_test_question_paper(self, test_name: str):
+        """Remove a persisted association; keep the uploaded file untouched."""
+        admin_state = await self.get_state(AdminState)
+        for record in admin_state.assessments:
+            if record["name"] == self.selected_assessment_name:
+                assessment = dict(record)
+                qps = dict(assessment.get("question_papers", {}))
+                if test_name not in qps:
+                    return
+                qps.pop(test_name)
+                assessment["question_papers"] = qps
+                admin_state._persist_assessment_record(assessment)
+                self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
+                self.is_replacing_qp = False
+                return rx.toast.info(f"Question paper removed for {test_name}.")
 
-    def remove_current_test_question_paper(self):
-        """Clear the question paper for the currently active test."""
-        return self.remove_test_question_paper(self.selected_test_name)
+    async def remove_current_test_question_paper(self):
+        return await self.remove_test_question_paper(self.selected_test_name)
 
     @rx.var
     def current_test_filename(self) -> str:
@@ -1882,6 +1903,7 @@ class FacilitatorState(rx.State):
 
     async def open_assessment(self, index: int):
         """Opens the Assessment Workspace for the clicked assessment."""
+        await self.load_persisted_assessment_workspace()
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
         fac_id = auth_state.facilitator_emp_id
@@ -1923,6 +1945,7 @@ class FacilitatorState(rx.State):
 
     async def open_assessment_test(self, assessment_name: str, test_name: str):
         """Opens the Assessment Workspace directly targeting a specific test."""
+        await self.load_persisted_assessment_workspace()
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
         fac_id = auth_state.facilitator_emp_id
@@ -1961,7 +1984,7 @@ class FacilitatorState(rx.State):
                 approvals[fac_id] = "approved"
                 updated["facilitator_approvals"] = approvals
                 updated["approval_status"] = "approved"
-                admin_state.assessments[i] = updated
+                updated = admin_state._persist_assessment_record(updated)
                 break
         return rx.toast.success(f"Assessment '{assessment_name}' approved!")
 
@@ -1979,7 +2002,7 @@ class FacilitatorState(rx.State):
                 assigned_ids = updated.get("facilitator_ids", [updated.get("facilitator_id", "")])
                 if all(approvals.get(fid) == "declined" for fid in assigned_ids):
                     updated["approval_status"] = "declined"
-                admin_state.assessments[i] = updated
+                updated = admin_state._persist_assessment_record(updated)
                 break
         return rx.toast.info(f"Assessment '{assessment_name}' declined.")
 
@@ -2002,6 +2025,7 @@ class FacilitatorState(rx.State):
     async def open_assessment_by_name(self, assessment_name: str):
         """Opens the Assessment Workspace by assessment name.
         Used by the sidebar so the index always maps to the full facilitator list."""
+        await self.load_persisted_assessment_workspace()
         auth_state = await self.get_state(AuthState)
         admin_state = await self.get_state(AdminState)
         fac_id = auth_state.facilitator_emp_id
@@ -2138,7 +2162,7 @@ class FacilitatorState(rx.State):
                     descs[test_name] = self.new_test_description.strip()
                     updated["test_descriptions"] = descs
 
-                admin_state.assessments[i] = updated
+                updated = admin_state._persist_assessment_record(updated)
                 self.selected_test_name = test_name
                 break
 
@@ -2168,7 +2192,12 @@ class FacilitatorState(rx.State):
                 old_dates = dict(updated.get("test_dates", {}))
                 old_dates.pop(test_name, None)
                 updated["test_dates"] = old_dates
-                admin_state.assessments[i] = updated
+                for field in ("test_descriptions", "question_papers", "test_ids"):
+                    mapping = dict(updated.get(field, {}))
+                    mapping.pop(test_name, None)
+                    updated[field] = mapping
+                updated = admin_state._persist_assessment_record(updated)
+                self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
 
                 remaining = list(updated.get("tests", []))
                 if updated.get("final_test"):

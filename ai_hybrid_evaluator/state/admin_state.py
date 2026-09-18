@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import reflex as rx
+from backend.services.assessment_service import AssessmentService
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
@@ -450,6 +451,38 @@ class AdminState(rx.State):
         }
     ]
 
+    def _apply_assessment_records(self, records):
+        self.assessments = records
+        self.test_question_papers = {
+            f"{a['name']}__{test}": filename
+            for a in records for test, filename in a.get("question_papers", {}).items()
+        }
+
+    def load_persisted_assessments(self):
+        self._load_persisted_assessments()
+
+    def _load_persisted_assessments(self, legacy_question_papers=None):
+        """Restore the shared assessment structures; bootstrap legacy state once."""
+        initial = []
+        for assessment in self.assessments:
+            value = dict(assessment)
+            qps = dict((legacy_question_papers or {}).get(value["name"], {}))
+            qps.update(value.get("question_papers", {}))
+            names = list(value.get("tests", [])) + ([value["final_test"]] if value.get("final_test") else [])
+            for test in names:
+                filename = self.test_question_papers.get(f"{value['name']}__{test}", "")
+                if filename and not qps.get(test):
+                    qps[test] = filename
+            value["question_papers"] = qps
+            initial.append(value)
+        self._apply_assessment_records(AssessmentService().load_or_bootstrap(initial))
+
+    def _persist_assessment_record(self, record):
+        service = AssessmentService()
+        saved = service.save_assessment(record)
+        self._apply_assessment_records(service.load_assessments())
+        return saved
+
     assessment_status_options: list[str] = ["Draft", "Scheduled", "Active", "Completed"]
 
     @rx.var
@@ -597,7 +630,7 @@ class AdminState(rx.State):
         fac_ids = [f["emp_id"] for f in selected_facilitators]
         fac_names = [f["name"] for f in selected_facilitators]
 
-        self.assessments.append({
+        self._persist_assessment_record({
             "name": self.new_assessment_name,
             "assessment_date": self.new_assessment_date,
             # Multi-facilitator
@@ -757,7 +790,8 @@ class AdminState(rx.State):
         existing_test_dates = existing_a.get("test_dates", {})
         existing_qps = existing_a.get("question_papers", {})
 
-        self.assessments[self.edit_assessment_index] = {
+        updated = {
+            **dict(existing_a),
             "name": self.edit_assessment_name,
             "assessment_date": self.edit_assessment_date,
             # Multi-facilitator
@@ -774,6 +808,7 @@ class AdminState(rx.State):
             "test_dates": existing_test_dates,
             "question_papers": existing_qps,
         }
+        self._persist_assessment_record(updated)
         self.set_show_edit_assessment(False)
 
     # =========================================================
@@ -796,7 +831,13 @@ class AdminState(rx.State):
 
     def confirm_delete_assessment(self):
         if 0 <= self.delete_assessment_index < len(self.assessments):
-            del self.assessments[self.delete_assessment_index]
+            assessment = self.assessments[self.delete_assessment_index]
+            service = AssessmentService()
+            identity = assessment.get("assessment_id")
+            if not identity:
+                identity = service.save_assessment(dict(assessment))["assessment_id"]
+            service.delete_assessment(identity)
+            self._apply_assessment_records(service.load_assessments())
         self.set_show_delete_assessment(False)
 
     # =========================================================
@@ -814,7 +855,7 @@ class AdminState(rx.State):
                 a["tests"] = []
             if "final_test" not in a or not a["final_test"]:
                 a["final_test"] = "Summative Test"
-            self.assessments[index] = a
+            self._persist_assessment_record(a)
         self.show_assessment_tests_dialog = True
 
     def set_show_assessment_tests_dialog(self, value: bool):
@@ -876,7 +917,7 @@ class AdminState(rx.State):
             dates = dict(a.get("test_dates", {}))
             dates[test_name] = value
             a["test_dates"] = dates
-            self.assessments[self.selected_tests_assessment_index] = a
+            self._persist_assessment_record(a)
 
     def add_test_to_selected_assessment(self):
         """Automatically increments formative test count: Formative 1 -> Formative 2 -> Formative N..."""
@@ -891,38 +932,19 @@ class AdminState(rx.State):
             dates = dict(a.get("test_dates", {}))
             dates[new_test_name] = ""
             a["test_dates"] = dates
-            self.assessments[self.selected_tests_assessment_index] = a
+            self._persist_assessment_record(a)
 
     def remove_test_from_selected_assessment(self, test_name: str):
-        """Removes a formative test (can delete down to 0 formative tests)."""
+        """Remove a formative test and renumber labels without changing survivor IDs."""
         if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            a = dict(self.assessments[self.selected_tests_assessment_index])
-            current_list = list(a.get("tests", []))
-            if test_name in current_list:
-                current_list.remove(test_name)
-                # Re-number remaining formative tests: Formative 1, Formative 2, ...
-                renumbered = [f"Formative {i + 1}" for i in range(len(current_list))]
-                a["tests"] = renumbered
-                # Rebuild test_dates with new names
-                old_dates = dict(a.get("test_dates", {}))
-                final_test = a.get("final_test", "Summative Test")
-                new_dates = {final_test: old_dates.get(final_test, "")}
-                for name in renumbered:
-                    new_dates[name] = old_dates.get(name, "")
-                a["test_dates"] = new_dates
-                # Clean up question paper for this test if present
-                assessment_name = a["name"]
-                test_id = f"{assessment_name}__{test_name}"
-                qps = dict(self.test_question_papers)
-                if test_id in qps:
-                    del qps[test_id]
-                    self.test_question_papers = qps
-                old_qps = dict(a.get("question_papers", {}))
-                if test_name in old_qps:
-                    del old_qps[test_name]
-                    a["question_papers"] = old_qps
-
-                self.assessments[self.selected_tests_assessment_index] = a
+            assessment = dict(self.assessments[self.selected_tests_assessment_index])
+            if test_name not in assessment.get("tests", []):
+                return
+            if not assessment.get("assessment_id"):
+                assessment = self._persist_assessment_record(assessment)
+            service = AssessmentService()
+            service.delete_test(assessment["assessment_id"], assessment["test_ids"][test_name], renumber=True)
+            self._apply_assessment_records(service.load_assessments())
 
     # =========================================================
     # TEST DETAILS / UPDATES (When Admin clicks a test badge)

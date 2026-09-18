@@ -231,6 +231,9 @@ class TestItem(TypedDict, total=False):
 
 
 class Assessment(TypedDict, total=False):
+    assessment_id: str
+    test_ids: dict[str, str]
+    test_descriptions: dict[str, str]
     name: str
     # Multi-facilitator fields (primary)
     facilitator_ids: list[str]
