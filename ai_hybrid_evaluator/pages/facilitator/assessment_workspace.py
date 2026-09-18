@@ -6031,6 +6031,7 @@ def _results_top_header() -> rx.Component:
             cursor="pointer",
             padding_x="1.2em",
             _hover={"background": COLORS["primary_hover"]},
+            on_click=FacilitatorState.open_download_pdf_modal,
         ),
         width="100%",
         align_items="center",
@@ -6982,6 +6983,339 @@ def _results_report_modal() -> rx.Component:
     )
 
 
+# ── Results Download PDF Modal (UI Only Dialog) ──────────────────────────────
+
+def _download_pdf_test_item(test_name: rx.Var[str]) -> rx.Component:
+    is_checked = FacilitatorState.download_pdf_selected_tests.contains(test_name)
+    return rx.hstack(
+        rx.checkbox(
+            checked=is_checked,
+            color_scheme="indigo",
+            size="2",
+            pointer_events="none",
+        ),
+        rx.text(
+            test_name,
+            font_family=FONT_BODY,
+            size="2",
+            color="#1E293B",
+            weight="medium",
+        ),
+        spacing="3",
+        align_items="center",
+        cursor="pointer",
+        padding_y="0.3em",
+        width="100%",
+        on_click=FacilitatorState.toggle_download_pdf_test(test_name),
+    )
+
+
+def _results_download_pdf_modal() -> rx.Component:
+    """Download Results PDF modal dialog matching the user design specification."""
+    is_ind = (FacilitatorState.download_pdf_report_type == "individual")
+    is_all = (FacilitatorState.download_pdf_report_type == "all")
+
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Modal Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("file-text", size=22, color=COLORS["primary"]),
+                        background="#F3E8FF",
+                        padding="0.55em",
+                        border_radius="10px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Download Results PDF",
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color="#0F172A",
+                        ),
+                        rx.text(
+                            "Select the options to generate the results report.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#64748B",
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=18),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_download_pdf_modal,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+
+                # 1. Report Type Section
+                rx.vstack(
+                    rx.text(
+                        "1. Report Type",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color="#1E293B",
+                    ),
+                    rx.grid(
+                        # Individual Candidate Card
+                        rx.box(
+                            rx.hstack(
+                                rx.cond(
+                                    is_ind,
+                                    rx.box(
+                                        rx.box(
+                                            width="8px",
+                                            height="8px",
+                                            border_radius="50%",
+                                            background=COLORS["primary"],
+                                        ),
+                                        width="18px",
+                                        height="18px",
+                                        border_radius="50%",
+                                        border=f"2px solid {COLORS['primary']}",
+                                        display="flex",
+                                        align_items="center",
+                                        justify_content="center",
+                                        flex_shrink="0",
+                                        margin_top="2px",
+                                    ),
+                                    rx.box(
+                                        width="18px",
+                                        height="18px",
+                                        border_radius="50%",
+                                        border="2px solid #CBD5E1",
+                                        flex_shrink="0",
+                                        margin_top="2px",
+                                    ),
+                                ),
+                                rx.vstack(
+                                    rx.text(
+                                        "Individual Candidate",
+                                        font_family=FONT_BODY,
+                                        size="2",
+                                        weight="bold",
+                                        color="#1E293B",
+                                    ),
+                                    rx.text(
+                                        "Download report for a specific candidate",
+                                        font_family=FONT_BODY,
+                                        size="1",
+                                        color="#64748B",
+                                        line_height="1.3",
+                                    ),
+                                    spacing="1",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="start",
+                            ),
+                            border=rx.cond(is_ind, f"1.5px solid {COLORS['primary']}", "1px solid #E2E8F0"),
+                            background=rx.cond(is_ind, "#FAF5FF", "white"),
+                            border_radius="12px",
+                            padding="0.9em 1em",
+                            cursor="pointer",
+                            on_click=FacilitatorState.set_download_pdf_report_type("individual"),
+                            transition="all 0.15s ease",
+                        ),
+                        # All Candidates Card
+                        rx.box(
+                            rx.hstack(
+                                rx.cond(
+                                    is_all,
+                                    rx.box(
+                                        rx.box(
+                                            width="8px",
+                                            height="8px",
+                                            border_radius="50%",
+                                            background=COLORS["primary"],
+                                        ),
+                                        width="18px",
+                                        height="18px",
+                                        border_radius="50%",
+                                        border=f"2px solid {COLORS['primary']}",
+                                        display="flex",
+                                        align_items="center",
+                                        justify_content="center",
+                                        flex_shrink="0",
+                                        margin_top="2px",
+                                    ),
+                                    rx.box(
+                                        width="18px",
+                                        height="18px",
+                                        border_radius="50%",
+                                        border="2px solid #CBD5E1",
+                                        flex_shrink="0",
+                                        margin_top="2px",
+                                    ),
+                                ),
+                                rx.vstack(
+                                    rx.text(
+                                        "All Candidates",
+                                        font_family=FONT_BODY,
+                                        size="2",
+                                        weight="bold",
+                                        color="#1E293B",
+                                    ),
+                                    rx.text(
+                                        "Download consolidated report for all candidates",
+                                        font_family=FONT_BODY,
+                                        size="1",
+                                        color="#64748B",
+                                        line_height="1.3",
+                                    ),
+                                    spacing="1",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="start",
+                            ),
+                            border=rx.cond(is_all, f"1.5px solid {COLORS['primary']}", "1px solid #E2E8F0"),
+                            background=rx.cond(is_all, "#FAF5FF", "white"),
+                            border_radius="12px",
+                            padding="0.9em 1em",
+                            cursor="pointer",
+                            on_click=FacilitatorState.set_download_pdf_report_type("all"),
+                            transition="all 0.15s ease",
+                        ),
+                        columns="2",
+                        spacing="3",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # 2. Select Candidate Section (only when Individual Candidate is selected)
+                rx.cond(
+                    is_ind,
+                    rx.vstack(
+                        rx.text(
+                            "2. Select Candidate",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color="#1E293B",
+                        ),
+                        rx.select(
+                            FacilitatorState.results_candidate_options,
+                            value=FacilitatorState.download_pdf_candidate,
+                            on_change=FacilitatorState.set_download_pdf_candidate,
+                            size="2",
+                            variant="surface",
+                            width="100%",
+                        ),
+                        spacing="2",
+                        align_items="start",
+                        width="100%",
+                    ),
+                ),
+
+                # 3. Select Test(s) Section
+                rx.vstack(
+                    rx.text(
+                        "3. Select Test(s)",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color="#1E293B",
+                    ),
+                    rx.text(
+                        "Choose one or more tests to include in the report.",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color="#64748B",
+                        margin_top="-4px",
+                    ),
+                    rx.box(
+                        rx.vstack(
+                            rx.foreach(
+                                FacilitatorState.download_pdf_test_options,
+                                _download_pdf_test_item,
+                            ),
+                            spacing="1",
+                            align_items="start",
+                            width="100%",
+                        ),
+                        border="1px solid #E2E8F0",
+                        border_radius="10px",
+                        padding="0.8em 1.2em",
+                        background="white",
+                        width="100%",
+                        max_height="200px",
+                        overflow_y="auto",
+                    ),
+                    spacing="2",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # 4. Buttons (Footer)
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="outline",
+                            color="#1E293B",
+                            border="1px solid #CBD5E1",
+                            background="white",
+                            size="2",
+                            font_family=FONT_BODY,
+                            weight="medium",
+                            border_radius="8px",
+                            padding_x="1.4em",
+                            cursor="pointer",
+                            _hover={"background": "#F8FAFC"},
+                            on_click=FacilitatorState.close_download_pdf_modal,
+                        ),
+                    ),
+                    rx.button(
+                        "Download PDF",
+                        background=COLORS["primary"],
+                        color="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": COLORS["primary_hover"]},
+                        on_click=FacilitatorState.download_pdf_modal_submit,
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                ),
+
+                spacing="4",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "540px", "width": "90vw"},
+            padding="1.8em",
+            border_radius="16px",
+        ),
+        open=FacilitatorState.show_download_pdf_modal,
+        on_open_change=FacilitatorState.set_show_download_pdf_modal,
+    )
+
+
 # ── Main Results Tab ────────────────────────────────────────────────────────
 
 def results_tab() -> rx.Component:
@@ -7037,6 +7371,9 @@ def results_tab() -> rx.Component:
 
         # Embedded Report Modal
         _results_report_modal(),
+
+        # Results Download PDF Modal Dialog
+        _results_download_pdf_modal(),
 
         spacing="4",
         width="100%",

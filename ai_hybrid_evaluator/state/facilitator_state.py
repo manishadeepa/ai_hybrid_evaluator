@@ -2937,6 +2937,10 @@ class FacilitatorState(rx.State):
     results_search_candidate: str = ""
     show_all_questions: bool = False
     show_results_report_modal: bool = False
+    show_download_pdf_modal: bool = False
+    download_pdf_report_type: str = "individual"  # "individual" or "all"
+    download_pdf_candidate: str = ""
+    download_pdf_selected_tests: list[str] = []
     # Sync cache of the current assessment's candidates — populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
 
@@ -2964,6 +2968,75 @@ class FacilitatorState(rx.State):
 
     def close_results_report_modal(self):
         self.show_results_report_modal = False
+
+    async def open_download_pdf_modal(self):
+        self.show_download_pdf_modal = True
+        self.download_pdf_report_type = "individual" if self.results_view_mode == "individual" else "all"
+        if not self.download_pdf_candidate or self.download_pdf_candidate == "All Candidates":
+            if self.results_selected_candidate and self.results_selected_candidate != "All Candidates":
+                self.download_pdf_candidate = self.results_selected_candidate
+            else:
+                opts = await self.results_candidate_options
+                if opts:
+                    self.download_pdf_candidate = opts[0]
+                elif self._current_assessment_candidates:
+                    c = self._current_assessment_candidates[0]
+                    self.download_pdf_candidate = f"{c['name']} ({c['emp_id']})"
+        tests = await self.download_pdf_test_options
+        if not self.download_pdf_selected_tests and tests:
+            self.download_pdf_selected_tests = [tests[0]]
+
+    def close_download_pdf_modal(self):
+        self.show_download_pdf_modal = False
+
+    def set_show_download_pdf_modal(self, val: bool):
+        self.show_download_pdf_modal = val
+
+    async def set_download_pdf_report_type(self, rtype: str):
+        self.download_pdf_report_type = rtype
+        if rtype == "individual" and (not self.download_pdf_candidate or self.download_pdf_candidate == "All Candidates"):
+            if self.results_selected_candidate and self.results_selected_candidate != "All Candidates":
+                self.download_pdf_candidate = self.results_selected_candidate
+            else:
+                opts = await self.results_candidate_options
+                if opts:
+                    self.download_pdf_candidate = opts[0]
+                elif self._current_assessment_candidates:
+                    c = self._current_assessment_candidates[0]
+                    self.download_pdf_candidate = f"{c['name']} ({c['emp_id']})"
+
+    def set_download_pdf_candidate(self, cand: str):
+        self.download_pdf_candidate = cand
+
+    def toggle_download_pdf_test(self, test_name: str):
+        if test_name in self.download_pdf_selected_tests:
+            self.download_pdf_selected_tests = [t for t in self.download_pdf_selected_tests if t != test_name]
+        else:
+            self.download_pdf_selected_tests = self.download_pdf_selected_tests + [test_name]
+
+    def download_pdf_modal_submit(self):
+        self.show_download_pdf_modal = False
+        return rx.toast.info("Download PDF submitted (UI action).")
+
+    @rx.var(cache=True)
+    async def download_pdf_test_options(self) -> list[str]:
+        """Dynamically list all tests actually created for the selected assessment."""
+        asmn = self.selected_assessment_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        names = []
+        if match:
+            for t in match.get("test_items", []):
+                t_name = t.get("name", "")
+                if t_name and t_name not in names:
+                    names.append(t_name)
+        if not names:
+            tests = await self.results_assessment_tests
+            for t in tests:
+                t_name = t.get("name", "")
+                if t_name and t_name not in names:
+                    names.append(t_name)
+        return names
 
     def view_individual_candidate_results(self, name: str, emp_id: str):
         self.results_selected_candidate = f"{name} ({emp_id})"
