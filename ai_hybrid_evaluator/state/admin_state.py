@@ -1741,13 +1741,7 @@ class AdminFeedbackState(rx.State):
         "initial": "C",
         "assessment": "",
         "test": "",
-        "rating": 0,
-        "rating_str": "—",
-        "star1": False,
-        "star2": False,
-        "star3": False,
-        "star4": False,
-        "star5": False,
+        "qa_pairs": [],
         "feedback": "",
         "preview": "",
         "submitted_on": "",
@@ -1812,10 +1806,31 @@ class AdminFeedbackState(rx.State):
             c_id = item.get("candidate_id") or "CAND-2031"
             asmn = item.get("assessment") or "Quality"
             test_name = item.get("test") or "Formative 1"
-            rating = int(item.get("rating") or 0)
-            fb = (item.get("feedback") or "").strip()
-            preview = f'"{fb[:42]}..."' if len(fb) > 42 else (f'"{fb}"' if fb else "—")
             sub_on = item.get("submitted_at") or "14 Sep 2026 11:26 PM"
+
+            # Parse dynamic QA pairs from submitted form
+            qa_pairs: list[dict] = []
+            if item.get("qa_pairs") and isinstance(item["qa_pairs"], list):
+                for p in item["qa_pairs"]:
+                    if isinstance(p, dict):
+                        q_t = p.get("question") or p.get("text") or "Question"
+                        a_t = p.get("answer") or p.get("value") or ""
+                        qa_pairs.append({"question": str(q_t), "answer": str(a_t) if str(a_t).strip() else "No response"})
+            elif item.get("answers") and isinstance(item["answers"], dict):
+                for q_k, a_v in item["answers"].items():
+                    qa_pairs.append({"question": str(q_k), "answer": str(a_v) if str(a_v).strip() else "No response"})
+            elif item.get("feedback") and str(item["feedback"]).strip():
+                qa_pairs.append({"question": "Feedback", "answer": str(item["feedback"]).strip()})
+
+            # Generate short preview of submitted question/answer responses
+            if qa_pairs:
+                resp_parts = [p["answer"] for p in qa_pairs if p["answer"] != "No response"]
+                if not resp_parts:
+                    resp_parts = [p["question"] for p in qa_pairs]
+                preview_text = "; ".join(resp_parts)
+                preview = f'"{preview_text[:42]}..."' if len(preview_text) > 42 else f'"{preview_text}"'
+            else:
+                preview = "No responses recorded"
 
             date_line = sub_on
             time_line = ""
@@ -1832,14 +1847,8 @@ class AdminFeedbackState(rx.State):
                 "initial": c_name[0].upper() if c_name else "C",
                 "assessment": asmn,
                 "test": test_name,
-                "rating": rating,
-                "rating_str": f"{rating}/5",
-                "star1": rating >= 1,
-                "star2": rating >= 2,
-                "star3": rating >= 3,
-                "star4": rating >= 4,
-                "star5": rating >= 5,
-                "feedback": fb if fb else "No feedback text provided.",
+                "qa_pairs": qa_pairs,
+                "feedback": preview,
                 "preview": preview,
                 "submitted_on": sub_on,
                 "date_line": date_line,
@@ -1856,14 +1865,32 @@ class AdminFeedbackState(rx.State):
         entries: list[dict] = []
         i = 1
         for key, item in self.raw_facilitator_feedbacks.items():
-            c_name = item.get("candidate_name") or "Candidate"
-            c_id = item.get("candidate_id") or "CAND-2031"
             asmn = item.get("assessment") or "Quality"
-            test_name = item.get("test") or "Formative 1"
             fac = item.get("facilitator") or "Ravi Kumar"
-            fb = (item.get("feedback") or "").strip()
-            preview = f'"{fb[:42]}..."' if len(fb) > 42 else (f'"{fb}"' if fb else "—")
-            sub_on = item.get("updated_at") or "14 Sep 2026 10:15 PM"
+            sub_on = item.get("updated_at") or item.get("submitted_at") or "14 Sep 2026 10:15 PM"
+
+            # Parse dynamic QA pairs from submitted facilitator form
+            qa_pairs: list[dict] = []
+            if item.get("qa_pairs") and isinstance(item["qa_pairs"], list):
+                for p in item["qa_pairs"]:
+                    if isinstance(p, dict):
+                        q_t = p.get("question") or p.get("text") or "Question"
+                        a_t = p.get("answer") or p.get("value") or ""
+                        qa_pairs.append({"question": str(q_t), "answer": str(a_t) if str(a_t).strip() else "No response"})
+            elif item.get("answers") and isinstance(item["answers"], dict):
+                for q_k, a_v in item["answers"].items():
+                    qa_pairs.append({"question": str(q_k), "answer": str(a_v) if str(a_v).strip() else "No response"})
+            elif item.get("feedback") and str(item["feedback"]).strip():
+                qa_pairs.append({"question": "Feedback", "answer": str(item["feedback"]).strip()})
+
+            if qa_pairs:
+                resp_parts = [p["answer"] for p in qa_pairs if p["answer"] != "No response"]
+                if not resp_parts:
+                    resp_parts = [p["question"] for p in qa_pairs]
+                preview_text = "; ".join(resp_parts)
+                preview = f'"{preview_text[:42]}..."' if len(preview_text) > 42 else f'"{preview_text}"'
+            else:
+                preview = "No responses recorded"
 
             date_line = sub_on
             time_line = ""
@@ -1875,20 +1902,10 @@ class AdminFeedbackState(rx.State):
             entries.append({
                 "id": str(i),
                 "key": key,
-                "candidate_name": c_name,
-                "candidate_id": c_id,
-                "initial": c_name[0].upper() if c_name else "C",
                 "assessment": asmn,
-                "test": test_name,
                 "facilitator": fac,
-                "rating": 0,
-                "rating_str": "—",
-                "star1": False,
-                "star2": False,
-                "star3": False,
-                "star4": False,
-                "star5": False,
-                "feedback": fb if fb else "No feedback text provided.",
+                "qa_pairs": qa_pairs,
+                "feedback": preview,
                 "preview": preview,
                 "submitted_on": sub_on,
                 "date_line": date_line,
@@ -1901,23 +1918,23 @@ class AdminFeedbackState(rx.State):
 
     @rx.var
     def filtered_entries(self) -> list[dict]:
-        source = self.candidate_entries if self.active_tab == "candidate" else self.facilitator_entries
+        if self.active_tab == "facilitator":
+            res = []
+            for e in self.facilitator_entries:
+                if self.filter_assessment != "All Assessments" and e.get("assessment", "").lower() != self.filter_assessment.lower():
+                    continue
+                res.append(e)
+            return res
+
+        # Candidate tab filtering (completely unchanged)
         res = []
-        for e in source:
+        for e in self.candidate_entries:
             # Filter by assessment
             if self.filter_assessment != "All Assessments" and e.get("assessment", "").lower() != self.filter_assessment.lower():
                 continue
             # Filter by test
             if self.filter_test != "All Tests" and e.get("test", "").lower() != self.filter_test.lower():
                 continue
-            # Filter by rating (Candidate tab only)
-            if self.active_tab == "candidate" and self.filter_rating != "All Ratings":
-                try:
-                    target_star = int(self.filter_rating.split()[0])
-                    if e.get("rating") != target_star:
-                        continue
-                except Exception:
-                    pass
             # Filter by candidate search query
             if self.search_query.strip():
                 q = self.search_query.strip().lower()
@@ -1926,7 +1943,11 @@ class AdminFeedbackState(rx.State):
                     or q in e.get("candidate_id", "").lower()
                     or q in e.get("assessment", "").lower()
                     or q in e.get("test", "").lower()
-                    or q in e.get("feedback", "").lower()
+                    or q in e.get("preview", "").lower()
+                    or any(
+                        q in p.get("question", "").lower() or q in p.get("answer", "").lower()
+                        for p in e.get("qa_pairs", [])
+                    )
                 )
                 if not matched:
                     continue
@@ -1964,6 +1985,15 @@ class AdminFeedbackState(rx.State):
         start = (self.current_page - 1) * self.items_per_page + 1
         end = min(self.current_page * self.items_per_page, total)
         return f"Showing {start}–{end} of {total} entries"
+
+    @rx.var
+    def selected_qa_pairs(self) -> list[dict]:
+        if not isinstance(self.selected_entry, dict):
+            return []
+        pairs = self.selected_entry.get("qa_pairs")
+        if isinstance(pairs, list):
+            return pairs
+        return []
 
     @rx.var
     def selected_entry_tags(self) -> list[str]:

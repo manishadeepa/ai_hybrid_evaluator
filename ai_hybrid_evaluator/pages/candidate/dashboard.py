@@ -276,10 +276,6 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
 # ─────────────────────────────────────────────────────────────────────────────
 
 def candidate_assessment_card(a: dict) -> rx.Component:
-    asmn = a["name"]
-    overall_score = CandidateState.candidate_overall_scores.get(asmn, "-")
-    overall_available = CandidateState.candidate_overall_available.get(asmn, False)
-
     return rx.box(
         rx.vstack(
             # Header row
@@ -359,116 +355,6 @@ def candidate_assessment_card(a: dict) -> rx.Component:
             rx.cond(
                 a["final_test"] != "",
                 _test_row(a["name"], a["final_test"], True),
-            ),
-
-            # ─── Overall Assessment Score section ────────────────────────────────
-            rx.divider(color_scheme="gray", size="4", margin_y="0.6em"),
-            rx.hstack(
-                # Left: icon + label + description
-                rx.hstack(
-                    rx.box(
-                        rx.icon("trophy", size=18, color="#7C3AED"),
-                        background="#F5F3FF",
-                        padding="0.5em",
-                        border_radius="8px",
-                        display="flex",
-                        align_items="center",
-                        justify_content="center",
-                    ),
-                    rx.vstack(
-                        rx.text(
-                            "Overall Assessment Score",
-                            font_family=FONT_DISPLAY,
-                            size="3",
-                            weight="bold",
-                            color=COLORS["ink"],
-                        ),
-                        rx.text(
-                            "The overall assessment score will be available once all tests are evaluated and the assessment is completed.",
-                            font_family=FONT_BODY,
-                            size="1",
-                            color=COLORS["slate"],
-                        ),
-                        spacing="0",
-                        align_items="start",
-                    ),
-                    spacing="2",
-                    align_items="center",
-                    flex="1",
-                ),
-                rx.spacer(),
-                # Right: score box
-                rx.cond(
-                    overall_available,
-                    # Show actual score
-                    rx.box(
-                        rx.vstack(
-                            rx.text(
-                                overall_score,
-                                font_family=FONT_DISPLAY,
-                                size="5",
-                                weight="bold",
-                                color="#7C3AED",
-                            ),
-                            rx.text(
-                                "Overall Score",
-                                font_family=FONT_BODY,
-                                size="1",
-                                color="#7C3AED",
-                            ),
-                            spacing="0",
-                            align_items="center",
-                        ),
-                        background="#F5F3FF",
-                        border="1px solid #DDD6FE",
-                        border_radius="10px",
-                        padding="0.8em 1.4em",
-                    ),
-                    # Not yet available
-                    rx.box(
-                        rx.vstack(
-                            rx.text(
-                                "-",
-                                font_family=FONT_DISPLAY,
-                                size="5",
-                                weight="bold",
-                                color=COLORS["slate"],
-                            ),
-                            rx.text(
-                                "Not Available Yet",
-                                font_family=FONT_BODY,
-                                size="1",
-                                color=COLORS["slate"],
-                            ),
-                            spacing="0",
-                            align_items="center",
-                        ),
-                        background="#F9FAFB",
-                        border=f"1px solid {COLORS['line']}",
-                        border_radius="10px",
-                        padding="0.8em 1.4em",
-                    ),
-                ),
-                width="100%",
-                align_items="center",
-            ),
-
-            # Info note
-            rx.hstack(
-                rx.icon("info", size=13, color=COLORS["primary"]),
-                rx.text(
-                    "Your overall score will be calculated based on the finalized weightage for each test as defined by your facilitator.",
-                    font_family=FONT_BODY,
-                    size="1",
-                    color=COLORS["slate"],
-                ),
-                spacing="2",
-                align_items="start",
-                background=COLORS["primary_soft"],
-                border=f"1px solid #DDD6FE",
-                border_radius="8px",
-                padding="0.6em 0.9em",
-                width="100%",
             ),
 
             spacing="0",

@@ -909,185 +909,163 @@ def submit_confirmation_dialog() -> rx.Component:
     )
 
 
-FEEDBACK_SUGGESTION_TAGS = [
-    "Question clarity",
-    "Difficulty level",
-    "Time duration",
-    "Technical issues",
-    "Overall experience",
-]
 
-
-def star_rating_item(star_num: int) -> rx.Component:
-    is_active = CandidateState.candidate_test_rating >= star_num
-    return rx.box(
-        rx.cond(
-            is_active,
-            rx.icon("star", size=26, color="#F59E0B", fill="#F59E0B"),
-            rx.icon("star", size=26, color="#94A3B8"),
+def _candidate_feedback_question(question: dict) -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.text(
+                question["text"],
+                font_family=FONT_BODY,
+                size="2",
+                weight="medium",
+                color=COLORS["ink"],
+            ),
+            rx.cond(
+                question["required"],
+                rx.text("Required", font_family=FONT_BODY, size="1", color="#B42318"),
+                rx.fragment(),
+            ),
+            spacing="2",
+            align_items="center",
+            width="100%",
         ),
-        cursor="pointer",
-        on_click=CandidateState.set_candidate_test_rating(star_num),
-        transition="transform 0.12s ease",
-        _hover={"transform": "scale(1.15)"},
-    )
-
-
-def feedback_suggestion_tag(tag: str) -> rx.Component:
-    is_selected = CandidateState.candidate_test_feedback_tags.contains(tag)
-    return rx.box(
-        rx.text(
-            tag,
+        rx.text_area(
+            on_change=CandidateState.set_candidate_feedback_answer(question["id"]),
+            placeholder="Enter your response...",
+            min_height="88px",
+            width="100%",
             font_family=FONT_BODY,
-            size="1",
-            weight="medium",
-            color=rx.cond(is_selected, "#5B21B6", "#6D28D9"),
+            border=f"1px solid {COLORS['line']}",
+            border_radius="8px",
         ),
-        background=rx.cond(is_selected, "#EDE9FE", "#F5F3FF"),
-        border=rx.cond(is_selected, "1px solid #7C3AED", "1px solid #DDD6FE"),
-        border_radius="999px",
-        padding="0.32em 0.85em",
-        cursor="pointer",
-        on_click=CandidateState.toggle_candidate_feedback_tag(tag),
-        _hover={"background": "#EDE9FE", "border_color": "#7C3AED"},
-        transition="all 0.15s ease",
+        spacing="2",
+        width="100%",
+        align_items="stretch",
     )
 
 
-def candidate_feedback_section() -> rx.Component:
-    return rx.box(
-        rx.vstack(
-            # Header
-            rx.hstack(
-                rx.box(
-                    rx.icon("message-square", size=20, color="#6366F1"),
-                    background="#EDE9FE",
-                    padding="0.45em",
-                    border_radius="8px",
-                    display="flex",
-                    align_items="center",
-                    justify_content="center",
-                ),
+def candidate_feedback_modal() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
                 rx.vstack(
                     rx.text(
-                        "Share Your Feedback",
+                        "Test Feedback",
                         font_family=FONT_DISPLAY,
-                        size="3",
+                        size="4",
                         weight="bold",
-                        color="#0F172A",
+                        color=COLORS["ink"],
                     ),
                     rx.text(
-                        "Help us improve! Tell us about your experience with this test.",
+                        "Please provide your feedback for this assessment.",
                         font_family=FONT_BODY,
                         size="2",
-                        color="#64748B",
-                    ),
-                    spacing="0",
-                    align_items="start",
-                ),
-                spacing="3",
-                align_items="center",
-                width="100%",
-            ),
-
-            # Rating Section
-            rx.vstack(
-                rx.text(
-                    "How would you rate this test?",
-                    font_family=FONT_BODY,
-                    size="2",
-                    weight="bold",
-                    color="#0F172A",
-                ),
-                rx.vstack(
-                    rx.hstack(
-                        star_rating_item(1),
-                        star_rating_item(2),
-                        star_rating_item(3),
-                        star_rating_item(4),
-                        star_rating_item(5),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    rx.hstack(
-                        rx.text("Very Poor", font_family=FONT_BODY, size="1", color="#64748B"),
-                        rx.spacer(),
-                        rx.text("Excellent", font_family=FONT_BODY, size="1", color="#64748B"),
-                        width="170px",
+                        color=COLORS["slate"],
                     ),
                     spacing="1",
                     align_items="start",
-                ),
-                spacing="2",
-                align_items="start",
-                width="100%",
-                margin_top="0.8em",
-            ),
-
-            # Feedback Textarea
-            rx.vstack(
-                rx.text(
-                    "Your Feedback (Optional)",
-                    font_family=FONT_BODY,
-                    size="2",
-                    weight="bold",
-                    color="#0F172A",
-                ),
-                rx.text_area(
-                    value=CandidateState.candidate_test_feedback_text,
-                    on_change=CandidateState.set_candidate_test_feedback_text,
-                    placeholder="Tell us about your experience with this test. What did you like? What could be improved?",
-                    rows="4",
-                    max_length=500,
                     width="100%",
-                    font_family=FONT_BODY,
-                    size="2",
-                    border="1px solid #CBD5E1",
-                    border_radius="8px",
-                    background="white",
+                ),
+                rx.cond(
+                    CandidateState.candidate_feedback_error != "",
+                    rx.text(
+                        CandidateState.candidate_feedback_error,
+                        font_family=FONT_BODY,
+                        size="2",
+                        color="#B42318",
+                    ),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    CandidateState.candidate_feedback_questions.length() > 0,
+                    rx.vstack(
+                        rx.foreach(
+                            CandidateState.candidate_feedback_questions,
+                            _candidate_feedback_question,
+                        ),
+                        spacing="4",
+                        width="100%",
+                        align_items="stretch",
+                    ),
+                    # Empty integration state until backend provides Admin-created form
+                    rx.center(
+                        rx.vstack(
+                            rx.icon("clipboard-list", size=32, color=COLORS["slate"]),
+                            rx.text(
+                                "No feedback questions configured",
+                                font_family=FONT_BODY,
+                                size="3",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "The feedback form for this assessment will appear here once configured by the administrator.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                                text_align="center",
+                                max_width="400px",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                        ),
+                        padding="2.5em 1em",
+                        width="100%",
+                    ),
                 ),
                 rx.hstack(
-                    rx.spacer(),
-                    rx.text(
-                        CandidateState.candidate_test_feedback_char_count,
-                        " / 500",
+                    rx.button(
+                        "Close",
+                        on_click=CandidateState.skip_candidate_feedback,
+                        variant="outline",
+                        color=COLORS["slate"],
+                        border=f"1px solid {COLORS['line']}",
                         font_family=FONT_BODY,
-                        size="1",
-                        color="#64748B",
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                    ),
+                    rx.spacer(),
+                    rx.button(
+                        "Submit Feedback",
+                        on_click=CandidateState.submit_candidate_test_feedback,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        disabled=CandidateState.candidate_feedback_questions.length() == 0,
+                        opacity=rx.cond(
+                            CandidateState.candidate_feedback_questions.length() == 0,
+                            "0.5",
+                            "1.0",
+                        ),
+                        cursor=rx.cond(
+                            CandidateState.candidate_feedback_questions.length() == 0,
+                            "not-allowed",
+                            "pointer",
+                        ),
+                        _hover=rx.cond(
+                            CandidateState.candidate_feedback_questions.length() == 0,
+                            {},
+                            {"background": COLORS["primary_hover"]},
+                        ),
                     ),
                     width="100%",
+                    align_items="center",
+                    margin_top="0.5em",
                 ),
-                spacing="1",
-                align_items="start",
+                spacing="4",
                 width="100%",
-                margin_top="0.8em",
+                align_items="stretch",
             ),
-
-            # Suggestion Tags Row
-            rx.hstack(
-                rx.foreach(
-                    FEEDBACK_SUGGESTION_TAGS,
-                    feedback_suggestion_tag,
-                ),
-                spacing="2",
-                wrap="wrap",
-                width="100%",
-                margin_top="0.5em",
-            ),
-
-            spacing="0",
-            align_items="start",
-            width="100%",
+            style={"maxWidth": "600px", "width": "90vw"},
+            max_height="85vh",
+            overflow_y="auto",
+            padding="1.8em",
+            border_radius="14px",
         ),
-        background="#FAF5FF",
-        border="1px solid #EDE9FE",
-        border_radius="12px",
-        padding="1.3em 1.4em",
-        width="100%",
-        margin_top="1.2em",
+        open=CandidateState.show_candidate_feedback_modal,
     )
-
-
 def test_submitted_screen() -> rx.Component:
     return rx.box(
         rx.vstack(
@@ -1211,10 +1189,6 @@ def test_submitted_screen() -> rx.Component:
                     ),
 
                     # Feedback section shown for successful submissions
-                    rx.cond(
-                        ~CandidateState.is_disqualified,
-                        candidate_feedback_section(),
-                    ),
 
                     # Action buttons
                     rx.cond(
@@ -1230,44 +1204,15 @@ def test_submitted_screen() -> rx.Component:
                             margin_top="1.5em",
                             _hover={"background": COLORS["primary_hover"]},
                         ),
-                        rx.hstack(
-                            rx.spacer(),
-                            rx.button(
-                                "Skip for now",
-                                on_click=CandidateState.skip_candidate_feedback,
-                                size="2",
-                                variant="outline",
-                                color="#6366F1",
-                                border="1px solid #6366F1",
-                                background="white",
-                                font_family=FONT_BODY,
-                                weight="medium",
-                                border_radius="8px",
-                                cursor="pointer",
-                                _hover={"background": "#F5F3FF"},
-                                padding_x="1.4em",
-                                padding_y="0.6em",
-                            ),
-                            rx.button(
-                                rx.icon("send", size=14),
-                                "Submit Feedback",
-                                on_click=CandidateState.submit_candidate_test_feedback,
-                                size="2",
-                                background="#6366F1",
-                                color="white",
-                                font_family=FONT_BODY,
-                                weight="medium",
-                                border_radius="8px",
-                                cursor="pointer",
-                                _hover={"background": "#4F46E5"},
-                                box_shadow="0 1px 3px rgba(99, 102, 241, 0.25)",
-                                padding_x="1.4em",
-                                padding_y="0.6em",
-                            ),
-                            spacing="3",
-                            align_items="center",
-                            width="100%",
-                            margin_top="1.4em",
+                        rx.button(
+                            "Continue to Feedback",
+                            on_click=CandidateState.open_candidate_feedback_form,
+                            size="3",
+                            background=COLORS["primary"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            margin_top="1.5em",
+                            _hover={"background": COLORS["primary_hover"]},
                         ),
                     ),
                     spacing="3",
@@ -1298,284 +1243,296 @@ def test_submitted_screen() -> rx.Component:
 # Main Page Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def candidate_test_page() -> rx.Component:
     return rx.box(
         proctoring_warning_dialog(),
+        candidate_feedback_modal(),
         rx.cond(
-            CandidateState.is_test_submitted,
-            test_submitted_screen(),
+            CandidateState.show_candidate_feedback_modal,
+            # Feedback View: The submission confirmation is closed/dismissed.
+            # Ensures the confirmation UI and feedback modal never appear simultaneously or overlap.
             rx.box(
-                rx.button(
-                    id="fs-exit-btn",
-                    on_click=CandidateState.handle_fullscreen_exited,
-                    style={"display": "none"},
-                ),
-                rx.button(
-                    id="fs-enter-btn",
-                    on_click=CandidateState.handle_fullscreen_entered,
-                    style={"display": "none"},
-                ),
-                # Hidden bridge button for tab-switch / window-blur violation
-                rx.button(
-                    id="tab-switch-btn",
-                    on_click=CandidateState.trigger_proctoring_warning,
-                    disabled=CandidateState.is_test_submitted | CandidateState.is_time_expired,
-                    style={"display": "none"},
-                ),
-                rx.script(
-                    r"""
-                    (function() {
-                        // ── Fullscreen detection ──────────────────────────────────────
-                        function checkFS() {
-                            var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-                            if (!isFS) {
-                                var exitBtn = document.getElementById('fs-exit-btn');
-                                if (exitBtn) exitBtn.click();
-                            } else {
-                                var enterBtn = document.getElementById('fs-enter-btn');
-                                if (enterBtn) enterBtn.click();
+                width="100%",
+                min_height="100vh",
+                background=COLORS["canvas"],
+            ),
+            rx.cond(
+                CandidateState.is_test_submitted,
+                test_submitted_screen(),
+                rx.box(
+                    rx.button(
+                        id="fs-exit-btn",
+                        on_click=CandidateState.handle_fullscreen_exited,
+                        style={"display": "none"},
+                    ),
+                    rx.button(
+                        id="fs-enter-btn",
+                        on_click=CandidateState.handle_fullscreen_entered,
+                        style={"display": "none"},
+                    ),
+                    # Hidden bridge button for tab-switch / window-blur violation
+                    rx.button(
+                        id="tab-switch-btn",
+                        on_click=CandidateState.trigger_proctoring_warning,
+                        disabled=CandidateState.is_test_submitted | CandidateState.is_time_expired,
+                        style={"display": "none"},
+                    ),
+                    rx.script(
+                        r"""
+                        (function() {
+                            // ── Fullscreen detection ──────────────────────────────────────
+                            function checkFS() {
+                                var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+                                if (!isFS) {
+                                    var exitBtn = document.getElementById('fs-exit-btn');
+                                    if (exitBtn) exitBtn.click();
+                                } else {
+                                    var enterBtn = document.getElementById('fs-enter-btn');
+                                    if (enterBtn) enterBtn.click();
+                                }
                             }
-                        }
-                        if (window.__candidate_fs_handler) {
-                            document.removeEventListener('fullscreenchange', window.__candidate_fs_handler);
-                            document.removeEventListener('webkitfullscreenchange', window.__candidate_fs_handler);
-                        }
-                        window.__candidate_fs_handler = checkFS;
-                        document.addEventListener('fullscreenchange', checkFS);
-                        document.addEventListener('webkitfullscreenchange', checkFS);
-
-                        // ── Tab-switch / window-blur detection ────────────────────────
-                        // Use a 600ms debounce: both visibilitychange and window blur
-                        // can fire for the same switch event (e.g. Alt+Tab sometimes
-                        // triggers both). The debounce ensures exactly one violation per
-                        // actual switch, regardless of which events fire together.
-                        var __tabSwitchLastMs = 0;
-                        function triggerTabSwitch() {
-                            var btn = document.getElementById('tab-switch-btn');
-                            if (btn && btn.disabled) return; // test over
-                            var now = Date.now();
-                            if (now - __tabSwitchLastMs < 600) return; // debounce
-                            __tabSwitchLastMs = now;
-                            btn.click();
-                        }
-                        // Remove any previous listeners before re-attaching
-                        if (window.__candidate_vis_handler) {
-                            document.removeEventListener('visibilitychange', window.__candidate_vis_handler);
-                        }
-                        if (window.__candidate_blur_handler) {
-                            window.removeEventListener('blur', window.__candidate_blur_handler);
-                        }
-                        // visibilitychange: fires when switching browser tabs
-                        window.__candidate_vis_handler = function() {
-                            if (document.hidden) triggerTabSwitch();
-                        };
-                        // blur: fires when Alt+Tabbing to another application.
-                        // No document.hidden check — blur is the primary signal for app-switch.
-                        window.__candidate_blur_handler = function() {
-                            triggerTabSwitch();
-                        };
-                        document.addEventListener('visibilitychange', window.__candidate_vis_handler);
-                        window.addEventListener('blur', window.__candidate_blur_handler);
-
-                        // ── Auto-refocus when candidate returns to the tab ────────────
-                        if (window.__candidate_focus_handler) {
-                            document.removeEventListener('visibilitychange', window.__candidate_focus_handler);
-                        }
-                        window.__candidate_focus_handler = function() {
-                            if (!document.hidden) { setTimeout(function(){ window.focus(); }, 50); }
-                        };
-                        document.addEventListener('visibilitychange', window.__candidate_focus_handler);
-
-                        // ── Block keyboard tab-switch shortcuts ───────────────────────
-                        // Ctrl+W (close tab), Ctrl+T (new tab), Ctrl+N (new window),
-                        // Ctrl+Tab / Ctrl+Shift+Tab (cycle tabs), Alt+F4 (close window)
-                        if (window.__candidate_key_handler) {
-                            document.removeEventListener('keydown', window.__candidate_key_handler, true);
-                        }
-                        window.__candidate_key_handler = function(e) {
-                            var btn = document.getElementById('tab-switch-btn');
-                            if (btn && btn.disabled) return; // test already over
-                            var ctrl = e.ctrlKey || e.metaKey;
-                            var blocked = false;
-                            if (ctrl && (e.key === 'w' || e.key === 'W'))             blocked = true;
-                            if (ctrl && (e.key === 't' || e.key === 'T'))             blocked = true;
-                            if (ctrl && (e.key === 'n' || e.key === 'N'))             blocked = true;
-                            if (ctrl && e.key === 'Tab')                               blocked = true;
-                            if (ctrl && e.shiftKey && e.key === 'Tab')                blocked = true;
-                            if (e.altKey && e.key === 'F4')                           blocked = true;
-                            if (blocked) {
+                            if (window.__candidate_fs_handler) {
+                                document.removeEventListener('fullscreenchange', window.__candidate_fs_handler);
+                                document.removeEventListener('webkitfullscreenchange', window.__candidate_fs_handler);
+                            }
+                            window.__candidate_fs_handler = checkFS;
+                            document.addEventListener('fullscreenchange', checkFS);
+                            document.addEventListener('webkitfullscreenchange', checkFS);
+    
+                            // ── Tab-switch / window-blur detection ────────────────────────
+                            // Use a 600ms debounce: both visibilitychange and window blur
+                            // can fire for the same switch event (e.g. Alt+Tab sometimes
+                            // triggers both). The debounce ensures exactly one violation per
+                            // actual switch, regardless of which events fire together.
+                            var __tabSwitchLastMs = 0;
+                            function triggerTabSwitch() {
+                                var btn = document.getElementById('tab-switch-btn');
+                                if (btn && btn.disabled) return; // test over
+                                var now = Date.now();
+                                if (now - __tabSwitchLastMs < 600) return; // debounce
+                                __tabSwitchLastMs = now;
+                                btn.click();
+                            }
+                            // Remove any previous listeners before re-attaching
+                            if (window.__candidate_vis_handler) {
+                                document.removeEventListener('visibilitychange', window.__candidate_vis_handler);
+                            }
+                            if (window.__candidate_blur_handler) {
+                                window.removeEventListener('blur', window.__candidate_blur_handler);
+                            }
+                            // visibilitychange: fires when switching browser tabs
+                            window.__candidate_vis_handler = function() {
+                                if (document.hidden) triggerTabSwitch();
+                            };
+                            // blur: fires when Alt+Tabbing to another application.
+                            // No document.hidden check — blur is the primary signal for app-switch.
+                            window.__candidate_blur_handler = function() {
+                                triggerTabSwitch();
+                            };
+                            document.addEventListener('visibilitychange', window.__candidate_vis_handler);
+                            window.addEventListener('blur', window.__candidate_blur_handler);
+    
+                            // ── Auto-refocus when candidate returns to the tab ────────────
+                            if (window.__candidate_focus_handler) {
+                                document.removeEventListener('visibilitychange', window.__candidate_focus_handler);
+                            }
+                            window.__candidate_focus_handler = function() {
+                                if (!document.hidden) { setTimeout(function(){ window.focus(); }, 50); }
+                            };
+                            document.addEventListener('visibilitychange', window.__candidate_focus_handler);
+    
+                            // ── Block keyboard tab-switch shortcuts ───────────────────────
+                            // Ctrl+W (close tab), Ctrl+T (new tab), Ctrl+N (new window),
+                            // Ctrl+Tab / Ctrl+Shift+Tab (cycle tabs), Alt+F4 (close window)
+                            if (window.__candidate_key_handler) {
+                                document.removeEventListener('keydown', window.__candidate_key_handler, true);
+                            }
+                            window.__candidate_key_handler = function(e) {
+                                var btn = document.getElementById('tab-switch-btn');
+                                if (btn && btn.disabled) return; // test already over
+                                var ctrl = e.ctrlKey || e.metaKey;
+                                var blocked = false;
+                                if (ctrl && (e.key === 'w' || e.key === 'W'))             blocked = true;
+                                if (ctrl && (e.key === 't' || e.key === 'T'))             blocked = true;
+                                if (ctrl && (e.key === 'n' || e.key === 'N'))             blocked = true;
+                                if (ctrl && e.key === 'Tab')                               blocked = true;
+                                if (ctrl && e.shiftKey && e.key === 'Tab')                blocked = true;
+                                if (e.altKey && e.key === 'F4')                           blocked = true;
+                                if (blocked) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    triggerTabSwitch(); // count as a violation attempt
+                                }
+                            };
+                            document.addEventListener('keydown', window.__candidate_key_handler, true);
+    
+                            // ── Warn on unload / navigation away ─────────────────────────
+                            if (window.__candidate_beforeunload) {
+                                window.removeEventListener('beforeunload', window.__candidate_beforeunload);
+                            }
+                            window.__candidate_beforeunload = function(e) {
+                                var btn = document.getElementById('tab-switch-btn');
+                                if (btn && btn.disabled) return; // test over, allow navigation
                                 e.preventDefault();
-                                e.stopPropagation();
-                                triggerTabSwitch(); // count as a violation attempt
+                                e.returnValue = 'Leaving this page will be flagged as a proctoring violation.';
+                                return e.returnValue;
+                            };
+                            window.addEventListener('beforeunload', window.__candidate_beforeunload);
+    
+                            // ── localStorage helpers ───────────────────────────────────────
+                            // Key: candidate_id::assessment_name::test_name::question_id
+                            // Data attributes are written on #rte-relay by _restore_rte_script.
+                            window.__rteGetStorageKey = function(qidOverride) {
+                                var relay = document.getElementById('rte-relay');
+                                if (!relay) return null;
+                                var cid  = relay.dataset.candidateId || 'unknown';
+                                var asmn = relay.dataset.assessment   || 'unknown';
+                                var test = relay.dataset.testName     || 'unknown';
+                                var qid  = qidOverride || relay.dataset.questionId || '1';
+                                return cid + '::' + asmn + '::' + test + '::' + qid;
+                            };
+                            window.__rteSaveToStorage = function(html) {
+                                var key = window.__rteGetStorageKey();
+                                if (!key) return;
+                                try { localStorage.setItem(key, html); } catch(e) {}
+                            };
+                            window.__rteLoadFromStorage = function(qid) {
+                                var relay = document.getElementById('rte-relay');
+                                if (!relay) return null;
+                                var cid  = relay.dataset.candidateId || 'unknown';
+                                var asmn = relay.dataset.assessment   || 'unknown';
+                                var test = relay.dataset.testName     || 'unknown';
+                                var key  = cid + '::' + asmn + '::' + test + '::' + (qid || '1');
+                                try { return localStorage.getItem(key); } catch(e) { return null; }
+                            };
+    
+                            // ── Word count helper ─────────────────────────────────────────
+                            function countWords(html) {
+                                if (!html) return 0;
+                                var text = html.replace(/<(br|\/div|\/p|\/li)\s*\/?>/gi, ' ');
+                                text = text.replace(/<[^>]+>/g, ' ');
+                                text = text.replace(/&nbsp;/gi, ' ');
+                                text = text.replace(/&[a-z0-9#]+;/gi, ' ');
+                                text = text.trim();
+                                if (!text) return 0;
+                                var words = text.split(/\s+/).filter(function(w) { return w.length > 0; });
+                                return words.length;
                             }
-                        };
-                        document.addEventListener('keydown', window.__candidate_key_handler, true);
-
-                        // ── Warn on unload / navigation away ─────────────────────────
-                        if (window.__candidate_beforeunload) {
-                            window.removeEventListener('beforeunload', window.__candidate_beforeunload);
-                        }
-                        window.__candidate_beforeunload = function(e) {
-                            var btn = document.getElementById('tab-switch-btn');
-                            if (btn && btn.disabled) return; // test over, allow navigation
-                            e.preventDefault();
-                            e.returnValue = 'Leaving this page will be flagged as a proctoring violation.';
-                            return e.returnValue;
-                        };
-                        window.addEventListener('beforeunload', window.__candidate_beforeunload);
-
-                        // ── localStorage helpers ───────────────────────────────────────
-                        // Key: candidate_id::assessment_name::test_name::question_id
-                        // Data attributes are written on #rte-relay by _restore_rte_script.
-                        window.__rteGetStorageKey = function(qidOverride) {
-                            var relay = document.getElementById('rte-relay');
-                            if (!relay) return null;
-                            var cid  = relay.dataset.candidateId || 'unknown';
-                            var asmn = relay.dataset.assessment   || 'unknown';
-                            var test = relay.dataset.testName     || 'unknown';
-                            var qid  = qidOverride || relay.dataset.questionId || '1';
-                            return cid + '::' + asmn + '::' + test + '::' + qid;
-                        };
-                        window.__rteSaveToStorage = function(html) {
-                            var key = window.__rteGetStorageKey();
-                            if (!key) return;
-                            try { localStorage.setItem(key, html); } catch(e) {}
-                        };
-                        window.__rteLoadFromStorage = function(qid) {
-                            var relay = document.getElementById('rte-relay');
-                            if (!relay) return null;
-                            var cid  = relay.dataset.candidateId || 'unknown';
-                            var asmn = relay.dataset.assessment   || 'unknown';
-                            var test = relay.dataset.testName     || 'unknown';
-                            var key  = cid + '::' + asmn + '::' + test + '::' + (qid || '1');
-                            try { return localStorage.getItem(key); } catch(e) { return null; }
-                        };
-
-                        // ── Word count helper ─────────────────────────────────────────
-                        function countWords(html) {
-                            if (!html) return 0;
-                            var text = html.replace(/<(br|\/div|\/p|\/li)\s*\/?>/gi, ' ');
-                            text = text.replace(/<[^>]+>/g, ' ');
-                            text = text.replace(/&nbsp;/gi, ' ');
-                            text = text.replace(/&[a-z0-9#]+;/gi, ' ');
-                            text = text.trim();
-                            if (!text) return 0;
-                            var words = text.split(/\s+/).filter(function(w) { return w.length > 0; });
-                            return words.length;
-                        }
-
-                        window.__updateWordCount = function(html) {
-                            var el = document.getElementById('rte-word-count');
-                            if (!el) return;
-                            var val = (html !== undefined && html !== null) ? html : (document.getElementById('rte-editor') ? document.getElementById('rte-editor').innerHTML : '');
-                            el.textContent = 'Words: ' + countWords(val);
-                        };
-
-                        // ── Relay sync helper ─────────────────────────────────────────
-                        function syncRelay(html) {
-                            var relay = document.getElementById('rte-relay');
-                            if (!relay) return;
-                            var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-                            if (setter) {
-                                setter.call(relay, html);
-                            } else {
-                                relay.value = html;
+    
+                            window.__updateWordCount = function(html) {
+                                var el = document.getElementById('rte-word-count');
+                                if (!el) return;
+                                var val = (html !== undefined && html !== null) ? html : (document.getElementById('rte-editor') ? document.getElementById('rte-editor').innerHTML : '');
+                                el.textContent = 'Words: ' + countWords(val);
+                            };
+    
+                            // ── Relay sync helper ─────────────────────────────────────────
+                            function syncRelay(html) {
+                                var relay = document.getElementById('rte-relay');
+                                if (!relay) return;
+                                var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                                if (setter) {
+                                    setter.call(relay, html);
+                                } else {
+                                    relay.value = html;
+                                }
+                                if (relay._valueTracker) {
+                                    relay._valueTracker.setValue(html + '_chg');
+                                }
+                                relay.dispatchEvent(new Event('input', { bubbles: true }));
+                                relay.dispatchEvent(new Event('change', { bubbles: true }));
                             }
-                            if (relay._valueTracker) {
-                                relay._valueTracker.setValue(html + '_chg');
-                            }
-                            relay.dispatchEvent(new Event('input', { bubbles: true }));
-                            relay.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-
-                        window.__rteSaveCurrentAnswer = function() {
-                            var ed = document.getElementById('rte-editor');
-                            if (!ed) return;
-                            window.__rteSaveToStorage(ed.innerHTML);
-                            syncRelay(ed.innerHTML);
-                        };
-
-                        // ── Shared input binder (attaches once per editor lifetime) ────
-                        window.bindRteInput = function(ed) {
-                            if (ed.__rteInputBound) return;
-                            ed.__rteInputBound = true;
-                            function onInput() {
-                                window.__updateWordCount(ed.innerHTML);
+    
+                            window.__rteSaveCurrentAnswer = function() {
+                                var ed = document.getElementById('rte-editor');
+                                if (!ed) return;
                                 window.__rteSaveToStorage(ed.innerHTML);
                                 syncRelay(ed.innerHTML);
-                            }
-                            ed.addEventListener('input', onInput);
-                            ed.addEventListener('keyup', function() {
-                                window.__updateWordCount(ed.innerHTML);
-                            });
-                            ed.addEventListener('paste', function() {
-                                setTimeout(onInput, 15);
-                            });
-                        };
-
-                        // ── RTE restore (called via rx.call_script after navigation) ──
-                        window.__rteRestoreAnswer = function(savedHtml, qid) {
-                            var ed = document.getElementById('rte-editor');
-                            if (!ed) return;
-                            // localStorage is freshest; fall back to backend state
-                            var localHtml = qid ? window.__rteLoadFromStorage(qid) : null;
-                            var html = (localHtml !== null && localHtml !== '') ? localHtml : (savedHtml || '');
-                            ed.__rteAttached = false;
-                            ed.innerHTML = html;
-                            ed.__rteAttached = true;
-                            window.bindRteInput(ed);
-                            window.__updateWordCount(html);
-                        };
-
-                        // ── Seed editor on first page load ────────────────────────────
-                        (function seedOnLoad() {
-                            var ed = document.getElementById('rte-editor');
-                            var relay = document.getElementById('rte-relay');
-                            if (!ed || !relay) { setTimeout(seedOnLoad, 100); return; }
-                            window.bindRteInput(ed);
-                            var qid = relay.dataset.questionId || '1';
-                            var localHtml = window.__rteLoadFromStorage(qid);
-                            var html = (localHtml !== null) ? localHtml : (relay.dataset.saved || '');
-                            if (html && (!ed.innerHTML || ed.innerHTML === '<br>')) {
+                            };
+    
+                            // ── Shared input binder (attaches once per editor lifetime) ────
+                            window.bindRteInput = function(ed) {
+                                if (ed.__rteInputBound) return;
+                                ed.__rteInputBound = true;
+                                function onInput() {
+                                    window.__updateWordCount(ed.innerHTML);
+                                    window.__rteSaveToStorage(ed.innerHTML);
+                                    syncRelay(ed.innerHTML);
+                                }
+                                ed.addEventListener('input', onInput);
+                                ed.addEventListener('keyup', function() {
+                                    window.__updateWordCount(ed.innerHTML);
+                                });
+                                ed.addEventListener('paste', function() {
+                                    setTimeout(onInput, 15);
+                                });
+                            };
+    
+                            // ── RTE restore (called via rx.call_script after navigation) ──
+                            window.__rteRestoreAnswer = function(savedHtml, qid) {
+                                var ed = document.getElementById('rte-editor');
+                                if (!ed) return;
+                                // localStorage is freshest; fall back to backend state
+                                var localHtml = qid ? window.__rteLoadFromStorage(qid) : null;
+                                var html = (localHtml !== null && localHtml !== '') ? localHtml : (savedHtml || '');
                                 ed.__rteAttached = false;
                                 ed.innerHTML = html;
                                 ed.__rteAttached = true;
-                            }
-                            window.__updateWordCount(ed.innerHTML);
+                                window.bindRteInput(ed);
+                                window.__updateWordCount(html);
+                            };
+    
+                            // ── Seed editor on first page load ────────────────────────────
+                            (function seedOnLoad() {
+                                var ed = document.getElementById('rte-editor');
+                                var relay = document.getElementById('rte-relay');
+                                if (!ed || !relay) { setTimeout(seedOnLoad, 100); return; }
+                                window.bindRteInput(ed);
+                                var qid = relay.dataset.questionId || '1';
+                                var localHtml = window.__rteLoadFromStorage(qid);
+                                var html = (localHtml !== null) ? localHtml : (relay.dataset.saved || '');
+                                if (html && (!ed.innerHTML || ed.innerHTML === '<br>')) {
+                                    ed.__rteAttached = false;
+                                    ed.innerHTML = html;
+                                    ed.__rteAttached = true;
+                                }
+                                window.__updateWordCount(ed.innerHTML);
+                            })();
                         })();
-                    })();
-                    """
-                ),
-                rx.vstack(
-                    test_header(),
-                    # Main Two-Column Body
-                    rx.box(
-                        rx.hstack(
-                            question_card(),
-                            answer_card(),
-                            spacing="4",
+                        """
+                    ),
+                    rx.vstack(
+                        test_header(),
+                        # Main Two-Column Body
+                        rx.box(
+                            rx.hstack(
+                                question_card(),
+                                answer_card(),
+                                spacing="4",
+                                width="100%",
+                                align_items="stretch",
+                            ),
+                            padding="1.8em 2.5em",
                             width="100%",
-                            align_items="stretch",
+                            flex="1",
+                            background="#F9FAFB",
                         ),
-                        padding="1.8em 2.5em",
+                        bottom_status_bar(),
+                        submit_confirmation_dialog(),
+                        spacing="0",
                         width="100%",
-                        flex="1",
+                        min_height="100vh",
                         background="#F9FAFB",
                     ),
-                    bottom_status_bar(),
-                    submit_confirmation_dialog(),
-                    spacing="0",
                     width="100%",
                     min_height="100vh",
                     background="#F9FAFB",
                 ),
-                width="100%",
-                min_height="100vh",
-                background="#F9FAFB",
+
             ),
         ),
         width="100%",
         min_height="100vh",
         background="#F9FAFB",
     )
-

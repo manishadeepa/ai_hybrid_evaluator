@@ -209,16 +209,14 @@ class CandidateState(rx.State):
     # ── Score snapshot (populated on dashboard load from FacilitatorState) ──
     # Flat dicts with composite keys to work cleanly inside rx.foreach vars.
     # Key for test-level: "AssessmentName::TestName"
-    # Key for overall: "AssessmentName"
     candidate_test_scores: dict[str, str] = {}      # -> score_str e.g. "72%" or "-"
     candidate_test_evaluated: dict[str, bool] = {}  # -> True / False
-    candidate_overall_scores: dict[str, str] = {}   # -> score_str or "-"
-    candidate_overall_available: dict[str, bool] = {}  # -> True / False
 
     # ── Candidate Feedback State (Post-submission) ───────────────────────
-    candidate_test_rating: int = 0
-    candidate_test_feedback_text: str = ""
-    candidate_test_feedback_tags: list[str] = []
+    show_candidate_feedback_modal: bool = False
+    candidate_feedback_questions: list[dict] = []
+    candidate_feedback_answers: dict[str, str] = {}
+    candidate_feedback_error: str = ""
     saved_candidate_feedbacks: dict[str, dict] = {}
 
     # ── Candidate Identity Helper ───────────────────────────────────────
@@ -264,10 +262,6 @@ class CandidateState(rx.State):
     @rx.var
     def current_question_number(self) -> int:
         return self.current_question_index + 1
-
-    @rx.var
-    def candidate_test_feedback_char_count(self) -> int:
-        return len(self.candidate_test_feedback_text)
 
     @rx.var
     def total_questions(self) -> int:
@@ -392,7 +386,7 @@ class CandidateState(rx.State):
                 if self.is_test_submitted or self.is_time_expired:
                     return
                 if self.total_time_seconds <= 0:
-                    self.handle_time_expired()
+                    await self.handle_time_expired()
                     return
                 self.total_time_seconds -= 1
                 h = self.total_time_seconds // 3600
@@ -437,13 +431,8 @@ class CandidateState(rx.State):
             return
 
         results = fac_st.real_ai_results_per_candidate  # {"Name (ID):test_name": {...}}
-        weightages = fac_st.saved_assessment_weightages  # {asmn: {test_name: int}}
-        completions = fac_st.completed_assessments        # {asmn: True}
-
         new_test_scores: dict[str, str] = {}
         new_test_evaluated: dict[str, bool] = {}
-        new_overall_scores: dict[str, str] = {}
-        new_overall_available: dict[str, bool] = {}
 
         for a in admin_st.assessments:
             asmn = a.get("name", "")
@@ -488,36 +477,8 @@ class CandidateState(rx.State):
                     new_test_scores[flat_key] = "-"
                     new_test_evaluated[flat_key] = False
 
-            # Overall score
-            is_complete = bool(completions.get(asmn, False))
-            saved_w = weightages.get(asmn, {})
-            total_w = sum(saved_w.values())
-            all_evaluated = all(
-                new_test_evaluated.get(f"{asmn}::{t}", False) for t in all_test_names
-            )
-            overall_avail = is_complete and all_evaluated and total_w == 100
-            new_overall_available[asmn] = overall_avail
-
-            if overall_avail:
-                total_weighted = 0.0
-                for t_name in all_test_names:
-                    flat_key = f"{asmn}::{t_name}"
-                    score_s = new_test_scores.get(flat_key, "-")
-                    if score_s != "-":
-                        norm_val = float(score_s.replace("%", ""))
-                        w_val = float(saved_w.get(t_name, 0))
-                        total_weighted += (norm_val * w_val) / 100.0
-                if total_weighted == int(total_weighted):
-                    new_overall_scores[asmn] = f"{int(round(total_weighted))}%"
-                else:
-                    new_overall_scores[asmn] = f"{round(total_weighted, 1)}%"
-            else:
-                new_overall_scores[asmn] = "-"
-
         self.candidate_test_scores = new_test_scores
         self.candidate_test_evaluated = new_test_evaluated
-        self.candidate_overall_scores = new_overall_scores
-        self.candidate_overall_available = new_overall_available
 
 
     async def on_test_page_load(self):
@@ -572,7 +533,7 @@ class CandidateState(rx.State):
             self.timer_session_id += 1
             return [CandidateState.run_timer, self._restore_rte_script()]
 
-    def handle_time_expired(self):
+    async def handle_time_expired(self):
         """Auto-submit the test when timer reaches 00:00:00."""
         now = datetime.now()
         self.is_test_submitted = True
@@ -607,6 +568,7 @@ class CandidateState(rx.State):
         # Always start at Question 1 (index 0)
         self.current_question_index = 0
         self.is_test_submitted = False
+        self.show_candidate_feedback_modal = False
         self.is_time_expired = False
         self.show_submit_dialog = False
         self.show_violation_modal = False
@@ -854,6 +816,7 @@ class CandidateState(rx.State):
         self.submitted_tests = subs
 
         self._save_current_test_record(status="Submitted")
+        self.show_candidate_feedback_modal = False
         return rx.toast.success("Assessment submitted successfully!", duration=4000)
 
     def return_to_dashboard(self):
@@ -905,25 +868,53 @@ class CandidateState(rx.State):
         except Exception:
             pass
 
-    def set_candidate_test_rating(self, rating: int):
-        self.candidate_test_rating = rating
+    def open_candidate_feedback_form(self):
+        """Open the Candidate Feedback modal ready for the dynamic Admin-created form.
 
-    def set_candidate_test_feedback_text(self, text: str):
-        if len(text) <= 500:
-            self.candidate_test_feedback_text = text
-        else:
-            self.candidate_test_feedback_text = text[:500]
+        FRONTEND INTEGRATION POINT:
+        Future backend flow:
+            Admin creates Candidate Feedback Form
+            -> Backend stores the form
+            -> Candidate submits Assessment + Test
+            -> Backend provides the Admin-created form
+            -> Existing Candidate Feedback modal displays dynamic questions
+            -> Candidate submits responses.
+        Until the backend provides the form data, self.candidate_feedback_questions remains empty.
+        """
+        self.candidate_feedback_questions = []
+        self.candidate_feedback_answers = {}
+        self.candidate_feedback_error = ""
+        self.show_candidate_feedback_modal = True
 
-    def toggle_candidate_feedback_tag(self, tag: str):
-        tags = list(self.candidate_test_feedback_tags)
-        if tag in tags:
-            tags.remove(tag)
-        else:
-            tags.append(tag)
-        self.candidate_test_feedback_tags = tags
+    def skip_candidate_feedback(self):
+        """Close feedback modal and return to candidate dashboard."""
+        self.show_candidate_feedback_modal = False
+        self.candidate_feedback_questions = []
+        self.candidate_feedback_answers = {}
+        self.candidate_feedback_error = ""
+        return self.return_to_dashboard()
+
+    def set_candidate_feedback_answer(self, question_id: str, answer: str):
+        answers = dict(self.candidate_feedback_answers)
+        answers[question_id] = answer
+        self.candidate_feedback_answers = answers
+        self.candidate_feedback_error = ""
 
     async def submit_candidate_test_feedback(self):
-        """Save candidate feedback uniquely for Assessment + Test + Candidate, then return to dashboard."""
+        """Save dynamic feedback when form data is provided by the backend."""
+        # Do not allow submission when no form data is available
+        if not self.candidate_feedback_questions:
+            return
+
+        missing_required = [
+            question for question in self.candidate_feedback_questions
+            if question.get("required", False)
+            and not self.candidate_feedback_answers.get(question["id"], "").strip()
+        ]
+        if missing_required:
+            self.candidate_feedback_error = "Please complete all required questions before submitting."
+            return
+
         cand_id = await self._get_current_candidate_id()
         cand_name = "Candidate"
         try:
@@ -948,27 +939,20 @@ class CandidateState(rx.State):
             "test": test_name,
             "candidate_id": cand_id,
             "candidate_name": cand_name,
-            "rating": self.candidate_test_rating,
-            "feedback": self.candidate_test_feedback_text.strip(),
-            "tags": list(self.candidate_test_feedback_tags),
+            "answers": dict(self.candidate_feedback_answers),
             "submitted_at": now_str,
         }
         self.saved_candidate_feedbacks = updated
         self._persist_candidate_feedbacks()
 
-        # Reset feedback fields
-        self.candidate_test_rating = 0
-        self.candidate_test_feedback_text = ""
-        self.candidate_test_feedback_tags = []
+        self.show_candidate_feedback_modal = False
+        self.candidate_feedback_questions = []
+        self.candidate_feedback_answers = {}
+        self.candidate_feedback_error = ""
 
-        return self.return_to_dashboard()
-
-    def skip_candidate_feedback(self):
-        """Skip feedback and return to dashboard."""
-        self.candidate_test_rating = 0
-        self.candidate_test_feedback_text = ""
-        self.candidate_test_feedback_tags = []
-        return self.return_to_dashboard()
+        yield rx.toast.success("Feedback submitted successfully. Thank you!")
+        for action in self.return_to_dashboard():
+            yield action
 
 
 # ─────────────────────────────────────────────────────────────────────────────
