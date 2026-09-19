@@ -2877,15 +2877,17 @@ def ai_eval_progress_modal() -> rx.Component:
                             color="#1E293B",
                         ),
                         rx.spacer(),
-                        rx.icon_button(
-                            rx.icon("x", size=16),
-                            on_click=FacilitatorState.close_eval_progress_modal,
-                            size="2",
-                            variant="ghost",
-                            color="#64748B",
+                        rx.button(
+                            rx.icon("minus", size=14, color="#6C3FF4"),
+                            rx.text("Minimize", font_family=FONT_BODY, font_size="13px", font_weight="500", color="#6C3FF4"),
+                            on_click=FacilitatorState.minimize_eval_progress_modal,
+                            variant="outline",
+                            border="1px solid #DDD6FE",
+                            background="white",
+                            border_radius="8px",
+                            padding="0.35em 0.85em",
                             cursor="pointer",
-                            _hover={"background": "#F1F5F9", "color": "#1E293B"},
-                            border_radius="6px",
+                            _hover={"background": "#F5F3FF", "border_color": "#C4B5FD"},
                         ),
                         spacing="3",
                         align_items="center",
@@ -2958,10 +2960,160 @@ def ai_eval_progress_modal() -> rx.Component:
                         max_height="320px",
                         overflow_y="auto",
                     ),
+                    # Info box explaining Minimize and Stop
+                    rx.hstack(
+                        rx.icon("info", size=20, color="#0284C7", flex_shrink="0"),
+                        rx.vstack(
+                            rx.text(
+                                "• You can ",
+                                rx.text.strong("minimize"),
+                                " this window while evaluation continues in the background.",
+                                font_family=FONT_BODY,
+                                font_size="12px",
+                                color="#0369A1",
+                                line_height="1.4",
+                            ),
+                            rx.text(
+                                "• Use ",
+                                rx.text.strong("Stop"),
+                                " to pause the evaluation and save completed results.",
+                                font_family=FONT_BODY,
+                                font_size="12px",
+                                color="#0369A1",
+                                line_height="1.4",
+                            ),
+                            spacing="1",
+                            width="100%",
+                        ),
+                        background="#F0F9FF",
+                        border="1px solid #BAE6FD",
+                        border_radius="10px",
+                        padding="0.75em 1em",
+                        spacing="3",
+                        align_items="flex-start",
+                        width="100%",
+                    ),
+                    # Action buttons (Stop, Resume, Restart)
+                    rx.hstack(
+                        rx.button(
+                            rx.icon("pause", size=14, color="#EF4444"),
+                            rx.text("Stop", font_family=FONT_BODY, font_weight="500", size="2", color="#EF4444"),
+                            on_click=FacilitatorState.stop_ai_evaluation,
+                            variant="outline",
+                            border="1px solid #FCA5A5",
+                            background="white",
+                            border_radius="8px",
+                            padding="0.5em 1.75em",
+                            cursor="pointer",
+                            _hover={"background": "#FEF2F2", "border_color": "#F87171"},
+                        ),
+                        rx.button(
+                            rx.icon("play", size=14, color="#6C3FF4"),
+                            rx.text("Resume", font_family=FONT_BODY, font_weight="500", size="2", color="#6C3FF4"),
+                            on_click=FacilitatorState.resume_ai_evaluation,
+                            variant="outline",
+                            border="1px solid #DDD6FE",
+                            background="white",
+                            border_radius="8px",
+                            padding="0.5em 1.75em",
+                            cursor="pointer",
+                            _hover={"background": "#F5F3FF", "border_color": "#C4B5FD"},
+                        ),
+                        rx.button(
+                            rx.icon("rotate-ccw", size=14, color="#475569"),
+                            rx.text("Restart", font_family=FONT_BODY, font_weight="500", size="2", color="#475569"),
+                            on_click=FacilitatorState.open_restart_confirm_modal,
+                            variant="outline",
+                            border="1px solid #CBD5E1",
+                            background="white",
+                            border_radius="8px",
+                            padding="0.5em 1.75em",
+                            cursor="pointer",
+                            _hover={"background": "#F8FAFC", "border_color": "#94A3B8"},
+                        ),
+                        spacing="3",
+                        justify="center",
+                        align_items="center",
+                        width="100%",
+                        padding_top="0.25em",
+                    ),
                     spacing="4",
                     width="100%",
                     padding="1.8em",
                 ),
+                # Restart Confirmation Dialog Overlay (if open)
+                rx.cond(
+                    FacilitatorState.show_restart_confirm_modal,
+                    rx.box(
+                        rx.box(
+                            rx.vstack(
+                                rx.text(
+                                    "Restart Evaluation?",
+                                    font_family=FONT_DISPLAY,
+                                    size="3",
+                                    font_weight="700",
+                                    color="#1E293B",
+                                ),
+                                rx.text(
+                                    "Are you sure you want to restart the evaluation? This will restart the evaluation process.",
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    color="#64748B",
+                                ),
+                                rx.hstack(
+                                    rx.button(
+                                        "Cancel",
+                                        on_click=FacilitatorState.close_restart_confirm_modal,
+                                        variant="outline",
+                                        border="1px solid #CBD5E1",
+                                        color="#64748B",
+                                        font_family=FONT_BODY,
+                                        size="2",
+                                        border_radius="6px",
+                                        cursor="pointer",
+                                    ),
+                                    rx.button(
+                                        "Restart",
+                                        on_click=FacilitatorState.restart_ai_evaluation,
+                                        background="#6C3FF4",
+                                        color="white",
+                                        font_family=FONT_BODY,
+                                        size="2",
+                                        border_radius="6px",
+                                        cursor="pointer",
+                                        _hover={"background": "#5B32DB"},
+                                    ),
+                                    spacing="2",
+                                    justify="end",
+                                    width="100%",
+                                    padding_top="0.8em",
+                                ),
+                                spacing="2",
+                                width="100%",
+                            ),
+                            background="white",
+                            border_radius="12px",
+                            padding="1.5em",
+                            box_shadow="0 10px 25px rgba(0,0,0,0.2)",
+                            max_width="380px",
+                            width="90%",
+                        ),
+                        position="absolute",
+                        top="0",
+                        left="0",
+                        width="100%",
+                        height="100%",
+                        background="rgba(15,23,42,0.45)",
+                        border_radius="16px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        z_index="10",
+                        backdrop_filter="blur(1px)",
+                    ),
+                    rx.fragment(),
+                ),
+                position="relative",
                 background="white",
                 border_radius="16px",
                 box_shadow="0 24px 64px rgba(0,0,0,0.22)",
@@ -3652,7 +3804,6 @@ def results_performance_analysis_card() -> rx.Component:
 
             # Dimension Tab Pills (no Test-wise; moved to shared selector above)
             rx.hstack(
-                results_dimension_tab_pill("overall", "Overall"),
                 results_dimension_tab_pill("co", "CO"),
                 results_dimension_tab_pill("lo", "LO"),
                 results_dimension_tab_pill("knowledge_type", "Knowledge Type"),
@@ -3679,7 +3830,7 @@ def results_performance_analysis_card() -> rx.Component:
                         letter_spacing="0.02em",
                         padding_bottom="1.2em",
                     ),
-                    results_vertical_bar_chart(),
+                    results_horizontal_bar_chart(),
                     results_dimension_info_banner(),
                     spacing="0",
                     width="100%",
@@ -5319,9 +5470,67 @@ def reports_tab() -> rx.Component:
             spacing="3",
             width="100%",
         ),
+
+        # ── Close Assessment Action at the end of Reports Page ─────────────
+        close_assessment_section(),
+
         spacing="4",
         width="100%",
         align_items="stretch",
+    )
+
+
+def close_assessment_section() -> rx.Component:
+    """Action banner at the end of Reports page with Close Assessment button."""
+    return rx.box(
+        rx.hstack(
+            rx.vstack(
+                rx.hstack(
+                    rx.icon("lock", size=18, color="#DC2626"),
+                    rx.text(
+                        "Close Assessment",
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.text(
+                    "Finalize and conclude this assessment. Once confirmed, you will be prompted to submit the facilitator feedback form.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            rx.spacer(),
+            rx.button(
+                rx.icon("check-circle", size=15),
+                "Close Assessment",
+                on_click=FacilitatorState.open_close_assessment_dialog,
+                size="3",
+                background="#DC2626",
+                color="white",
+                font_family=FONT_BODY,
+                weight="medium",
+                border_radius="8px",
+                _hover={"background": "#B91C1C"},
+                cursor="pointer",
+                box_shadow="0 2px 6px rgba(220, 38, 38, 0.2)",
+                padding_x="1.5em",
+            ),
+            width="100%",
+            align_items="center",
+        ),
+        padding="1.2em 1.6em",
+        border="1px solid #FEE2E2",
+        background="#FEF2F2",
+        border_radius="12px",
+        width="100%",
+        margin_top="1em",
     )
 
 
@@ -8838,9 +9047,287 @@ def report_detail_tab() -> rx.Component:
             align_items="start",
         ),
 
-        spacing="0",
+        # ── Close Assessment Action at the end of Report Detail page ──────
+        close_assessment_section(),
+
+        spacing="4",
         width="100%",
         align_items="stretch",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Close Assessment Confirmation Dialog & Facilitator Feedback Form Modal
+# ──────────────────────────────────────────────────────────────────────────────
+
+def close_assessment_confirm_dialog() -> rx.Component:
+    """Confirmation dialog when clicking Close Assessment."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("alert-triangle", size=22, color="#DC2626"),
+                        background="#FEE2E2",
+                        padding="0.55em",
+                        border_radius="10px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Close Assessment",
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            FacilitatorState.selected_assessment_name,
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_close_assessment_dialog,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+                rx.box(
+                    rx.text(
+                        "Are you sure you want to close this assessment?",
+                        font_family=FONT_BODY,
+                        size="3",
+                        weight="medium",
+                        color="#1E293B",
+                    ),
+                    padding_y="0.8em",
+                    width="100%",
+                ),
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color=COLORS["ink"],
+                        border="1px solid #CBD5E1",
+                        background="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": "#F8FAFC"},
+                        on_click=FacilitatorState.close_close_assessment_dialog,
+                    ),
+                    rx.button(
+                        "Close Assessment",
+                        background="#DC2626",
+                        color="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": "#B91C1C"},
+                        on_click=FacilitatorState.confirm_close_assessment,
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                ),
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "460px", "width": "90vw"},
+            padding="1.6em",
+            border_radius="14px",
+        ),
+        open=FacilitatorState.show_close_assessment_confirm_dialog,
+        on_open_change=FacilitatorState.set_show_close_assessment_confirm_dialog,
+    )
+
+
+def _facilitator_feedback_question_item(item: dict) -> rx.Component:
+    """Render a single question with answer textarea for the Facilitator."""
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.text(
+                    item["text"],
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.cond(
+                    item["required"],
+                    rx.badge("Required", color_scheme="red", variant="soft", size="1", border_radius="10px"),
+                    rx.badge("Optional", color_scheme="gray", variant="soft", size="1", border_radius="10px"),
+                ),
+                spacing="2",
+                align_items="center",
+                width="100%",
+            ),
+            rx.text_area(
+                placeholder="Enter your response here...",
+                on_change=lambda v: FacilitatorState.set_close_assessment_feedback_answer(item["id"], v),
+                size="2",
+                variant="surface",
+                font_family=FONT_BODY,
+                min_height="80px",
+                width="100%",
+                border_radius="8px",
+                border=f"1px solid {COLORS['line']}",
+                _placeholder={"color": COLORS["placeholder"]},
+            ),
+            spacing="2",
+            align_items="start",
+            width="100%",
+        ),
+        padding="1em",
+        border=f"1px solid {COLORS['line']}",
+        border_radius="10px",
+        background="#FAFAFA",
+        width="100%",
+        margin_bottom="0.8em",
+    )
+
+
+def facilitator_feedback_form_modal() -> rx.Component:
+    """Modal displaying Admin-created Facilitator Feedback Form."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Modal Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("message-square", size=22, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"],
+                        padding="0.55em",
+                        border_radius="10px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            FacilitatorState.close_assessment_feedback_title,
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Complete this feedback form to conclude the assessment closure.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_facilitator_feedback_modal,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+
+                # Questions List Container
+                rx.box(
+                    rx.cond(
+                        FacilitatorState.close_assessment_feedback_questions.length() == 0,
+                        rx.box(
+                            rx.text("No feedback questions defined for this assessment.", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                            padding="2em",
+                            text_align="center",
+                        ),
+                        rx.vstack(
+                            rx.foreach(
+                                FacilitatorState.close_assessment_feedback_questions,
+                                _facilitator_feedback_question_item,
+                            ),
+                            spacing="0",
+                            width="100%",
+                        ),
+                    ),
+                    width="100%",
+                    max_height="420px",
+                    overflow_y="auto",
+                    padding_right="0.4em",
+                    margin_y="0.8em",
+                ),
+
+                # Modal Footer
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color=COLORS["slate"],
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        on_click=FacilitatorState.close_facilitator_feedback_modal,
+                    ),
+                    rx.button(
+                        "Submit Feedback",
+                        background=COLORS["primary"],
+                        color="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.5em",
+                        cursor="pointer",
+                        _hover={"background": COLORS["primary_hover"]},
+                        on_click=FacilitatorState.submit_facilitator_feedback_modal,
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                    border_top=f"1px solid {COLORS['line']}",
+                ),
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "620px", "width": "90vw"},
+            padding="1.8em",
+            border_radius="16px",
+        ),
+        open=FacilitatorState.show_facilitator_feedback_modal,
+        on_open_change=FacilitatorState.set_show_facilitator_feedback_modal,
     )
 
 
@@ -8853,8 +9340,8 @@ def assessment_workspace_page() -> rx.Component:
             ("evaluation", evaluation_tab()),
             ("weightage", weightage_tab()),
             ("results", results_tab()),
-            ("reports", results_tab()),
-            ("report_detail", results_tab()),
+            ("reports", reports_tab()),
+            ("report_detail", report_detail_tab()),
             # Fallback
             tests_tab(),
         ),
@@ -8862,6 +9349,8 @@ def assessment_workspace_page() -> rx.Component:
         qp_upload_dialog(),
         qp_validation_result_dialog(),
         add_new_test_dialog(),
+        close_assessment_confirm_dialog(),
+        facilitator_feedback_form_modal(),
         spacing="0",
         width="100%",
         align_items="stretch",

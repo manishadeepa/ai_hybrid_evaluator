@@ -800,6 +800,164 @@ class AdminState(rx.State):
         self.set_show_delete_assessment(False)
 
     # =========================================================
+    # FEEDBACK FORM BUILDER (UI-only)
+    # =========================================================
+    show_feedback_type_dialog: bool = False
+    feedback_assessment_index: int = -1
+    feedback_assessment_name: str = ""
+
+    # Facilitator form builder
+    show_facilitator_feedback_builder: bool = False
+    facilitator_form_title: str = ""
+    facilitator_form_questions: list[dict] = []
+    _facilitator_q_counter: int = 0
+    facilitator_saved_forms: dict[str, dict] = {}
+
+    # Candidate form builder
+    show_candidate_feedback_builder: bool = False
+    candidate_form_title: str = ""
+    candidate_form_questions: list[dict] = []
+    _candidate_q_counter: int = 0
+
+    def open_feedback_dialog(self, index: int):
+        self.feedback_assessment_index = index
+        self.feedback_assessment_name = self.assessments[index]["name"]
+        self.show_feedback_type_dialog = True
+
+    def set_show_feedback_type_dialog(self, value: bool):
+        self.show_feedback_type_dialog = value
+        if not value:
+            self.feedback_assessment_index = -1
+            self.feedback_assessment_name = ""
+
+    def close_feedback_type_dialog(self):
+        self.show_feedback_type_dialog = False
+
+    # ── Facilitator form ──────────────────────────────────────
+    def open_facilitator_feedback_builder(self):
+        self.show_feedback_type_dialog = False
+        saved = self.facilitator_saved_forms.get(self.feedback_assessment_name)
+        if saved:
+            self.facilitator_form_title = saved.get("title", f"Facilitator Feedback Form - {self.feedback_assessment_name}")
+            self.facilitator_form_questions = [dict(q) for q in saved.get("questions", [])]
+            self._facilitator_q_counter = len(self.facilitator_form_questions)
+        else:
+            self.facilitator_form_title = f"Facilitator Feedback Form - {self.feedback_assessment_name}"
+            self.facilitator_form_questions = []
+            self._facilitator_q_counter = 0
+        self.show_facilitator_feedback_builder = True
+
+    def set_show_facilitator_feedback_builder(self, value: bool):
+        self.show_facilitator_feedback_builder = value
+
+    def close_facilitator_feedback_builder(self):
+        self.show_facilitator_feedback_builder = False
+        self.facilitator_form_title = ""
+        self.facilitator_form_questions = []
+        self._facilitator_q_counter = 0
+
+    def set_facilitator_form_title(self, value: str):
+        self.facilitator_form_title = value
+
+    def add_facilitator_question(self):
+        self._facilitator_q_counter += 1
+        new_q = {
+            "id": f"fq_{self._facilitator_q_counter}",
+            "text": "",
+            "required": True,
+        }
+        self.facilitator_form_questions = self.facilitator_form_questions + [new_q]
+
+    def set_facilitator_question_text(self, qid: str, value: str):
+        qs = [dict(q) for q in self.facilitator_form_questions]
+        for q in qs:
+            if q["id"] == qid:
+                q["text"] = value
+                break
+        self.facilitator_form_questions = qs
+
+    def toggle_facilitator_question_required(self, qid: str):
+        qs = [dict(q) for q in self.facilitator_form_questions]
+        for q in qs:
+            if q["id"] == qid:
+                q["required"] = not q["required"]
+                break
+        self.facilitator_form_questions = qs
+
+    def delete_facilitator_question(self, qid: str):
+        self.facilitator_form_questions = [
+            q for q in self.facilitator_form_questions if q["id"] != qid
+        ]
+
+    def submit_facilitator_feedback_form(self):
+        """Save facilitator feedback questions per assessment and close builder."""
+        asmn = self.feedback_assessment_name
+        title = self.facilitator_form_title or f"Facilitator Feedback Form - {asmn}"
+        qs = [dict(q) for q in self.facilitator_form_questions]
+        saved = dict(self.facilitator_saved_forms)
+        saved[asmn] = {
+            "title": title,
+            "questions": qs,
+        }
+        self.facilitator_saved_forms = saved
+        self.show_facilitator_feedback_builder = False
+        return rx.toast.success("Facilitator Feedback Form created successfully.")
+
+    # ── Candidate form ────────────────────────────────────────
+    def open_candidate_feedback_builder(self):
+        self.show_feedback_type_dialog = False
+        self.candidate_form_title = f"Candidate Feedback Form - {self.feedback_assessment_name}"
+        self.candidate_form_questions = []
+        self._candidate_q_counter = 0
+        self.show_candidate_feedback_builder = True
+
+    def set_show_candidate_feedback_builder(self, value: bool):
+        self.show_candidate_feedback_builder = value
+
+    def close_candidate_feedback_builder(self):
+        self.show_candidate_feedback_builder = False
+        self.candidate_form_title = ""
+        self.candidate_form_questions = []
+        self._candidate_q_counter = 0
+
+    def set_candidate_form_title(self, value: str):
+        self.candidate_form_title = value
+
+    def add_candidate_question(self):
+        self._candidate_q_counter += 1
+        new_q = {
+            "id": f"cq_{self._candidate_q_counter}",
+            "text": "",
+            "required": True,
+        }
+        self.candidate_form_questions = self.candidate_form_questions + [new_q]
+
+    def set_candidate_question_text(self, qid: str, value: str):
+        qs = [dict(q) for q in self.candidate_form_questions]
+        for q in qs:
+            if q["id"] == qid:
+                q["text"] = value
+                break
+        self.candidate_form_questions = qs
+
+    def toggle_candidate_question_required(self, qid: str):
+        qs = [dict(q) for q in self.candidate_form_questions]
+        for q in qs:
+            if q["id"] == qid:
+                q["required"] = not q["required"]
+                break
+        self.candidate_form_questions = qs
+
+    def delete_candidate_question(self, qid: str):
+        self.candidate_form_questions = [
+            q for q in self.candidate_form_questions if q["id"] != qid
+        ]
+
+    def submit_candidate_feedback_form(self):
+        """UI-only: just close the builder."""
+        self.close_candidate_feedback_builder()
+
+    # =========================================================
     # ASSESSMENT TESTS (Type of Test Dialog)
     # =========================================================
     show_assessment_tests_dialog: bool = False

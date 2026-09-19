@@ -2451,6 +2451,7 @@ class FacilitatorState(rx.State):
 
     # ── AI Evaluation Progress Modal State ──────────────────────────────
     show_eval_progress_modal: bool = False
+    show_restart_confirm_modal: bool = False
     eval_cancelled: bool = False
     eval_progress_questions: list[dict] = []  # [{label, status}] status: pending|evaluating|completed
     eval_progress_current: int = 0  # number completed so far
@@ -2606,26 +2607,30 @@ class FacilitatorState(rx.State):
             return 0
 
 
-    def close_eval_progress_modal(self):
-        """Immediately cancel/stop the ongoing AI evaluation and discard all partial results."""
-        self.eval_cancelled = True
-        self.is_ai_evaluating = False
+    def minimize_eval_progress_modal(self):
+        """Hide the modal while evaluation continues in the background."""
         self.show_eval_progress_modal = False
-        self.eval_progress_questions = []
-        self.eval_progress_current = 0
 
-        # Discard all partial/current evaluation results for this candidate & test
-        self.real_ai_score_display = "—"
-        self.real_ai_max_score_display = "—"
-        self.real_ai_percentage_display = "—"
-        self.real_ai_evaluation_date = "Not evaluated"
-        self.real_ai_eval_questions = []
+    def stop_ai_evaluation(self):
+        """UI-ready handler to pause evaluation and save completed results."""
+        return rx.toast.info("Evaluation paused. Completed results saved.")
 
-        key = f"{self.selected_evaluation_candidate}:{self.selected_test_name}"
-        if key in self.real_ai_results_per_candidate:
-            del self.real_ai_results_per_candidate[key]
+    def resume_ai_evaluation(self):
+        """UI-ready handler to continue evaluation from the next pending question."""
+        return rx.toast.info("Evaluation resumed from the next pending question.")
 
-        return rx.toast.info("AI evaluation cancelled. All partial results discarded.")
+    def open_restart_confirm_modal(self):
+        """Show confirmation dialog before restarting evaluation."""
+        self.show_restart_confirm_modal = True
+
+    def close_restart_confirm_modal(self):
+        """Dismiss the restart confirmation dialog."""
+        self.show_restart_confirm_modal = False
+
+    def restart_ai_evaluation(self):
+        """UI-ready handler to restart evaluation after confirmation."""
+        self.show_restart_confirm_modal = False
+        return rx.toast.info("Evaluation restarted.")
 
     async def run_ai_evaluation(self):
         """Run the real AI Evaluation Engine using Azure OpenAI.
@@ -2930,7 +2935,7 @@ class FacilitatorState(rx.State):
     # ── Results Tab Analytics State ────────────────────────────────────
     results_selected_candidate: str = "All Candidates"
     results_view_mode: str = "individual"  # "individual" or "all"
-    results_active_dimension_tab: str = "overall"  # "overall", "test_wise", "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
+    results_active_dimension_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
     results_selected_test: str = ""  # empty = first test / all tests; otherwise specific test name
     results_selected_analysis_test: str = ""  # specific test for Test-wise / Question-wise analysis
     results_test_wise_sub_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
@@ -2941,6 +2946,12 @@ class FacilitatorState(rx.State):
     download_pdf_report_type: str = "individual"  # "individual" or "all"
     download_pdf_candidate: str = ""
     download_pdf_selected_tests: list[str] = []
+    # ── Close Assessment & Facilitator Feedback Form State ────────────
+    show_close_assessment_confirm_dialog: bool = False
+    show_facilitator_feedback_modal: bool = False
+    close_assessment_feedback_title: str = ""
+    close_assessment_feedback_questions: list[dict] = []
+    close_assessment_feedback_answers: dict[str, str] = {}
     # Sync cache of the current assessment's candidates — populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
 
@@ -3017,6 +3028,65 @@ class FacilitatorState(rx.State):
     def download_pdf_modal_submit(self):
         self.show_download_pdf_modal = False
         return rx.toast.info("Download PDF submitted (UI action).")
+
+    def open_close_assessment_dialog(self):
+        self.show_close_assessment_confirm_dialog = True
+
+    def close_close_assessment_dialog(self):
+        self.show_close_assessment_confirm_dialog = False
+
+    def set_show_close_assessment_confirm_dialog(self, val: bool):
+        self.show_close_assessment_confirm_dialog = val
+
+    async def confirm_close_assessment(self):
+        self.show_close_assessment_confirm_dialog = False
+        admin_state = await self.get_state(AdminState)
+        asmn = self.selected_assessment_name
+
+        saved = admin_state.facilitator_saved_forms.get(asmn)
+        if saved and saved.get("questions"):
+            self.close_assessment_feedback_title = saved.get("title", f"Facilitator Feedback Form - {asmn}")
+            self.close_assessment_feedback_questions = [dict(q) for q in saved.get("questions", [])]
+        elif admin_state.facilitator_form_questions:
+            self.close_assessment_feedback_title = admin_state.facilitator_form_title or f"Facilitator Feedback Form - {asmn}"
+            self.close_assessment_feedback_questions = [dict(q) for q in admin_state.facilitator_form_questions]
+        else:
+            self.close_assessment_feedback_title = f"Facilitator Feedback Form - {asmn}"
+            self.close_assessment_feedback_questions = [
+                {
+                    "id": "fq_1",
+                    "text": "How effectively did this assessment evaluate the intended competencies?",
+                    "required": True,
+                },
+                {
+                    "id": "fq_2",
+                    "text": "Were there any technical issues, ambiguities, or evaluation discrepancies encountered?",
+                    "required": True,
+                },
+                {
+                    "id": "fq_3",
+                    "text": "Provide any recommendations or feedback on overall candidate performance and assessment flow.",
+                    "required": False,
+                },
+            ]
+
+        self.close_assessment_feedback_answers = {q["id"]: "" for q in self.close_assessment_feedback_questions}
+        self.show_facilitator_feedback_modal = True
+
+    def close_facilitator_feedback_modal(self):
+        self.show_facilitator_feedback_modal = False
+
+    def set_show_facilitator_feedback_modal(self, val: bool):
+        self.show_facilitator_feedback_modal = val
+
+    def set_close_assessment_feedback_answer(self, qid: str, value: str):
+        answers = dict(self.close_assessment_feedback_answers)
+        answers[qid] = value
+        self.close_assessment_feedback_answers = answers
+
+    def submit_facilitator_feedback_modal(self):
+        self.show_facilitator_feedback_modal = False
+        return rx.toast.success("Feedback submitted successfully. Assessment closed.")
 
     @rx.var(cache=True)
     async def download_pdf_test_options(self) -> list[str]:

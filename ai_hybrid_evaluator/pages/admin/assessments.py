@@ -75,6 +75,74 @@ def facilitator_response_badge(approval_status: str) -> rx.Component:
     )
 
 
+def assessment_status_badge(status: str) -> rx.Component:
+    """Shows the assessment status badge: Pending, In Progress, or Completed."""
+    return rx.match(
+        status,
+        ("In Progress", rx.hstack(
+            rx.icon("loader-2", size=13, color="#175CD3"),
+            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
+            spacing="1",
+            align_items="center",
+            background="#EFF8FF",
+            border="1px solid #B2DDFF",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        )),
+        ("in_progress", rx.hstack(
+            rx.icon("loader-2", size=13, color="#175CD3"),
+            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
+            spacing="1",
+            align_items="center",
+            background="#EFF8FF",
+            border="1px solid #B2DDFF",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        )),
+        ("Active", rx.hstack(
+            rx.icon("loader-2", size=13, color="#175CD3"),
+            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
+            spacing="1",
+            align_items="center",
+            background="#EFF8FF",
+            border="1px solid #B2DDFF",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        )),
+        ("Completed", rx.hstack(
+            rx.icon("circle-check", size=13, color="#027A48"),
+            rx.text("Completed", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
+            spacing="1",
+            align_items="center",
+            background="#ECFDF3",
+            border="1px solid #A6F4C5",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        )),
+        ("completed", rx.hstack(
+            rx.icon("circle-check", size=13, color="#027A48"),
+            rx.text("Completed", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
+            spacing="1",
+            align_items="center",
+            background="#ECFDF3",
+            border="1px solid #A6F4C5",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        )),
+        # Default — Pending
+        rx.hstack(
+            rx.icon("clock", size=13, color="#B45309"),
+            rx.text("Pending", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
+            spacing="1",
+            align_items="center",
+            background="#FFFBEB",
+            border="1px solid #FDE68A",
+            padding="0.3em 0.7em",
+            border_radius="999px",
+        ),
+    )
+
+
 def assessment_row(a: dict, idx: int) -> rx.Component:
     return rx.table.row(
         # 1. Assessment
@@ -135,6 +203,17 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
                     font_family=FONT_BODY,
                     _hover={"background": "#FECDCA"},
                 ),
+                rx.button(
+                    rx.icon("message-square", size=14),
+                    "Feedback",
+                    on_click=AdminState.open_feedback_dialog(idx),
+                    size="1",
+                    color=COLORS["primary"],
+                    background=COLORS["primary_soft"],
+                    border=f"1px solid {COLORS['primary_light']}",
+                    font_family=FONT_BODY,
+                    _hover={"background": COLORS["primary_light"]},
+                ),
                 spacing="2",
                 justify="center",
                 width="100%",
@@ -145,6 +224,10 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
         # 7. Facilitator Response (Approved / Awaiting / Declined)
         rx.table.cell(
             facilitator_response_badge(a.get("approval_status", "pending")),
+        ),
+        # 8. Status (Pending / In Progress / Completed)
+        rx.table.cell(
+            assessment_status_badge(a.get("status", "Pending")),
         ),
     )
 
@@ -1083,6 +1166,555 @@ def edit_assessment_dialog() -> rx.Component:
 
 
 # ─────────────────────────────────────────────────────────────
+# Feedback Type Dialog  (Step 1 — choose form type)
+# ─────────────────────────────────────────────────────────────
+
+def feedback_type_dialog() -> rx.Component:
+    """Choose between Facilitator or Candidate feedback form."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("message-square", size=20, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"],
+                        padding="0.5em",
+                        border_radius="8px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Create Feedback Form",
+                            font_family=FONT_BODY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Choose the type of feedback form you want to create for the assessment",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        rx.text(
+                            "\"" + AdminState.feedback_assessment_name + "\"",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=AdminState.close_feedback_type_dialog,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="start",
+                    spacing="3",
+                    padding_bottom="1.2em",
+                ),
+
+                # Two option cards
+                rx.grid(
+                    # Facilitator card
+                    rx.box(
+                        rx.vstack(
+                            rx.box(
+                                rx.icon("users", size=28, color=COLORS["primary"]),
+                                padding="0.6em",
+                                background=COLORS["primary_soft"],
+                                border_radius="10px",
+                                display="flex",
+                                align_items="center",
+                                justify_content="center",
+                            ),
+                            rx.text(
+                                "Create Facilitator Feedback Form",
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color=COLORS["ink"],
+                                text_align="center",
+                            ),
+                            rx.icon("arrow-right", size=18, color=COLORS["primary"]),
+                            spacing="3",
+                            align_items="center",
+                            padding="1.4em 1em",
+                        ),
+                        border=f"1.5px solid {COLORS['primary_light']}",
+                        border_radius="12px",
+                        cursor="pointer",
+                        background=COLORS["surface"],
+                        _hover={"background": COLORS["primary_soft"], "border": f"1.5px solid {COLORS['primary']}"},
+                        transition="all 0.15s ease",
+                        on_click=AdminState.open_facilitator_feedback_builder,
+                        width="100%",
+                    ),
+                    # Candidate card
+                    rx.box(
+                        rx.vstack(
+                            rx.box(
+                                rx.icon("user", size=28, color=COLORS["primary"]),
+                                padding="0.6em",
+                                background=COLORS["primary_soft"],
+                                border_radius="10px",
+                                display="flex",
+                                align_items="center",
+                                justify_content="center",
+                            ),
+                            rx.text(
+                                "Create Candidate Feedback Form",
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color=COLORS["ink"],
+                                text_align="center",
+                            ),
+                            rx.icon("arrow-right", size=18, color=COLORS["primary"]),
+                            spacing="3",
+                            align_items="center",
+                            padding="1.4em 1em",
+                        ),
+                        border=f"1.5px solid {COLORS['primary_light']}",
+                        border_radius="12px",
+                        cursor="pointer",
+                        background=COLORS["surface"],
+                        _hover={"background": COLORS["primary_soft"], "border": f"1.5px solid {COLORS['primary']}"},
+                        transition="all 0.15s ease",
+                        on_click=AdminState.open_candidate_feedback_builder,
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="3",
+                    width="100%",
+                ),
+
+                # Cancel row
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="outline",
+                            color=COLORS["slate"],
+                            font_family=FONT_BODY,
+                            on_click=AdminState.close_feedback_type_dialog,
+                        ),
+                    ),
+                    width="100%",
+                    padding_top="0.8em",
+                ),
+
+                spacing="0",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "520px"},
+        ),
+        open=AdminState.show_feedback_type_dialog,
+        on_open_change=AdminState.set_show_feedback_type_dialog,
+    )
+
+
+def _facilitator_question_row(item: dict) -> rx.Component:
+    return rx.hstack(
+        rx.icon("grip-vertical", size=14, color=COLORS["placeholder"], flex_shrink="0"),
+        rx.input(
+            placeholder="Enter your question here...",
+            value=item["text"],
+            on_change=AdminState.set_facilitator_question_text(item["id"], rx.Var.create("")),
+            size="2",
+            variant="surface",
+            font_family=FONT_BODY,
+            flex="1",
+            min_width="0",
+            _placeholder={"color": COLORS["placeholder"]},
+        ),
+        rx.hstack(
+            rx.text("Required", font_family=FONT_BODY, size="1", color=COLORS["slate"], white_space="nowrap"),
+            rx.switch(
+                checked=item["required"],
+                on_change=AdminState.toggle_facilitator_question_required(item["id"]),
+                color_scheme="indigo",
+                size="2",
+            ),
+            spacing="2",
+            align_items="center",
+            flex_shrink="0",
+        ),
+        rx.icon_button(
+            rx.icon("trash-2", size=14),
+            size="1",
+            variant="ghost",
+            color_scheme="red",
+            cursor="pointer",
+            flex_shrink="0",
+            on_click=AdminState.delete_facilitator_question(item["id"]),
+        ),
+        spacing="2",
+        align_items="center",
+        border_bottom=f"1px solid {COLORS['line']}",
+        padding_y="0.75em",
+        width="100%",
+    )
+
+
+def _candidate_question_row(item: dict) -> rx.Component:
+    return rx.hstack(
+        rx.icon("grip-vertical", size=14, color=COLORS["placeholder"], flex_shrink="0"),
+        rx.input(
+            placeholder="Enter your question here...",
+            value=item["text"],
+            on_change=AdminState.set_candidate_question_text(item["id"], rx.Var.create("")),
+            size="2",
+            variant="surface",
+            font_family=FONT_BODY,
+            flex="1",
+            min_width="0",
+            _placeholder={"color": COLORS["placeholder"]},
+        ),
+        rx.hstack(
+            rx.text("Required", font_family=FONT_BODY, size="1", color=COLORS["slate"], white_space="nowrap"),
+            rx.switch(
+                checked=item["required"],
+                on_change=AdminState.toggle_candidate_question_required(item["id"]),
+                color_scheme="indigo",
+                size="2",
+            ),
+            spacing="2",
+            align_items="center",
+            flex_shrink="0",
+        ),
+        rx.icon_button(
+            rx.icon("trash-2", size=14),
+            size="1",
+            variant="ghost",
+            color_scheme="red",
+            cursor="pointer",
+            flex_shrink="0",
+            on_click=AdminState.delete_candidate_question(item["id"]),
+        ),
+        spacing="2",
+        align_items="center",
+        border_bottom=f"1px solid {COLORS['line']}",
+        padding_y="0.75em",
+        width="100%",
+    )
+
+
+def facilitator_feedback_builder_dialog() -> rx.Component:
+    """Form builder modal for creating a Facilitator Feedback Form."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("users", size=20, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"],
+                        padding="0.5em",
+                        border_radius="8px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.text(
+                        "Create Facilitator Feedback Form",
+                        font_family=FONT_BODY,
+                        size="4",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.spacer(),
+                    rx.icon_button(
+                        rx.icon("x", size=16),
+                        size="1",
+                        variant="ghost",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=AdminState.close_facilitator_feedback_builder,
+                    ),
+                    width="100%",
+                    align_items="center",
+                    spacing="3",
+                    padding_bottom="1.2em",
+                ),
+
+                # Form Title
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Form Title", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", color=COLORS["danger"], size="2"),
+                        spacing="1",
+                    ),
+                    rx.input(
+                        value=AdminState.facilitator_form_title,
+                        on_change=AdminState.set_facilitator_form_title,
+                        placeholder="Enter form title...",
+                        size="2",
+                        variant="surface",
+                        font_family=FONT_BODY,
+                        width="100%",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # Questions section header
+                rx.hstack(
+                    rx.text("Questions", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
+                    rx.spacer(),
+                    rx.button(
+                        rx.icon("plus", size=14),
+                        "Add Question",
+                        size="1",
+                        variant="ghost",
+                        color=COLORS["primary"],
+                        font_family=FONT_BODY,
+                        cursor="pointer",
+                        on_click=AdminState.add_facilitator_question,
+                        _hover={"background": COLORS["primary_soft"]},
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_top="0.6em",
+                ),
+
+                # Question list
+                rx.box(
+                    rx.cond(
+                        AdminState.facilitator_form_questions.length() == 0,
+                        rx.box(
+                            rx.text(
+                                "No questions yet. Click \"+ Add Question\" to get started.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["placeholder"],
+                                text_align="center",
+                            ),
+                            padding="2em",
+                            width="100%",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.foreach(
+                                AdminState.facilitator_form_questions,
+                                _facilitator_question_row,
+                            ),
+                            spacing="0",
+                            width="100%",
+                        ),
+                    ),
+                    width="100%",
+                    max_height="340px",
+                    overflow_y="auto",
+                    overflow_x="hidden",
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="8px",
+                    padding="0 0.8em",
+                    background=COLORS["surface"],
+                ),
+
+                # Action buttons
+                rx.hstack(
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color=COLORS["slate"],
+                        font_family=FONT_BODY,
+                        on_click=AdminState.close_facilitator_feedback_builder,
+                    ),
+                    rx.button(
+                        "Create Form",
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        _hover={"background": COLORS["primary_hover"]},
+                        on_click=AdminState.submit_facilitator_feedback_form,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    padding_top="1em",
+                    width="100%",
+                ),
+
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "580px"},
+        ),
+        open=AdminState.show_facilitator_feedback_builder,
+        on_open_change=AdminState.set_show_facilitator_feedback_builder,
+    )
+
+
+def candidate_feedback_builder_dialog() -> rx.Component:
+    """Form builder modal for creating a Candidate Feedback Form."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("user", size=20, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"],
+                        padding="0.5em",
+                        border_radius="8px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.text(
+                        "Create Candidate Feedback Form",
+                        font_family=FONT_BODY,
+                        size="4",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.spacer(),
+                    rx.icon_button(
+                        rx.icon("x", size=16),
+                        size="1",
+                        variant="ghost",
+                        color_scheme="gray",
+                        cursor="pointer",
+                        on_click=AdminState.close_candidate_feedback_builder,
+                    ),
+                    width="100%",
+                    align_items="center",
+                    spacing="3",
+                    padding_bottom="1.2em",
+                ),
+
+                # Form Title
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Form Title", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", color=COLORS["danger"], size="2"),
+                        spacing="1",
+                    ),
+                    rx.input(
+                        value=AdminState.candidate_form_title,
+                        on_change=AdminState.set_candidate_form_title,
+                        placeholder="Enter form title...",
+                        size="2",
+                        variant="surface",
+                        font_family=FONT_BODY,
+                        width="100%",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # Questions section header
+                rx.hstack(
+                    rx.text("Questions", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
+                    rx.spacer(),
+                    rx.button(
+                        rx.icon("plus", size=14),
+                        "Add Question",
+                        size="1",
+                        variant="ghost",
+                        color=COLORS["primary"],
+                        font_family=FONT_BODY,
+                        cursor="pointer",
+                        on_click=AdminState.add_candidate_question,
+                        _hover={"background": COLORS["primary_soft"]},
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_top="0.6em",
+                ),
+
+                # Question list
+                rx.box(
+                    rx.cond(
+                        AdminState.candidate_form_questions.length() == 0,
+                        rx.box(
+                            rx.text(
+                                "No questions yet. Click \"+ Add Question\" to get started.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["placeholder"],
+                                text_align="center",
+                            ),
+                            padding="2em",
+                            width="100%",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.foreach(
+                                AdminState.candidate_form_questions,
+                                _candidate_question_row,
+                            ),
+                            spacing="0",
+                            width="100%",
+                        ),
+                    ),
+                    width="100%",
+                    max_height="340px",
+                    overflow_y="auto",
+                    overflow_x="hidden",
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="8px",
+                    padding="0 0.8em",
+                    background=COLORS["surface"],
+                ),
+
+                # Action buttons
+                rx.hstack(
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color=COLORS["slate"],
+                        font_family=FONT_BODY,
+                        on_click=AdminState.close_candidate_feedback_builder,
+                    ),
+                    rx.button(
+                        "Create Form",
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        _hover={"background": COLORS["primary_hover"]},
+                        on_click=AdminState.submit_candidate_feedback_form,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    padding_top="1em",
+                    width="100%",
+                ),
+
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "580px"},
+        ),
+        open=AdminState.show_candidate_feedback_builder,
+        on_open_change=AdminState.set_show_candidate_feedback_builder,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 # Delete Assessment Dialog
 # ─────────────────────────────────────────────────────────────
 
@@ -1137,6 +1769,7 @@ def assessments_page() -> rx.Component:
                         rx.table.column_header_cell("Candidates"),
                         rx.table.column_header_cell("Actions", justify="center", align="center"),
                         rx.table.column_header_cell("Facilitator Response"),
+                        rx.table.column_header_cell("Status"),
                     ),
                 ),
                 rx.table.body(rx.foreach(AdminState.assessments, assessment_row)),
@@ -1151,6 +1784,9 @@ def assessments_page() -> rx.Component:
         ),
         edit_assessment_dialog(),
         delete_assessment_dialog(),
+        feedback_type_dialog(),
+        facilitator_feedback_builder_dialog(),
+        candidate_feedback_builder_dialog(),
         width="100%",
     )
     return admin_shell(
