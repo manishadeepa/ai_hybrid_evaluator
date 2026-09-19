@@ -185,11 +185,28 @@ class FacilitatorState(rx.State):
 
     async def load_persisted_assessment_workspace(self):
         admin_state = await self.get_state(AdminState)
-        admin_state._load_persisted_assessments(self.question_papers)
+        try:
+            admin_state._load_persisted_assessments(self.question_papers)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
         self.question_papers = {
             a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments
         }
         self.selected_evaluation_test = self.selected_test_name
+
+    @rx.var
+    async def assessment_management_progress(self) -> dict:
+        from backend.services.assessment_service import AssessmentService
+        from backend.services.assessment_progress_service import AssessmentProgressService
+        admin_state = await self.get_state(AdminState)
+        record = next((a for a in admin_state.assessments if a["name"] == self.selected_assessment_name), None)
+        if not record or not record.get("assessment_id"):
+            return {}
+        try:
+            return AssessmentProgressService(AssessmentService()).get_progress(
+                record["assessment_id"], self.real_ai_results_per_candidate)
+        except (ValueError, OSError) as exc:
+            return {"error": str(exc)}
 
     async def set_workspace_tab(self, tab: str):
         """Switch the active tab inside the Assessment Workspace."""
@@ -2504,25 +2521,12 @@ class FacilitatorState(rx.State):
         for i, a in enumerate(admin_state.assessments):
             if a["name"] == name:
                 found = True
-                updated = dict(a)
-                dates = dict(updated.get("test_dates", {}))
-                dates[test_name] = formatted_date
-                updated["test_dates"] = dates
-
-                if self.new_test_type == "Summative":
-                    updated["final_test"] = test_name
-                else:
-                    current_tests = list(updated.get("tests", []))
-                    if test_name not in current_tests:
-                        current_tests.append(test_name)
-                    updated["tests"] = current_tests
-
-                if self.new_test_description.strip():
-                    descs = dict(updated.get("test_descriptions", {}))
-                    descs[test_name] = self.new_test_description.strip()
-                    updated["test_descriptions"] = descs
-
-                updated = admin_state._persist_assessment_record(updated)
+                try:
+                    updated = admin_state._add_assessment_test(
+                        dict(a), test_name, formatted_date, self.new_test_description.strip(),
+                        self.new_test_type == "Summative")
+                except (ValueError, OSError) as exc:
+                    return rx.toast.error(str(exc))
                 self.selected_test_name = test_name
                 break
 
@@ -2541,6 +2545,8 @@ class FacilitatorState(rx.State):
         name = self.selected_assessment_name
         for i, a in enumerate(admin_state.assessments):
             if a["name"] == name:
+                if test_name not in list(a.get("tests", [])) + [a.get("final_test", "")]:
+                    return rx.toast.error("Test does not belong to this assessment.")
                 updated = dict(a)
                 current_tests = list(updated.get("tests", []))
                 final_test = updated.get("final_test", "")
@@ -2557,7 +2563,10 @@ class FacilitatorState(rx.State):
                     mapping = dict(updated.get(field, {}))
                     mapping.pop(test_name, None)
                     updated[field] = mapping
-                updated = admin_state._persist_assessment_record(updated)
+                try:
+                    updated = admin_state._persist_assessment_record(updated)
+                except (ValueError, OSError) as exc:
+                    return rx.toast.error(str(exc))
                 self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
 
                 remaining = list(updated.get("tests", []))
@@ -2565,6 +2574,8 @@ class FacilitatorState(rx.State):
                     remaining.append(updated["final_test"])
                 self.selected_test_name = remaining[0] if remaining else ""
                 break
+        else:
+            return rx.toast.error("Assessment does not exist; reload before removing a test.")
         # Reset Overall Report lock — facilitator must re-mark assessment Complete after removing tests
         self._unmark_assessment_complete(name)
         await self.sync_assessment_weightage(name)

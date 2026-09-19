@@ -459,7 +459,10 @@ class AdminState(rx.State):
         }
 
     def load_persisted_assessments(self):
-        self._load_persisted_assessments()
+        try:
+            self._load_persisted_assessments()
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def _load_persisted_assessments(self, legacy_question_papers=None):
         """Restore the shared assessment structures; bootstrap legacy state once."""
@@ -477,9 +480,25 @@ class AdminState(rx.State):
             initial.append(value)
         self._apply_assessment_records(AssessmentService().load_or_bootstrap(initial))
 
-    def _persist_assessment_record(self, record):
+    def _persist_assessment_record(self, record, validate_assignments=False):
         service = AssessmentService()
-        saved = service.save_assessment(record)
+        if validate_assignments:
+            service.facilitator_catalog = lambda: self.facilitators
+            service.candidate_catalog = lambda: self.candidates
+            if record.get("assessment_id"):
+                saved = service.update_assessment(record["assessment_id"], record)
+            else:
+                saved = service.create_assessment(record)
+        else:
+            saved = service.save_assessment(record)
+        self._apply_assessment_records(service.load_assessments())
+        return saved
+
+    def _add_assessment_test(self, record, name, date="", description="", is_final=False):
+        service = AssessmentService()
+        if not record.get("assessment_id"):
+            record = self._persist_assessment_record(record)
+        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final)
         self._apply_assessment_records(service.load_assessments())
         return saved
 
@@ -615,38 +634,41 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def add_assessment(self):
-        if not self.new_assessment_name or len(self.new_assessment_facilitator_ids) == 0:
-            self.assessment_form_error = "Please fill in name and at least one facilitator."
-            return
+        try:
+            if not self.new_assessment_name or len(self.new_assessment_facilitator_ids) == 0:
+                self.assessment_form_error = "Please fill in name and at least one facilitator."
+                return
 
-        selected_facilitators = [
-            f for f in self.facilitators
-            if f["emp_id"] in self.new_assessment_facilitator_ids
-        ]
-        if not selected_facilitators:
-            self.assessment_form_error = "Selected facilitator(s) not found."
-            return
+            selected_facilitators = [
+                f for f in self.facilitators
+                if f["emp_id"] in self.new_assessment_facilitator_ids
+            ]
+            if not selected_facilitators:
+                self.assessment_form_error = "Selected facilitator(s) not found."
+                return
 
-        fac_ids = [f["emp_id"] for f in selected_facilitators]
-        fac_names = [f["name"] for f in selected_facilitators]
+            fac_ids = [f["emp_id"] for f in selected_facilitators]
+            fac_names = [f["name"] for f in selected_facilitators]
 
-        self._persist_assessment_record({
-            "name": self.new_assessment_name,
-            "assessment_date": self.new_assessment_date,
-            # Multi-facilitator
-            "facilitator_ids": fac_ids,
-            "facilitator_names": fac_names,
-            # Legacy aliases
-            "facilitator_id": fac_ids[0],
-            "facilitator_name": fac_names[0],
-            "assigned_candidates": list(self.new_assessment_candidate_ids),
-            "status": self.new_assessment_status,
-            "tests": [],
-            "final_test": "",
-            "approval_status": "pending",
-            "test_dates": {},
-        })
-        self.set_show_add_assessment(False)
+            self._persist_assessment_record({
+                "name": self.new_assessment_name,
+                "assessment_date": self.new_assessment_date,
+                # Multi-facilitator
+                "facilitator_ids": list(self.new_assessment_facilitator_ids),
+                "facilitator_names": fac_names,
+                # Legacy aliases
+                "facilitator_id": fac_ids[0],
+                "facilitator_name": fac_names[0],
+                "assigned_candidates": list(self.new_assessment_candidate_ids),
+                "status": self.new_assessment_status,
+                "tests": [],
+                "final_test": "",
+                "approval_status": "pending",
+                "test_dates": {},
+            }, validate_assignments=True)
+            self.set_show_add_assessment(False)
+        except (ValueError, OSError) as exc:
+            self.assessment_form_error = str(exc)
 
     # =========================================================
     # EDIT ASSESSMENT (dialog/form)
@@ -769,47 +791,53 @@ class AdminState(rx.State):
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
     def save_edit_assessment(self):
-        if not self.edit_assessment_name or len(self.edit_assessment_facilitator_ids) == 0:
-            self.edit_assessment_error = "Please fill in name and at least one facilitator."
-            return
+        try:
+            if not self.edit_assessment_name or len(self.edit_assessment_facilitator_ids) == 0:
+                self.edit_assessment_error = "Please fill in name and at least one facilitator."
+                return
 
-        selected_facilitators = [
-            f for f in self.facilitators
-            if f["emp_id"] in self.edit_assessment_facilitator_ids
-        ]
-        if not selected_facilitators:
-            self.edit_assessment_error = "Selected facilitator(s) not found."
-            return
+            selected_facilitators = [
+                f for f in self.facilitators
+                if f["emp_id"] in self.edit_assessment_facilitator_ids
+            ]
+            if not selected_facilitators:
+                self.edit_assessment_error = "Selected facilitator(s) not found."
+                return
 
-        fac_ids = [f["emp_id"] for f in selected_facilitators]
-        fac_names = [f["name"] for f in selected_facilitators]
+            fac_ids = [f["emp_id"] for f in selected_facilitators]
+            fac_names = [f["name"] for f in selected_facilitators]
 
-        existing_a = self.assessments[self.edit_assessment_index]
-        existing_tests = existing_a.get("tests", [])
-        existing_final_test = existing_a.get("final_test", "")
-        existing_test_dates = existing_a.get("test_dates", {})
-        existing_qps = existing_a.get("question_papers", {})
+            if not 0 <= self.edit_assessment_index < len(self.assessments):
+                self.edit_assessment_error = "Assessment no longer exists; reload before editing."
+                return
+            existing_a = self.assessments[self.edit_assessment_index]
+            existing_tests = existing_a.get("tests", [])
+            existing_final_test = existing_a.get("final_test", "")
+            existing_test_dates = existing_a.get("test_dates", {})
+            existing_qps = existing_a.get("question_papers", {})
 
-        updated = {
-            **dict(existing_a),
-            "name": self.edit_assessment_name,
-            "assessment_date": self.edit_assessment_date,
-            # Multi-facilitator
-            "facilitator_ids": fac_ids,
-            "facilitator_names": fac_names,
-            # Legacy aliases
-            "facilitator_id": fac_ids[0],
-            "facilitator_name": fac_names[0],
-            "assigned_candidates": list(self.edit_assessment_candidate_ids),
-            "status": self.edit_assessment_status,
-            "tests": existing_tests,
-            "final_test": existing_final_test,
-            "approval_status": "pending",
-            "test_dates": existing_test_dates,
-            "question_papers": existing_qps,
-        }
-        self._persist_assessment_record(updated)
-        self.set_show_edit_assessment(False)
+            updated = {
+                **dict(existing_a),
+                "name": self.edit_assessment_name,
+                "assessment_date": self.edit_assessment_date,
+                # Multi-facilitator
+                "facilitator_ids": list(self.edit_assessment_facilitator_ids),
+                "facilitator_names": fac_names,
+                # Legacy aliases
+                "facilitator_id": fac_ids[0],
+                "facilitator_name": fac_names[0],
+                "assigned_candidates": list(self.edit_assessment_candidate_ids),
+                "status": self.edit_assessment_status,
+                "tests": existing_tests,
+                "final_test": existing_final_test,
+                "approval_status": "pending",
+                "test_dates": existing_test_dates,
+                "question_papers": existing_qps,
+            }
+            self._persist_assessment_record(updated, validate_assignments=True)
+            self.set_show_edit_assessment(False)
+        except (ValueError, OSError) as exc:
+            self.edit_assessment_error = str(exc)
 
     # =========================================================
     # DELETE ASSESSMENT (confirm dialog)
@@ -830,15 +858,18 @@ class AdminState(rx.State):
             self.delete_assessment_name = ""
 
     def confirm_delete_assessment(self):
-        if 0 <= self.delete_assessment_index < len(self.assessments):
-            assessment = self.assessments[self.delete_assessment_index]
-            service = AssessmentService()
-            identity = assessment.get("assessment_id")
-            if not identity:
-                identity = service.save_assessment(dict(assessment))["assessment_id"]
-            service.delete_assessment(identity)
-            self._apply_assessment_records(service.load_assessments())
-        self.set_show_delete_assessment(False)
+        try:
+            if 0 <= self.delete_assessment_index < len(self.assessments):
+                assessment = self.assessments[self.delete_assessment_index]
+                service = AssessmentService()
+                identity = assessment.get("assessment_id")
+                if not identity:
+                    identity = service.save_assessment(dict(assessment))["assessment_id"]
+                service.delete_assessment(identity)
+                self._apply_assessment_records(service.load_assessments())
+            self.set_show_delete_assessment(False)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     # =========================================================
     # FEEDBACK FORM BUILDER (UI-only)
@@ -1005,16 +1036,19 @@ class AdminState(rx.State):
     selected_tests_assessment_index: int = -1
 
     def open_assessment_tests(self, index: int):
-        """Open the Type of Test modal for the clicked assessment."""
-        self.selected_tests_assessment_index = index
-        if 0 <= index < len(self.assessments):
-            a = dict(self.assessments[index])
-            if "tests" not in a:
-                a["tests"] = []
-            if "final_test" not in a or not a["final_test"]:
-                a["final_test"] = "Summative Test"
-            self._persist_assessment_record(a)
-        self.show_assessment_tests_dialog = True
+        try:
+            """Open the Type of Test modal for the clicked assessment."""
+            self.selected_tests_assessment_index = index
+            if 0 <= index < len(self.assessments):
+                a = dict(self.assessments[index])
+                if "tests" not in a:
+                    a["tests"] = []
+                if "final_test" not in a or not a["final_test"]:
+                    a["final_test"] = "Summative Test"
+                self._persist_assessment_record(a)
+            self.show_assessment_tests_dialog = True
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def set_show_assessment_tests_dialog(self, value: bool):
         self.show_assessment_tests_dialog = value
@@ -1069,40 +1103,42 @@ class AdminState(rx.State):
         return {}
 
     def set_test_date(self, test_name: str, value: str):
-        """Update the per-test conducted date."""
-        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            a = dict(self.assessments[self.selected_tests_assessment_index])
-            dates = dict(a.get("test_dates", {}))
-            dates[test_name] = value
-            a["test_dates"] = dates
-            self._persist_assessment_record(a)
+        try:
+            """Update the per-test conducted date."""
+            if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+                a = dict(self.assessments[self.selected_tests_assessment_index])
+                dates = dict(a.get("test_dates", {}))
+                dates[test_name] = value
+                a["test_dates"] = dates
+                self._persist_assessment_record(a)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def add_test_to_selected_assessment(self):
-        """Automatically increments formative test count: Formative 1 -> Formative 2 -> Formative N..."""
-        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            a = dict(self.assessments[self.selected_tests_assessment_index])
-            current_list = list(a.get("tests", []))
-            next_num = len(current_list) + 1
-            new_test_name = f"Formative {next_num}"
-            current_list.append(new_test_name)
-            a["tests"] = current_list
-            # Initialise empty date for the new test
-            dates = dict(a.get("test_dates", {}))
-            dates[new_test_name] = ""
-            a["test_dates"] = dates
-            self._persist_assessment_record(a)
+        try:
+            """Automatically increments formative test count: Formative 1 -> Formative 2 -> Formative N..."""
+            if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+                a = dict(self.assessments[self.selected_tests_assessment_index])
+                numbers = [int(t.split()[-1]) for t in a.get("tests", [])
+                           if t.startswith("Formative ") and t.split()[-1].isdigit()]
+                self._add_assessment_test(a, f"Formative {max(numbers, default=0) + 1}")
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def remove_test_from_selected_assessment(self, test_name: str):
-        """Remove a formative test and renumber labels without changing survivor IDs."""
-        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
-            assessment = dict(self.assessments[self.selected_tests_assessment_index])
-            if test_name not in assessment.get("tests", []):
-                return
-            if not assessment.get("assessment_id"):
-                assessment = self._persist_assessment_record(assessment)
-            service = AssessmentService()
-            service.delete_test(assessment["assessment_id"], assessment["test_ids"][test_name], renumber=True)
-            self._apply_assessment_records(service.load_assessments())
+        try:
+            """Remove a formative test and renumber labels without changing survivor IDs."""
+            if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+                assessment = dict(self.assessments[self.selected_tests_assessment_index])
+                if test_name not in assessment.get("tests", []):
+                    return
+                if not assessment.get("assessment_id"):
+                    assessment = self._persist_assessment_record(assessment)
+                service = AssessmentService()
+                service.delete_test(assessment["assessment_id"], assessment["test_ids"][test_name], renumber=True)
+                self._apply_assessment_records(service.load_assessments())
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     # =========================================================
     # TEST DETAILS / UPDATES (When Admin clicks a test badge)

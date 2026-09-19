@@ -231,6 +231,9 @@ class TestItem(TypedDict, total=False):
 
 
 class Assessment(TypedDict, total=False):
+    assessment_date: str
+    start_date: str
+    end_date: str
     assessment_id: str
     test_ids: dict[str, str]
     test_descriptions: dict[str, str]

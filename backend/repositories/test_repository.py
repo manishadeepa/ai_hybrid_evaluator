@@ -13,7 +13,16 @@ class TestRepository:
         return self.file_path.exists()
 
     def get_all(self):
-        return JSONRepository(self.file_path).get_all()
+        records = JSONRepository(self.file_path).get_all()
+        ids = [r.get("test_id") for r in records]
+        if any(not isinstance(i, str) or not i.strip() for i in ids) or len(ids) != len(set(ids)):
+            raise ValueError("Invalid or duplicate test_id in {}".format(self.file_path.name))
+        if any(not isinstance(r.get(field), str) or not r[field].strip()
+               for r in records for field in ("assessment_id", "test_name")):
+            raise ValueError("Invalid test relationship in {}".format(self.file_path.name))
+        if any(not isinstance(r.get("position", 0), int) or not isinstance(r.get("is_final"), bool) for r in records):
+            raise ValueError("Invalid test position/type in {}".format(self.file_path.name))
+        return records
 
     def save_all(self, records):
         return JSONRepository(self.file_path).save_all(deepcopy(records))

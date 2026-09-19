@@ -1,4 +1,6 @@
 ﻿import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +21,13 @@ class JSONRepository:
 
     def _read_data(self) -> list[dict[str, Any]]:
         """Read and return records from the JSON file."""
-        with self.file_path.open("r", encoding="utf-8") as file:
-            data = json.load(file)
+        try:
+            with self.file_path.open("r", encoding="utf-8-sig") as file:
+                data = json.load(file)
+        except (json.JSONDecodeError, UnicodeError) as exc:
+            raise ValueError(f"Invalid or empty JSON repository: {self.file_path.name}") from exc
 
-        if not isinstance(data, list):
+        if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
             raise ValueError(
                 f"JSON repository must contain a list: {self.file_path}"
             )
@@ -31,8 +36,20 @@ class JSONRepository:
 
     def _write_data(self, data: list[dict[str, Any]]) -> None:
         """Write records to the JSON file."""
-        with self.file_path.open("w", encoding="utf-8") as file:
-            json.dump(data, file, indent=4, ensure_ascii=False)
+        # Serialize before touching disk; replace only a fully written sibling file.
+        payload = json.dumps(data, indent=4, ensure_ascii=False, allow_nan=False)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.file_path.parent,
+                                             prefix=self.file_path.name + ".", suffix=".tmp", delete=False) as file:
+                temporary = Path(file.name)
+                file.write(payload)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, self.file_path)
+        finally:
+            if temporary is not None and temporary.exists():
+                temporary.unlink()
 
     def get_all(self) -> list[dict[str, Any]]:
         """Return all stored records."""

@@ -127,13 +127,14 @@ class PersistenceTests(unittest.TestCase):
     def harnesses(self):
         toast = SimpleNamespace(success=lambda *args, **kw: args, error=lambda *args, **kw: args, info=lambda *args, **kw: args)
         ns = {'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime}
-        names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', '_persist_assessment_record',
+        names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', '_persist_assessment_record', '_add_assessment_test',
                  'add_assessment', 'save_edit_assessment', 'confirm_delete_assessment',
                  'add_test_to_selected_assessment', 'remove_test_from_selected_assessment', 'set_test_date'}
         Admin = extract_methods('ai_hybrid_evaluator/state/admin_state.py', 'AdminState', names, ns)
         admin = Admin()
         admin.assessments = [sample()]
         admin.test_question_papers = {}
+        admin.candidates = [{'emp_id':'C1','name':'One'}, {'emp_id':'C2','name':'Two'}]
         admin.set_show_add_assessment = lambda value: None
         admin.set_show_edit_assessment = lambda value: None
         admin.set_show_delete_assessment = lambda value: None
@@ -146,6 +147,9 @@ class PersistenceTests(unittest.TestCase):
             return admin
         fac.get_state = get_state
         fac._unmark_assessment_complete = lambda name: None
+        async def sync_weightage(name):
+            return None
+        fac.sync_assessment_weightage = sync_weightage
         fac.selected_assessment_name = 'Quality'
         fac.selected_test_name = 'Formative 1'
         return admin, fac
@@ -218,6 +222,25 @@ class PersistenceTests(unittest.TestCase):
         admin.set_test_date('Formative 2','changed date')
         self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'changed date')
 
+
+    def test_invalid_form_assignment_is_reported_without_write(self):
+        admin, fac = self.harnesses()
+        admin.load_persisted_assessments()
+        admin.facilitators = [{'emp_id':'F001','name':'Facilitator'}]
+        admin.new_assessment_name='Invalid'
+        admin.new_assessment_date=''
+        admin.new_assessment_facilitator_ids=['F001','missing']
+        admin.new_assessment_candidate_ids=['C1']
+        admin.new_assessment_status='Draft'
+        before=self.assessments.file_path.read_bytes()
+        admin.add_assessment()
+        self.assertIn('facilitator',admin.assessment_form_error)
+        self.assertEqual(self.assessments.file_path.read_bytes(),before)
+        admin.new_assessment_facilitator_ids=['F001']
+        admin.new_assessment_candidate_ids=['missing']
+        admin.add_assessment()
+        self.assertIn('candidate',admin.assessment_form_error)
+        self.assertEqual(self.assessments.file_path.read_bytes(),before)
 
 if __name__ == '__main__':
     unittest.main()
