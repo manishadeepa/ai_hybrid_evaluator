@@ -235,6 +235,8 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
                 workspace_subnav_item("Weightage", "sliders-horizontal", "weightage", a["name"]),
                 # Results
                 workspace_subnav_item("Results", "bar-chart-2", "results", a["name"]),
+                # Reports
+                workspace_subnav_item("Reports", "file-bar-chart", "reports", a["name"]),
                 spacing="1",
                 width="100%",
                 padding_top="0.1em",
