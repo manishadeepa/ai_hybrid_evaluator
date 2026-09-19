@@ -2403,7 +2403,7 @@ def manual_evaluation_modal() -> rx.Component:
                     rx.vstack(
                         rx.dialog.title("Manual Evaluation — " + FacilitatorState.selected_evaluation_candidate),
                         rx.text(
-                            "Question " + (FacilitatorState.manual_eval_q_index + 1).to_string() + " of 4",
+                            "Question " + (FacilitatorState.manual_eval_q_index + 1).to_string() + " of " + FacilitatorState.current_candidate_responses.length().to_string(),
                             font_family=FONT_BODY,
                             size="1",
                             color=COLORS["slate"],
@@ -2514,7 +2514,7 @@ def manual_evaluation_modal() -> rx.Component:
                         "Next Question",
                         rx.icon("arrow-right", size=13),
                         on_click=FacilitatorState.next_manual_question,
-                        disabled=FacilitatorState.manual_eval_q_index == 3,
+                        disabled=FacilitatorState.manual_eval_q_index == FacilitatorState.current_candidate_responses.length() - 1,
                         variant="outline",
                         color_scheme="gray",
                         size="2",

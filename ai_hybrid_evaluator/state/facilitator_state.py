@@ -2880,7 +2880,7 @@ class FacilitatorState(rx.State):
     async def run_ai_evaluation(self):
         """Run the real AI Evaluation Engine using Azure OpenAI.
         Reads the uploaded Question Paper and the latest candidate response file.
-        Falls back gracefully to mock data if files or API credentials are missing.
+        Reports missing files and evaluation failures without substituting mock scores.
         """
         if self.is_ai_evaluating:
             yield rx.toast.info("An AI evaluation is already running.")
@@ -2894,6 +2894,7 @@ class FacilitatorState(rx.State):
         run_candidate = self.selected_evaluation_candidate
         run_assessment = self.selected_assessment_name
         run_test = self.selected_test_name
+        self.ai_evaluation_done = False
         self.is_ai_evaluating = True
         self.show_eval_progress_modal = False
         self.eval_progress_questions = []
@@ -3017,6 +3018,27 @@ class FacilitatorState(rx.State):
 
             # Parse summary from results
             results_list = result.get("results", [])
+            print("DEBUG AI RESULTS:", results_list)
+            print("DEBUG AI ERRORS:", result.get("errors", []))
+            errors = result.get("errors", [])
+            if errors:
+                rows = [dict(row, status="unanswered" if row.get("unanswered") else "completed")
+                        for row in results_list]
+                rows.extend(dict(error, status="failed", awarded_marks=None) for error in errors)
+                candidate_id = _evaluation_candidate_id(run_candidate)
+                key = f"{candidate_id}:{run_assessment}:{run_test}"
+                saved = dict(self.real_ai_results_per_candidate)
+                saved[key] = _batch_candidate_display(candidate_id, run_candidate, run_assessment, run_test, rows)
+                self.real_ai_results_per_candidate = saved
+                if (self.selected_assessment_name == run_assessment and self.selected_test_name == run_test
+                        and self.selected_evaluation_candidate == run_candidate):
+                    self.set_selected_evaluation_candidate(run_candidate)
+                self.ai_evaluation_done = False
+                self.is_ai_evaluating = False
+                self.show_eval_progress_modal = False
+                details = "; ".join(f"{error.get('question_no', '?')}: {error.get('error', 'Evaluation failed')}" for error in errors)
+                yield rx.toast.error(f"AI evaluation incomplete. {details}")
+                return
             summary_df = result.get("candidate_summary_df", None)
 
             if summary_df is not None and not summary_df.empty:
@@ -3149,13 +3171,13 @@ class FacilitatorState(rx.State):
         except FileNotFoundError as e:
             self.show_eval_progress_modal = False
             self.is_ai_evaluating = False
-            self.ai_evaluation_done = True
-            yield rx.toast.warning(f"File not found — using mock data. ({e})")
+            self.ai_evaluation_done = False
+            yield rx.toast.error(f"AI evaluation could not run: {e}")
         except Exception as e:
             self.show_eval_progress_modal = False
             self.is_ai_evaluating = False
-            self.ai_evaluation_done = True
-            err_msg = str(e)[:120]
+            self.ai_evaluation_done = False
+            err_msg = str(e)
             yield rx.toast.error(f"AI Evaluation error: {err_msg}")
 
     def open_ai_candidate_detail(self, candidate_id: str):

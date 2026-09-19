@@ -23,5 +23,28 @@
             "F002": "approved"
         },
         "assessment_id": "5aa721c2229b4bd5b6409bc8a8f889d8"
+    },
+    {
+        "name": "Leadership",
+        "assessment_date": "",
+        "facilitator_ids": [
+            "F001"
+        ],
+        "facilitator_names": [
+            "Ravi Kumar"
+        ],
+        "facilitator_id": "F001",
+        "facilitator_name": "Ravi Kumar",
+        "assigned_candidates": [
+            "CAND-2031",
+            "CAND-2054",
+            "CAND-2061"
+        ],
+        "status": "Scheduled",
+        "approval_status": "approved",
+        "assessment_id": "232d6c7b03d04007961650a304f68d56",
+        "facilitator_approvals": {
+            "F001": "approved"
+        }
     }
 ]

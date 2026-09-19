@@ -566,6 +566,13 @@ def evaluate_candidate(
                     "candidate_id": record["candidate_id"],
                     "candidate_name": record["candidate_name"],
                     "question_no": record["question_no"],
+                    "question": record["question"],
+                    "candidate_answer": record["candidate_answer"],
+                    "unanswered": record["unanswered"],
+                    "maximum_marks": record["max_marks"],
+                    **record["metadata"],
+                    "status": "failed",
+                    "awarded_marks": None,
                     "error": str(e),
                 }
             )
@@ -629,6 +636,9 @@ def evaluate_candidate(
         "candidate_id"
     ):
 
+        # A failed question must not produce a final score with a reduced denominator.
+        if any(error["candidate_id"] == candidate_id for error in evaluation_errors):
+            continue
         total_max = group["maximum_marks"].sum()
         total_awarded = group["awarded_marks"].sum()
 
@@ -758,6 +768,7 @@ def evaluate_candidate(
         "lo_analysis_df": lo_analysis_df,
         "rbt_analysis_df": rbt_analysis_df,
         "errors": evaluation_errors,
+        "status": "partial" if evaluation_errors else "completed",
     }
 
 def _validate_batch_evaluation(item, maximum_marks):
