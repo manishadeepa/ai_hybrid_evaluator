@@ -219,8 +219,8 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(admin.assessments[0]['test_ids']['Formative 1'],survivor)
         self.assertEqual(admin.test_question_papers['Quality__Formative 1'],'second.xlsx')
         admin.add_test_to_selected_assessment()
-        admin.set_test_date('Formative 2','changed date')
-        self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'changed date')
+        admin.set_test_date('Formative 2','2026-09-21')
+        self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'2026-09-21')
 
 
     def test_invalid_form_assignment_is_reported_without_write(self):

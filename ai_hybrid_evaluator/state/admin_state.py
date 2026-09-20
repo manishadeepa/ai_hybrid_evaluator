@@ -1107,10 +1107,12 @@ class AdminState(rx.State):
             """Update the per-test conducted date."""
             if 0 <= self.selected_tests_assessment_index < len(self.assessments):
                 a = dict(self.assessments[self.selected_tests_assessment_index])
-                dates = dict(a.get("test_dates", {}))
-                dates[test_name] = value
-                a["test_dates"] = dates
-                self._persist_assessment_record(a)
+                if not a.get("assessment_id"):
+                    a = self._persist_assessment_record(a)
+                service = AssessmentService()
+                test_id = a.get("test_ids", {}).get(test_name, "")
+                service.update_test(a["assessment_id"], test_id, {"date": value})
+                self._apply_assessment_records(service.load_assessments())
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
 

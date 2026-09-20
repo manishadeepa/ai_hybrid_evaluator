@@ -14,17 +14,29 @@ class TestRepository:
 
     def get_all(self):
         records = JSONRepository(self.file_path).get_all()
+        self._validate(records)
+        return records
+
+    @staticmethod
+    def _validate(records):
+        if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
+            raise ValueError("Tests must be a list of objects.")
         ids = [r.get("test_id") for r in records]
         if any(not isinstance(i, str) or not i.strip() for i in ids) or len(ids) != len(set(ids)):
-            raise ValueError("Invalid or duplicate test_id in {}".format(self.file_path.name))
+            raise ValueError("Invalid or duplicate test_id in tests.json")
         if any(not isinstance(r.get(field), str) or not r[field].strip()
                for r in records for field in ("assessment_id", "test_name")):
-            raise ValueError("Invalid test relationship in {}".format(self.file_path.name))
-        if any(not isinstance(r.get("position", 0), int) or not isinstance(r.get("is_final"), bool) for r in records):
-            raise ValueError("Invalid test position/type in {}".format(self.file_path.name))
+            raise ValueError("Invalid test relationship in tests.json")
+        if any(not isinstance(r.get("position", 0), int) or not isinstance(r.get("is_final", False), bool) for r in records):
+            raise ValueError("Invalid test position/type in tests.json")
+        if any(r.get("status", "Draft") not in ("Draft", "Scheduled", "Active", "Completed") for r in records):
+            raise ValueError("Invalid test status in tests.json")
         return records
 
     def save_all(self, records):
+        self._validate(records)
+        if self.exists():
+            self.get_all()  # Never overwrite an unreadable store.
         return JSONRepository(self.file_path).save_all(deepcopy(records))
 
     def get_by_id(self, record_id):
@@ -43,3 +55,6 @@ class TestRepository:
 
     def delete(self, record_id):
         self.save_all([r for r in self.get_all() if r["test_id"] != record_id])
+
+    def get_by_assessment(self, assessment_id):
+        return [r for r in self.get_all() if r["assessment_id"] == assessment_id]

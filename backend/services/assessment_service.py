@@ -17,6 +17,7 @@ class AssessmentService:
     def __init__(self, repository=None, test_service=None, facilitator_catalog=None, candidate_catalog=None):
         self.repository = repository or AssessmentRepository()
         self.tests = test_service or TestService()
+        self.tests.assessments = self.repository
         self.facilitator_catalog = facilitator_catalog
         self.candidate_catalog = candidate_catalog
 
@@ -272,6 +273,8 @@ class AssessmentService:
     def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False):
         """Existing workflow creates owned tests; it never moves another assessment's test."""
         with _PERSISTENCE_LOCK:
+            self.tests._validate_fields({"test_name": test_name, "date": date,
+                                         "description": description, "is_final": is_final})
             record = self.get_assessment(assessment_id)
             if not isinstance(test_name, str) or not test_name.strip():
                 raise ValueError("Test name is required.")
@@ -289,3 +292,9 @@ class AssessmentService:
             record["test_dates"][test_name] = date
             record["test_descriptions"][test_name] = description
             return self.save_assessment(record)
+
+    def update_test(self, assessment_id, test_id, changes):
+        with _PERSISTENCE_LOCK:
+            self.get_test(assessment_id, test_id)
+            self.tests.update_test(test_id, changes)
+            return self.get_assessment(assessment_id)

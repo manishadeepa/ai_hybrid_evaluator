@@ -2551,24 +2551,12 @@ class FacilitatorState(rx.State):
             if a["name"] == name:
                 if test_name not in list(a.get("tests", [])) + [a.get("final_test", "")]:
                     return rx.toast.error("Test does not belong to this assessment.")
-                updated = dict(a)
-                current_tests = list(updated.get("tests", []))
-                final_test = updated.get("final_test", "")
-                if test_name in current_tests:
-                    current_tests.remove(test_name)
-                    updated["tests"] = current_tests
-                elif test_name == final_test:
-                    updated["final_test"] = ""
-
-                old_dates = dict(updated.get("test_dates", {}))
-                old_dates.pop(test_name, None)
-                updated["test_dates"] = old_dates
-                for field in ("test_descriptions", "question_papers", "test_ids"):
-                    mapping = dict(updated.get(field, {}))
-                    mapping.pop(test_name, None)
-                    updated[field] = mapping
                 try:
-                    updated = admin_state._persist_assessment_record(updated)
+                    if not a.get("assessment_id"):
+                        a = admin_state._persist_assessment_record(dict(a))
+                    service = AssessmentService()
+                    updated = service.delete_test(a["assessment_id"], a["test_ids"][test_name])
+                    admin_state._apply_assessment_records(service.load_assessments())
                 except (ValueError, OSError) as exc:
                     return rx.toast.error(str(exc))
                 self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
