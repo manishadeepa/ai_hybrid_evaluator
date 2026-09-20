@@ -49,7 +49,17 @@ def _candidate_nav_link(label: str, route: str, icon: str, active: bool) -> rx.C
 def candidate_sidebar(active: str) -> rx.Component:
     return rx.box(
         rx.vstack(
+            rx.text(
+                "Candidate Portal",
+                font_family=FONT_BODY,
+                size="3",
+                weight="bold",
+                color=COLORS["ink"],
+                padding_left="0.85em",
+                padding_bottom="0.5em",
+            ),
             _candidate_nav_link("My Assessments", "/candidate/dashboard", "layout-grid", active == "assessments"),
+            _candidate_nav_link("Results", "/candidate/results", "bar-chart-2", active == "results"),
             _candidate_nav_link("Profile", "/candidate/profile", "user", active == "profile"),
             rx.spacer(),
             # Logout

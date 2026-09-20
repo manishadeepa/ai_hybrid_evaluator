@@ -25,6 +25,7 @@ from ai_hybrid_evaluator.pages.candidate.candidate_login import candidate_login_
 from ai_hybrid_evaluator.pages.candidate.dashboard import candidate_dashboard_page
 from ai_hybrid_evaluator.pages.candidate.candidate_test import candidate_test_page
 from ai_hybrid_evaluator.pages.candidate.profile import candidate_profile_page
+from ai_hybrid_evaluator.pages.candidate.results import candidate_results_page
 
 app = rx.App(
     stylesheets=FONT_STYLESHEETS,
@@ -66,3 +67,4 @@ app.add_page(candidate_login_page, route="/candidate/signin", title="Candidate S
 app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard", on_load=CandidateState.on_dashboard_load)
 app.add_page(candidate_profile_page, route="/candidate/profile", title="My Profile", on_load=CandidateProfileState.load_profile)
 app.add_page(candidate_test_page, route="/candidate/test", title="Test Environment", on_load=CandidateState.on_test_page_load)
+app.add_page(candidate_results_page, route="/candidate/results", title="My Results")

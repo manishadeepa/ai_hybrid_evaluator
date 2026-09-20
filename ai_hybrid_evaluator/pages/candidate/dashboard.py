@@ -44,16 +44,10 @@ def _status_badge(status: str) -> rx.Component:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Component:
-    """A single test row showing availability, submission status, Start Test / Submitted / Locked button,
-    and — once evaluated — the candidate's normalized score."""
+    """A single test row showing availability, submission status, and Start Test / Submitted / Locked button."""
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
     is_submitted = CandidateState.submitted_tests.get(assessment_name, {}).contains(test_name)
     is_disqualified = CandidateState.disqualified_tests.get(assessment_name, {}).contains(test_name)
-
-    # Score data from the pre-computed flat dicts (composite key: "asmn::test_name")
-    _score_key = assessment_name + "::" + test_name
-    score_str = CandidateState.candidate_test_scores.get(_score_key, "-")
-    is_evaluated = CandidateState.candidate_test_evaluated.get(_score_key, False)
 
     return rx.box(
         rx.hstack(
@@ -118,86 +112,6 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                 flex="1",
             ),
             rx.spacer(),
-            # Centre: Score + Evaluation status (shown once submitted)
-            rx.cond(
-                is_submitted | is_disqualified,
-                rx.cond(
-                    is_evaluated,
-                    # Evaluated: show score + green badge
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text(
-                                score_str,
-                                font_family=FONT_DISPLAY,
-                                size="4",
-                                weight="bold",
-                                color=COLORS["primary"],
-                            ),
-                            rx.text(
-                                "Score",
-                                font_family=FONT_BODY,
-                                size="1",
-                                color=COLORS["slate"],
-                            ),
-                            align_items="center",
-                            spacing="0",
-                        ),
-                        rx.box(
-                            rx.text(
-                                "Evaluated",
-                                font_family=FONT_BODY,
-                                size="1",
-                                weight="medium",
-                                color="#027A48",
-                            ),
-                            background="#ECFDF5",
-                            border="1px solid #A7F3D0",
-                            padding="0.3em 0.75em",
-                            border_radius="999px",
-                        ),
-                        spacing="3",
-                        align_items="center",
-                        margin_right="0.5em",
-                    ),
-                    # Submitted but not yet evaluated: show dash + Pending badge
-                    rx.hstack(
-                        rx.vstack(
-                            rx.text(
-                                "-",
-                                font_family=FONT_DISPLAY,
-                                size="4",
-                                weight="bold",
-                                color=COLORS["slate"],
-                            ),
-                            rx.text(
-                                "Not Evaluated",
-                                font_family=FONT_BODY,
-                                size="1",
-                                color=COLORS["slate"],
-                            ),
-                            align_items="center",
-                            spacing="0",
-                        ),
-                        rx.box(
-                            rx.text(
-                                "Pending",
-                                font_family=FONT_BODY,
-                                size="1",
-                                weight="medium",
-                                color="#B45309",
-                            ),
-                            background="#FFFBEB",
-                            border="1px solid #FDE68A",
-                            padding="0.3em 0.75em",
-                            border_radius="999px",
-                        ),
-                        spacing="3",
-                        align_items="center",
-                        margin_right="0.5em",
-                    ),
-                ),
-                rx.fragment(),  # Not submitted yet — no score column
-            ),
             # Right: Action button
             rx.cond(
                 is_submitted,
