@@ -12,6 +12,7 @@ import asyncio
 import base64
 from datetime import datetime
 from backend.services.manual_evaluation_service import ManualEvaluationService
+from backend.services.ai_evaluation_run_service import AIEvaluationRunService
 from pathlib import Path
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
@@ -43,7 +44,7 @@ def load_latest_candidate_response(candidate_id: str = "") -> dict:
 
 
 
-def _find_response_file_path(candidate_name: str, test_name: str, assessment_name: str = "") -> "Path | None":
+def _find_response_file_path(candidate_name: str, test_name: str, assessment_name: str = "", require_assessment_scope: bool = False) -> "Path | None":
     """Return the Path of the newest response file matching candidate + test."""
     cand_id = ""
     cand_clean_name = candidate_name
@@ -55,6 +56,7 @@ def _find_response_file_path(candidate_name: str, test_name: str, assessment_nam
         candidate_name=cand_clean_name,
         assessment_name=assessment_name,
         test_name=test_name,
+        require_assessment_scope=require_assessment_scope,
     )
 
 
@@ -156,7 +158,7 @@ def _batch_candidate_display(candidate_id, label, assessment, test, rows):
         items = []
         for code, members in groups.items():
             # Do not present incomplete dimensions as zero or inflated attainment.
-            if any(r["status"] == "failed" for r in members):
+            if any(r["status"] not in ("completed", "unanswered") for r in members):
                 continue
             max_marks = sum(float(r["maximum_marks"]) for r in members)
             awarded = sum(float(r["awarded_marks"]) for r in members)
@@ -2241,6 +2243,8 @@ class FacilitatorState(rx.State):
 
             result.append({
                 "name": a["name"],
+                "assessment_id": a.get("assessment_id", ""),
+                "test_ids": dict(a.get("test_ids", {})),
                 # Multi-facilitator
                 "facilitator_ids": fac_ids,
                 "facilitator_names": fac_names,
@@ -2591,6 +2595,8 @@ class FacilitatorState(rx.State):
     # ── AI Evaluation Progress Modal State ──────────────────────────────
     show_eval_progress_modal: bool = False
     show_restart_confirm_modal: bool = False
+    active_ai_run_id: str = ""
+    ai_run_status: str = "idle"
     eval_cancelled: bool = False
     eval_progress_questions: list[dict] = []  # [{label, status}] status: pending|evaluating|completed
     eval_progress_current: int = 0  # number completed so far
@@ -2751,12 +2757,25 @@ class FacilitatorState(rx.State):
         self.show_eval_progress_modal = False
 
     def stop_ai_evaluation(self):
-        """UI-ready handler to pause evaluation and save completed results."""
-        return rx.toast.info("Evaluation paused. Completed results saved.")
+        try:
+            run = AIEvaluationRunService().request_stop(self.active_ai_run_id)
+            self._apply_ai_run(run)
+            return rx.toast.info("Stop requested. The in-flight question will finish and be saved before pausing.")
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def resume_ai_evaluation(self):
-        """UI-ready handler to continue evaluation from the next pending question."""
-        return rx.toast.info("Evaluation resumed from the next pending question.")
+        try:
+            service = AIEvaluationRunService()
+            run = self._selected_ai_run(service)
+            if not run or run['status'] != 'paused':
+                return rx.toast.error("Select a paused run to resume.")
+            self.active_ai_run_id = run['run_id']
+            self.show_eval_progress_modal = True
+            self._apply_ai_run(run)
+            return FacilitatorState.execute_ai_run(run['run_id'])
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     def open_restart_confirm_modal(self):
         """Show confirmation dialog before restarting evaluation."""
@@ -2767,9 +2786,19 @@ class FacilitatorState(rx.State):
         self.show_restart_confirm_modal = False
 
     def restart_ai_evaluation(self):
-        """UI-ready handler to restart evaluation after confirmation."""
         self.show_restart_confirm_modal = False
-        return rx.toast.info("Evaluation restarted.")
+        try:
+            service = AIEvaluationRunService()
+            old = self._selected_ai_run(service)
+            if not old:
+                return rx.toast.error("No evaluation run selected to restart.")
+            run = service.restart(old['run_id'])
+            self.active_ai_run_id = run['run_id']
+            self.show_eval_progress_modal = True
+            self._apply_ai_run(run)
+            return FacilitatorState.execute_ai_run(run['run_id'])
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
     @rx.var
     def assessment_evaluation_results(self) -> dict[str, dict]:
@@ -2777,424 +2806,189 @@ class FacilitatorState(rx.State):
 
     batch_evaluation_errors: list[dict] = []
 
-    async def run_all_candidates_ai_evaluation(self):
-        """Use one question-wise engine run for the selected assessment's submissions."""
-        import queue
+    def _selected_ai_run(self, service):
+        all_candidates = self.selected_evaluation_candidate == "All Candidates"
+        ids = None if all_candidates else [_evaluation_candidate_id(self.selected_evaluation_candidate)]
+        run = service.find_run(self.selected_assessment_name, self.selected_test_name, ids,
+                               'all' if all_candidates else 'single')
+        return service.recover_interrupted(run['run_id']) if run else None
 
-        assessment = self.selected_assessment_name
-        test = self.selected_test_name
-        self.is_ai_evaluating = True
-        self.show_eval_progress_modal = False
-        self.eval_progress_questions = []
-        self.eval_progress_current = 0
-        self.batch_evaluation_errors = []
-        yield
-        errors = []
+    def _apply_ai_run(self, run, restore=False):
+        # A late old worker may save its own history but cannot replace newer UI state.
+        if self.active_ai_run_id != run['run_id'] or run.get('superseded_by_run_id'):
+            return
+        self.ai_run_status = run['status']
+        self.is_ai_evaluating = run['status'] in ('running', 'stop_requested')
+        self.ai_evaluation_done = run['status'] == 'completed' and not run['skipped']
+        self.eval_progress_current = run['completed_questions']
+        self.eval_progress_questions = [
+            {'label': f"{q['record']['candidate_id']} / {q['record']['question_no']}", 'status': q['status']}
+            for q in run['questions']]
+        errors = list(run['skipped'])
+        errors.extend({'candidate_id': q['record']['candidate_id'], 'question_no': q['record']['question_no'],
+                       'status': 'failed', 'error': q['error']} for q in run['questions'] if q['status'] == 'failed')
+        if run.get('error'):
+            errors.append({'status': 'failed', 'error': run['error']})
+        self.batch_evaluation_errors = errors
+        saved = dict(self.real_ai_results_per_candidate)
+        candidate_data = dict(self.ai_candidates_data)
+        for candidate_id, rows in AIEvaluationRunService.result_rows(run).items():
+            key = f"{candidate_id}:{run['assessment_name']}:{run['test_name']}"
+            if restore and saved.get(key, {}).get('evaluation_type') == 'manual':
+                continue  # Selecting a candidate must not replace their manual evaluation.
+            if not any(row['status'] in ('completed', 'unanswered', 'failed') for row in rows):
+                label = run['candidate_labels'].get(candidate_id, candidate_id)
+                previous = _saved_evaluation(saved, label, run['assessment_name'], run['test_name'])
+                if not previous:
+                    continue
+                # Shadow older scores while this fresh run has only pending work.
+                # Keep the old run and legacy result intact for traceability.
+            display = _batch_candidate_display(candidate_id, run['candidate_labels'].get(candidate_id, candidate_id),
+                                               run['assessment_name'], run['test_name'], rows)
+            display['run_id'] = run['run_id']
+            saved[f"{candidate_id}:{run['assessment_name']}:{run['test_name']}"] = display
+            if display['status'] == 'completed':
+                candidate_data[candidate_id] = {**candidate_data.get(candidate_id, {}),
+                                              'total_score': int(display['marks_obtained']), 'ai_confidence': 'Real AI'}
+        self.real_ai_results_per_candidate = saved
+        self.ai_candidates_data = candidate_data
+        if self.selected_assessment_name == run['assessment_name'] and self.selected_test_name == run['test_name']:
+            self.set_selected_evaluation_candidate(self.selected_evaluation_candidate, sync_run=False)
+
+    def _restore_selected_ai_run(self):
         try:
-            if _evaluate_candidates_questionwise is None:
-                raise ImportError("Question-wise AI evaluation service is unavailable")
-            filename = self.question_papers.get(assessment, {}).get(test, "")
+            run = self._selected_ai_run(AIEvaluationRunService())
+            self.active_ai_run_id = run['run_id'] if run else ''
+            if run:
+                self._apply_ai_run(run, restore=True)
+            else:
+                self.ai_run_status = 'idle'
+                self.is_ai_evaluating = False
+                self.eval_progress_questions = []
+                self.eval_progress_current = 0
+                self.ai_evaluation_done = False
+        except (ValueError, OSError):
+            # Selection remains usable; Start/Resume will report storage errors.
+            self.active_ai_run_id = ''
+            self.ai_run_status = 'failed'
+            self.ai_evaluation_done = False
+
+    async def run_all_candidates_ai_evaluation(self):
+        # Keep the public entry point used by existing callers.
+        async for update in self._start_ai_run(True):
+            yield update
+
+    async def run_ai_evaluation(self):
+        async for update in self._start_ai_run(self.selected_evaluation_candidate == "All Candidates"):
+            yield update
+
+    async def _start_ai_run(self, all_candidates):
+        self.ai_evaluation_done = False
+        try:
+            service = AIEvaluationRunService()
+            existing = self._selected_ai_run(service)
+            if existing:
+                self.active_ai_run_id = existing['run_id']
+                self._apply_ai_run(existing)
+                if existing['status'] not in ('idle', 'paused', 'restarting'):
+                    yield rx.toast.info("This run is already active or finished. Use Restart for a fresh evaluation.")
+                    return
+                self.show_eval_progress_modal = True
+                yield FacilitatorState.execute_ai_run(existing['run_id'])
+                return
+            assessment, test = self.selected_assessment_name, self.selected_test_name
+            filename = self.question_papers.get(assessment, {}).get(test, '')
             if not filename:
                 raise ValueError("Upload a question paper for the selected assessment and test.")
-            qp_path = Path(rx.get_upload_dir()) / filename
-            if not qp_path.exists():
-                qp_path = Path("uploaded_files") / filename
-            if not qp_path.exists():
+            paper = Path(rx.get_upload_dir()) / filename
+            if not paper.exists():
+                paper = Path('uploaded_files') / filename
+            if not paper.exists():
                 raise FileNotFoundError("The selected question paper is missing.")
             answer_key = self.answer_key_uploaded_path if self.answer_key_uploaded and self.answer_key_uploaded_path else None
             mine = await self.my_assessments
-            assigned = next((a.get("candidate_details", []) for a in mine if a["name"] == assessment), [])
-            records = []
-            labels = {}
-            for candidate in assigned:
-                candidate_id = str(candidate["emp_id"])
-                if candidate_id in labels:
-                    continue
-                label = f"{candidate['name']} ({candidate_id})"
-                labels[candidate_id] = label
-                response = await asyncio.to_thread(
-                    get_latest_candidate_response, candidate_id=candidate_id,
-                    candidate_name=candidate["name"], assessment_name=assessment,
-                    test_name=test, require_assessment_scope=True,
-                )
-                if not response.get("responses"):
-                    errors.append({"candidate_id": candidate_id, "status": "skipped",
-                                   "error": "No readable response verified for this assessment/test; legacy files need resubmission."})
-                    continue
-                for row in response["responses"]:
-                    records.append({
-                        "candidate_id": candidate_id, "candidate_name": candidate["name"],
-                        "assessment_name": assessment, "test_name": test,
-                        "question_no": row["q_no"], "question": row["question"],
-                        "candidate_answer": row["response"], "maximum_marks": row["max_marks"],
-                        **{field: row.get(field, "") for field in ("CO", "LO", "Knowledge Type", "Domain", "RBT level")},
-                    })
-            self.batch_evaluation_errors = errors
-            if not records:
-                yield rx.toast.warning("No assessment-verified candidate responses are available for evaluation.")
-                return
-            progress = queue.Queue()
-            future = asyncio.create_task(asyncio.to_thread(
-                _evaluate_candidates_questionwise, str(qp_path), records, answer_key,
-                progress_callback=progress.put,
-            ))
-            self.show_eval_progress_modal = True
-            yield
-            while True:
-                while not progress.empty():
-                    event = progress.get_nowait()
-                    total = event["total"]
-                    if len(self.eval_progress_questions) != total:
-                        self.eval_progress_questions = [{"label": f"Question {i + 1}", "status": "pending"} for i in range(total)]
-                    updated = list(self.eval_progress_questions)
-                    index = event["question_index"] - 1
-                    updated[index] = {"label": f"Question {index + 1} / {total}", "status": event["status"]}
-                    self.eval_progress_questions = updated
-                    self.eval_progress_current = index + (1 if event["status"] == "completed" else 0)
-                    yield
-                if future.done():
-                    # The worker enqueues its last update before completing.
-                    if progress.empty():
-                        break
-                    continue
-                await asyncio.sleep(0.1)
-            result = await future
-            saved = dict(self.real_ai_results_per_candidate)
-            candidate_data = dict(self.ai_candidates_data)
-            for candidate_id, rows in result["results_by_candidate"].items():
-                if candidate_id not in labels or candidate_id == "All Candidates":
-                    raise ValueError("Batch returned an unexpected candidate identity")
-                display = _batch_candidate_display(candidate_id, labels[candidate_id], assessment, test, rows)
-                saved[f"{candidate_id}:{assessment}:{test}"] = display
-                if display["status"] == "completed":
-                    candidate_data[candidate_id] = {
-                        **candidate_data.get(candidate_id, {}),
-                        "total_score": int(display["marks_obtained"]), "ai_confidence": "Real AI",
-                    }
-            self.real_ai_results_per_candidate = saved
-            self.ai_candidates_data = candidate_data
-            errors.extend({"candidate_id": r["candidate_id"], "question_no": r["question_no"],
-                           "status": "failed", "error": r["error"]} for r in result["errors"])
-            self.batch_evaluation_errors = errors
-            if self.selected_assessment_name == assessment and self.selected_test_name == test:
-                self.set_selected_evaluation_candidate(self.selected_evaluation_candidate)
-            self.ai_evaluation_done = not bool(errors)
-            if errors:
-                affected = ", ".join(dict.fromkeys(e["candidate_id"] for e in errors))
-                yield rx.toast.warning(f"Batch finished with {len(errors)} skipped/failed entries ({affected}). Successful results were retained.")
+            assessment_record = next((a for a in mine if a['name'] == assessment), {})
+            identities = {'assessment_id': assessment_record.get('assessment_id', ''),
+                          'test_id': assessment_record.get('test_ids', {}).get(test, '')}
+            if all_candidates:
+                records, labels, errors = [], {}, []
+                for candidate in assessment_record.get('candidate_details', []):
+                    candidate_id = str(candidate['emp_id'])
+                    if candidate_id in labels:
+                        continue
+                    labels[candidate_id] = f"{candidate['name']} ({candidate_id})"
+                    response = get_latest_candidate_response(candidate_id=candidate_id, candidate_name=candidate['name'],
+                        assessment_name=assessment, test_name=test, require_assessment_scope=True)
+                    if not response.get('responses'):
+                        errors.append({'candidate_id': candidate_id, 'status': 'skipped',
+                                       'error': 'No readable assessment-verified submission.'})
+                        continue
+                    for row in response['responses']:
+                        records.append({'candidate_id': candidate_id, 'candidate_name': candidate['name'],
+                            'assessment_name': assessment, 'test_name': test, 'question_no': row['q_no'],
+                            'question': row['question'], 'candidate_answer': row['response'], 'maximum_marks': row['max_marks']})
+                self.batch_evaluation_errors = errors
+                if not records:
+                    yield rx.toast.warning("No assessment-verified candidate responses are available for evaluation.")
+                    return
+                run = service.prepare_batch(assessment, test, records, labels, paper, answer_key, skipped=errors, **identities)
             else:
-                yield rx.toast.success(f"AI evaluation completed for {len(result['results_by_candidate'])} candidates.")
-        except Exception as exc:
-            self.batch_evaluation_errors = errors + [{"status": "failed", "error": str(exc)}]
-            self.ai_evaluation_done = False
-            yield rx.toast.error(f"Batch evaluation failed: {str(exc)[:180]}")
-        finally:
-            self.is_ai_evaluating = False
-            self.show_eval_progress_modal = False
-            yield
-
-    async def run_ai_evaluation(self):
-        """Run the real AI Evaluation Engine using Azure OpenAI.
-        Reads the uploaded Question Paper and the latest candidate response file.
-        Reports missing files and evaluation failures without substituting mock scores.
-        """
-        if self.is_ai_evaluating:
-            yield rx.toast.info("An AI evaluation is already running.")
-            return
-        self.eval_cancelled = False
-        if self.selected_evaluation_candidate == "All Candidates":
-            async for update in self.run_all_candidates_ai_evaluation():
-                yield update
-            return
-        # Capture identity before asynchronous work; selection changes must not relabel results.
-        run_candidate = self.selected_evaluation_candidate
-        run_assessment = self.selected_assessment_name
-        run_test = self.selected_test_name
-        self.ai_evaluation_done = False
-        self.is_ai_evaluating = True
-        self.show_eval_progress_modal = False
-        self.eval_progress_questions = []
-        self.eval_progress_current = 0
-        yield
-
-        try:
-            if _evaluate_candidate is None:
-                raise ImportError("ai_evaluation_service not available")
-
-            # Determine question paper path - strictly from uploaded question paper for this assessment + test
-            qp_filename = self.question_papers.get(run_assessment, {}).get(run_test, "")
-            if not qp_filename:
-                raise FileNotFoundError(
-                    f"No question paper uploaded for assessment '{self.selected_assessment_name}' "
-                    f"and test '{self.selected_test_name}'. Please upload a question paper first."
-                )
-
-            qp_path = Path(rx.get_upload_dir()) / qp_filename
-            if not qp_path.exists():
-                qp_path = Path("uploaded_files") / qp_filename
-            if not qp_path.exists():
-                raise FileNotFoundError(
-                    f"Uploaded question paper file '{qp_filename}' not found on server."
-                )
-
-            # Find candidate response file filtered by selected candidate + assessment + test
-            raw = run_candidate
-            test_name = run_test
-            asmn_name = run_assessment
-            candidate_response_path = _find_response_file_path(raw, test_name, asmn_name)
-            if candidate_response_path is None:
-                raise FileNotFoundError(
-                    f"No response file found for candidate '{raw}' and test '{test_name}' "
-                    f"in uploaded_files/candidate_responses/. "
-                    f"Please ensure the candidate has submitted their test."
-                )
-
-            # ── Build progress question list from actual QP ──────────────
-            q_count = await asyncio.to_thread(self._get_question_count_from_qp, qp_path)
-            if q_count == 0:
-                q_count = 1  # fallback: at least show 1
-            self.eval_progress_questions = [
-                {"label": f"Question {i + 1}", "status": "pending"}
-                for i in range(q_count)
-            ]
-            self.eval_progress_current = 0
+                label = self.selected_evaluation_candidate
+                candidate_id = _evaluation_candidate_id(label)
+                if (not candidate_id or label == 'No candidates assigned'
+                        or candidate_id not in [str(c['emp_id']) for c in assessment_record.get('candidate_details', [])]):
+                    raise ValueError("Select an assigned candidate.")
+                response = _find_response_file_path(label, test, assessment, require_assessment_scope=True)
+                if response is None:
+                    raise FileNotFoundError("No candidate response found for this assessment/test.")
+                run = service.prepare_single(assessment, test, candidate_id, label, paper, response, answer_key, **identities)
+            self.active_ai_run_id = run['run_id']
             self.show_eval_progress_modal = True
-            yield  # show modal immediately
+            self._apply_ai_run(run)
+            yield FacilitatorState.execute_ai_run(run['run_id'])
+        except (ValueError, OSError) as exc:
+            self.ai_evaluation_done = False
+            self.is_ai_evaluating = False
+            yield rx.toast.error(f"AI evaluation could not start: {exc}")
 
-            # Check if separate answer key was uploaded
-            ak_path = self.answer_key_uploaded_path if self.answer_key_uploaded and self.answer_key_uploaded_path else None
-
-            # Run blocking AI evaluation in a background thread while
-            # streaming per-question progress updates to the UI.
-            import concurrent.futures
-            loop = asyncio.get_event_loop()
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            future = loop.run_in_executor(executor, _evaluate_candidate, str(qp_path), str(candidate_response_path), ak_path)
-
-            # Animate progress question-by-question while waiting for the real result
-            per_q_delay = max(1.0, 4.0)  # seconds per question step shown (min 1s)
-            for qi in range(q_count):
-                if self.eval_cancelled:
-                    future.cancel()
+    @rx.event(background=True)
+    async def execute_ai_run(self, run_id: str):
+        # No state lock is held while Azure runs, so Stop/Resume/Restart events can execute.
+        service = AIEvaluationRunService()
+        future = asyncio.create_task(asyncio.to_thread(service.execute, run_id))
+        try:
+            while not future.done():
+                run = await asyncio.to_thread(service.get_run, run_id)
+                async with self:
+                    self._apply_ai_run(run)
+                await asyncio.sleep(0.1)
+            run = await future
+            async with self:
+                if self.active_ai_run_id != run_id or run.get('superseded_by_run_id'):
                     return
-                # Mark current question as evaluating
-                updated = list(self.eval_progress_questions)
-                updated[qi] = {"label": updated[qi]["label"], "status": "evaluating"}
-                self.eval_progress_questions = updated
-                self.eval_progress_current = qi
-                yield
-
-                # Wait up to per_q_delay seconds, but stop as soon as future is done
-                elapsed = 0.0
-                step = 0.3
-                while elapsed < per_q_delay:
-                    if self.eval_cancelled:
-                        future.cancel()
-                        return
-                    if future.done():
-                        break
-                    await asyncio.sleep(step)
-                    elapsed += step
-
-                if self.eval_cancelled:
-                    future.cancel()
+                self._apply_ai_run(run)
+                if run['status'] == 'completed':
+                    self.show_eval_progress_modal = False
+                    message = rx.toast.warning("Evaluation finished with skipped submissions.") if run['skipped'] else rx.toast.success("AI evaluation completed.")
+                elif run['status'] == 'paused':
+                    message = rx.toast.info("Evaluation paused. Saved results will be skipped on Resume.")
+                else:
+                    details = '; '.join(f"{e.get('question_no', '')}: {e['error']}" for e in self.batch_evaluation_errors)
+                    message = (rx.toast.warning(f"AI evaluation incomplete. {details}") if run['candidate_scope'] == 'all'
+                               else rx.toast.error(f"AI evaluation incomplete. {details}"))
+            yield message
+        except Exception as exc:
+            async with self:
+                if self.active_ai_run_id != run_id:
                     return
-
-                # Mark as completed
-                updated = list(self.eval_progress_questions)
-                updated[qi] = {"label": updated[qi]["label"], "status": "completed"}
-                self.eval_progress_questions = updated
-                self.eval_progress_current = qi + 1
-                yield
-
-                if future.done():
-                    # Fast-complete remaining questions visually
-                    remaining = list(self.eval_progress_questions)
-                    for rj in range(qi + 1, q_count):
-                        remaining[rj] = {"label": remaining[rj]["label"], "status": "completed"}
-                    self.eval_progress_questions = remaining
-                    self.eval_progress_current = q_count
-                    yield
-                    break
-
-            if self.eval_cancelled:
-                future.cancel()
-                return
-
-            # Close progress modal as soon as all questions are visually complete
-            self.show_eval_progress_modal = False
-            yield
-
-            if self.eval_cancelled:
-                future.cancel()
-                return
-
-            # Await the actual result (already done or still running)
-            result = await asyncio.wrap_future(future)
-
-            # Parse summary from results
-            results_list = result.get("results", [])
-            print("DEBUG AI RESULTS:", results_list)
-            print("DEBUG AI ERRORS:", result.get("errors", []))
-            errors = result.get("errors", [])
-            if errors:
-                rows = [dict(row, status="unanswered" if row.get("unanswered") else "completed")
-                        for row in results_list]
-                rows.extend(dict(error, status="failed", awarded_marks=None) for error in errors)
-                candidate_id = _evaluation_candidate_id(run_candidate)
-                key = f"{candidate_id}:{run_assessment}:{run_test}"
-                saved = dict(self.real_ai_results_per_candidate)
-                saved[key] = _batch_candidate_display(candidate_id, run_candidate, run_assessment, run_test, rows)
-                self.real_ai_results_per_candidate = saved
-                if (self.selected_assessment_name == run_assessment and self.selected_test_name == run_test
-                        and self.selected_evaluation_candidate == run_candidate):
-                    self.set_selected_evaluation_candidate(run_candidate)
                 self.ai_evaluation_done = False
-                self.is_ai_evaluating = False
-                self.show_eval_progress_modal = False
-                details = "; ".join(f"{error.get('question_no', '?')}: {error.get('error', 'Evaluation failed')}" for error in errors)
-                yield rx.toast.error(f"AI evaluation incomplete. {details}")
-                return
-            summary_df = result.get("candidate_summary_df", None)
-
-            if summary_df is not None and not summary_df.empty:
-                first = summary_df.iloc[0]
-                total_awarded = float(first.get("total_awarded_marks", 0))
-                total_max = float(first.get("total_maximum_marks", 0))
-                pct = round((total_awarded / total_max) * 100, 1) if total_max > 0 else 0
-                pct_display = f"{int(pct)}%" if pct == int(pct) else f"{pct}%"
-                disp_awarded = int(total_awarded) if total_awarded == int(total_awarded) else total_awarded
-                disp_max = int(total_max) if total_max == int(total_max) else total_max
-                self.real_ai_score_display = f"{disp_awarded} / {disp_max}"
-                self.real_ai_max_score_display = str(disp_max)
-                self.real_ai_percentage_display = pct_display
-            elif results_list:
-                total_awarded = sum(float(r.get("awarded_marks", 0)) for r in results_list)
-                total_max = sum(float(r.get("maximum_marks", r.get("max_marks", 0))) for r in results_list)
-                pct = round((total_awarded / total_max) * 100, 1) if total_max > 0 else 0
-                pct_display = f"{int(pct)}%" if pct == int(pct) else f"{pct}%"
-                disp_awarded = int(total_awarded) if total_awarded == int(total_awarded) else total_awarded
-                disp_max = int(total_max) if total_max == int(total_max) else total_max
-                self.real_ai_score_display = f"{disp_awarded} / {disp_max}"
-                self.real_ai_max_score_display = str(disp_max)
-                self.real_ai_percentage_display = pct_display
-
-            self.real_ai_evaluation_date = datetime.now().strftime("%d %b %Y, %I:%M %p")
-
-            # Build question-wise breakdown for UI (with per-question normalized score out of 100)
-            breakdown = []
-            for r in results_list:
+                # Another legitimate worker may still own this run.
                 try:
-                    q_obt = float(r.get("awarded_marks", 0) or 0)
-                    q_max = float(r.get("maximum_marks", r.get("max_marks", 0)) or 0)
-                    q_val = (q_obt / q_max) * 100.0 if q_max > 0 else 0.0
-                    q_pct_str = f"{int(q_val)}%" if q_val == int(q_val) else f"{round(q_val, 1)}%"
-                except (ValueError, TypeError):
-                    q_pct_str = "0%"
-                breakdown.append({
-                    "q_no": str(r.get("question_no", "")),
-                    "question": str(r.get("question", "")),
-                    "response": str(r.get("candidate_answer", "")),
-                    "ai_score": str(r.get("awarded_marks", "")),
-                    "max_marks": str(r.get("maximum_marks", r.get("max_marks", ""))),
-                    "score_pct": q_pct_str,
-                    "justification": str(r.get("justification", "")),
-                })
-            self.real_ai_eval_questions = breakdown
-
-            # Extract CO, LO, RBT analysis if available
-            co_items = []
-            co_df = result.get("co_analysis_df", None)
-            if co_df is not None and not getattr(co_df, "empty", True):
-                for _, row in co_df.iterrows():
-                    val = str(row.get("co", ""))
-                    pct = int(round(float(row.get("attainment_percentage", 0))))
-                    co_items.append({"name": f"CO - {val}", "code": val, "score": pct})
-
-            lo_items = []
-            lo_df = result.get("lo_analysis_df", None)
-            if lo_df is not None and not getattr(lo_df, "empty", True):
-                for _, row in lo_df.iterrows():
-                    val = str(row.get("lo", ""))
-                    pct = int(round(float(row.get("attainment_percentage", 0))))
-                    lo_items.append({"name": f"LO - {val}", "code": val, "score": pct})
-
-            rbt_items = []
-            rbt_df = result.get("rbt_analysis_df", None)
-            if rbt_df is not None and not getattr(rbt_df, "empty", True):
-                for _, row in rbt_df.iterrows():
-                    val = str(row.get("rbt_level", ""))
-                    pct = int(round(float(row.get("attainment_percentage", 0))))
-                    rbt_items.append({"name": val, "code": val, "score": pct})
-
-            results_df = result.get("results_df", None)
-            domain_items = []
-            kt_items = []
-            if results_df is not None and not getattr(results_df, "empty", True):
-                if "domain" in results_df.columns:
-                    for d_val, grp in results_df.groupby("domain"):
-                        if d_val is not None and str(d_val).strip() and str(d_val).lower() != "nan":
-                            awd = float(grp["awarded_marks"].sum())
-                            mx = float(grp["maximum_marks"].sum())
-                            pct = int(round((awd / mx) * 100)) if mx > 0 else 0
-                            domain_items.append({"name": str(d_val), "code": str(d_val), "score": pct})
-                if "knowledge_type" in results_df.columns:
-                    for kt_val, grp in results_df.groupby("knowledge_type"):
-                        if kt_val is not None and str(kt_val).strip() and str(kt_val).lower() != "nan":
-                            awd = float(grp["awarded_marks"].sum())
-                            mx = float(grp["maximum_marks"].sum())
-                            pct = int(round((awd / mx) * 100)) if mx > 0 else 0
-                            kt_items.append({"name": str(kt_val), "code": str(kt_val), "score": pct})
-
-            # Persist new AI results under stable candidate + assessment + test.
-            key = f"{_evaluation_candidate_id(run_candidate)}:{run_assessment}:{run_test}"
-            saved_results = dict(self.real_ai_results_per_candidate)
-            norm_pct = round((total_awarded / total_max) * 100.0, 1) if total_max > 0 else 0.0
-            saved_results[key] = {
-                "candidate_id": _evaluation_candidate_id(run_candidate),
-                "candidate_label": run_candidate, "assessment_name": run_assessment,
-                "test_name": run_test, "evaluation_type": "ai", "status": "completed",
-                "score": self.real_ai_score_display,
-                "marks_obtained": total_awarded,
-                "max_marks": total_max,
-                "normalized_score": norm_pct,
-                "max_score": self.real_ai_max_score_display,
-                "percentage": f"{norm_pct}%",
-                "eval_date": self.real_ai_evaluation_date,
-                "questions": breakdown,
-                "co": co_items,
-                "lo": lo_items,
-                "rbt_level": rbt_items,
-                "domain": domain_items,
-                "knowledge_type": kt_items,
-            }
-            self.real_ai_results_per_candidate = saved_results
-
-            # Update ai_candidates_data with real result for the selected candidate emp_id
-            raw = run_candidate
-            cand_id = raw.split("(")[-1].rstrip(")").strip() if "(" in raw else raw.strip()
-            existing = dict(self.ai_candidates_data.get(cand_id, {}))
-            existing["total_score"] = int(float(self.real_ai_score_display.split("/")[0].strip())) if "/" in self.real_ai_score_display else 0
-            existing["ai_confidence"] = "Real AI"
-            updated_data = dict(self.ai_candidates_data)
-            updated_data[cand_id] = existing
-            self.ai_candidates_data = updated_data
-
-            self.is_ai_evaluating = False
-            self.ai_evaluation_done = True
-            yield rx.toast.success(f"AI Evaluation completed! Score: {self.real_ai_score_display} ({self.real_ai_percentage_display})")
-
-        except FileNotFoundError as e:
-            self.show_eval_progress_modal = False
-            self.is_ai_evaluating = False
-            self.ai_evaluation_done = False
-            yield rx.toast.error(f"AI evaluation could not run: {e}")
-        except Exception as e:
-            self.show_eval_progress_modal = False
-            self.is_ai_evaluating = False
-            self.ai_evaluation_done = False
-            err_msg = str(e)
-            yield rx.toast.error(f"AI Evaluation error: {err_msg}")
+                    self._apply_ai_run(service.get_run(run_id))
+                except (ValueError, OSError):
+                    self.is_ai_evaluating = False
+                    self.ai_run_status = 'failed'
+            yield rx.toast.error(f"AI evaluation error: {exc}")
 
     def open_ai_candidate_detail(self, candidate_id: str):
         """Open the detailed AI score & feedback breakdown modal for a candidate."""
@@ -4885,7 +4679,7 @@ class FacilitatorState(rx.State):
     # New AI keys: candidate_id:assessment_name:test_name; legacy keys remain readable.
     real_ai_results_per_candidate: dict[str, dict] = {}
 
-    def set_selected_evaluation_candidate(self, candidate_name: str):
+    def set_selected_evaluation_candidate(self, candidate_name: str, sync_run: bool = True):
         self.selected_evaluation_candidate = candidate_name
         # Reset real AI display vars when switching candidates so stale data is cleared
         self.real_ai_score_display = "\u2014"
@@ -4894,6 +4688,8 @@ class FacilitatorState(rx.State):
         self.real_ai_evaluation_date = "Not evaluated"
         self.real_ai_eval_questions = []
         if candidate_name == "All Candidates":
+            if sync_run:
+                self._restore_selected_ai_run()
             return
         # Re-load persisted real result if it exists
         saved = _saved_evaluation(self.real_ai_results_per_candidate, candidate_name, self.selected_assessment_name, self.selected_test_name)
@@ -4913,6 +4709,8 @@ class FacilitatorState(rx.State):
                     except Exception:
                         q["score_pct"] = "0%"
             self.real_ai_eval_questions = qs
+        if sync_run:
+            self._restore_selected_ai_run()
 
     @rx.var
     def is_all_candidates_evaluation(self) -> bool:
@@ -4960,6 +4758,7 @@ class FacilitatorState(rx.State):
             self.real_ai_percentage_display = saved.get("percentage", "—")
             self.real_ai_evaluation_date = saved.get("eval_date", "Not evaluated")
             self.real_ai_eval_questions = [dict(q) for q in saved.get("questions", [])]
+        self._restore_selected_ai_run()
 
     @rx.var
     def current_candidate_eval_data(self) -> dict:

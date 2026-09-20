@@ -450,22 +450,8 @@ def _load_candidate_data(candidate_response_path):
     return records
 
 
-def evaluate_candidate(
-    question_paper_path,
-    candidate_response_path,
-    answer_key_path=None,
-    max_retries=3,
-):
-    """
-    Evaluate one candidate using:
-
-    1. Question Paper
-    2. Candidate Response
-    3. Answer Key (optional separate file or embedded in Question Paper)
-
-    Returns detailed question-wise results and candidate summary.
-    """
-
+def prepare_candidate_records(question_paper_path, candidate_response_path, answer_key_path=None):
+    """Reuse the existing workbook normalization without creating an Azure client."""
     question_paper_path = Path(question_paper_path)
     candidate_response_path = Path(candidate_response_path)
     
@@ -477,8 +463,6 @@ def evaluate_candidate(
             raise FileNotFoundError(
                 f"{label} not found: {path}"
             )
-
-    client, deployment = _load_client()
 
     question_lookup = _load_question_data(
         question_paper_path
@@ -532,6 +516,28 @@ def evaluate_candidate(
                 },
             }
         )
+
+    return normalized_records
+
+
+def evaluate_candidate(
+    question_paper_path,
+    candidate_response_path,
+    answer_key_path=None,
+    max_retries=3,
+):
+    """
+    Evaluate one candidate using:
+
+    1. Question Paper
+    2. Candidate Response
+    3. Answer Key (optional separate file or embedded in Question Paper)
+
+    Returns detailed question-wise results and candidate summary.
+    """
+
+    normalized_records = prepare_candidate_records(question_paper_path, candidate_response_path, answer_key_path)
+    client, deployment = _load_client()
 
     evaluation_results = []
     evaluation_errors = []
@@ -801,7 +807,7 @@ def _validate_batch_evaluation(item, maximum_marks):
     }
 
 
-def _evaluate_question_batch(client, deployment, records, max_retries=3, delay_seconds=2):
+def _evaluate_question_batch(client, deployment, records, max_retries=3, delay_seconds=2, result_callback=None):
     """Evaluate normalized records for ONE question, retaining valid partial results.
 
     max_retries follows the existing engine convention: total attempts, not
@@ -830,6 +836,14 @@ def _evaluate_question_batch(client, deployment, records, max_retries=3, delay_s
             }
         else:
             pending.append(record)
+    notified = set()
+    def publish_successes():
+        if result_callback:
+            for response_id, result in completed.items():
+                if response_id not in notified:
+                    result_callback(response_id, result)
+                    notified.add(response_id)
+    publish_successes()
     last_errors = {}
     for attempt in range(1, max_retries + 1):
         if not pending:
@@ -881,6 +895,7 @@ with no duplicate or additional IDs. Do not include candidate identities.
             # Keep prior successful attempts; malformed envelopes invalidate this attempt.
             for record in pending:
                 last_errors[record["response_id"]] = str(exc)
+        publish_successes()
         if pending and attempt < max_retries:
             time.sleep(delay_seconds)
     for record in pending:
@@ -893,34 +908,10 @@ with no duplicate or additional IDs. Do not include candidate identities.
     return [completed[response_id] for response_id in ids]
 
 
-def evaluate_candidates_questionwise(
-    question_paper_path, candidate_records, answer_key_path=None,
-    batch_size=5, max_retries=3, delay_seconds=2, progress_callback=None,
-):
-    """Additive batch entry point; does not call or change evaluate_candidate.
-
-    candidate_records: iterable of dicts with explicit candidate_id, question_no,
-    and candidate_answer (blank/None/NaN means unanswered). Optional question text
-    must match the paper. candidate_name, assessment_name and test_name are copied
-    locally, never sent as model identifiers. Paper metadata/marks are authoritative.
-    Input order determines candidate order within each question; paper order
-    determines question order. One invocation represents one assessment/test.
-
-    Returns JSON-compatible results/errors and results_by_candidate. Each detailed
-    result carries all metadata needed for later candidate-specific aggregation.
-    Missing candidate/question pairs are not synthesized as submitted answers.
-    progress_callback(event), when supplied, runs on the caller thread at each
-    question start/end; completion means all attempts finished, not all succeeded.
-    This path retains the existing loader's requirement for an Answer Key column.
-    """
+def prepare_questionwise_records(question_paper_path, candidate_records, answer_key_path=None):
+    """Reuse batch normalization and canonical question order without Azure calls."""
     import math
     import uuid
-
-    for name, value in (("batch_size", batch_size), ("max_retries", max_retries)):
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            raise ValueError(f"{name} must be a positive integer")
-    if not isinstance(delay_seconds, (int, float)) or not math.isfinite(delay_seconds) or delay_seconds < 0:
-        raise ValueError("delay_seconds must be finite and nonnegative")
     question_lookup = _load_question_data(Path(question_paper_path))
     if answer_key_path is not None:
         # Batch preflight fails explicitly rather than silently grading against a bad key.
@@ -989,6 +980,38 @@ def evaluate_candidates_questionwise(
             "metadata": {field: "" if pd.isna(meta[field]) else str(meta[field])
                          for field in ("co", "lo", "knowledge_type", "domain", "rbt_level")},
         })
+    return groups
+
+
+def evaluate_candidates_questionwise(
+    question_paper_path, candidate_records, answer_key_path=None,
+    batch_size=5, max_retries=3, delay_seconds=2, progress_callback=None,
+):
+    """Additive batch entry point; does not call or change evaluate_candidate.
+
+    candidate_records: iterable of dicts with explicit candidate_id, question_no,
+    and candidate_answer (blank/None/NaN means unanswered). Optional question text
+    must match the paper. candidate_name, assessment_name and test_name are copied
+    locally, never sent as model identifiers. Paper metadata/marks are authoritative.
+    Input order determines candidate order within each question; paper order
+    determines question order. One invocation represents one assessment/test.
+
+    Returns JSON-compatible results/errors and results_by_candidate. Each detailed
+    result carries all metadata needed for later candidate-specific aggregation.
+    Missing candidate/question pairs are not synthesized as submitted answers.
+    progress_callback(event), when supplied, runs on the caller thread at each
+    question start/end; completion means all attempts finished, not all succeeded.
+    This path retains the existing loader's requirement for an Answer Key column.
+    """
+    import math
+    import uuid
+
+    for name, value in (("batch_size", batch_size), ("max_retries", max_retries)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    if not isinstance(delay_seconds, (int, float)) or not math.isfinite(delay_seconds) or delay_seconds < 0:
+        raise ValueError("delay_seconds must be finite and nonnegative")
+    groups = prepare_questionwise_records(question_paper_path, candidate_records, answer_key_path)
     client = deployment = None
     if any(not r["unanswered"] for rows in groups.values() for r in rows):
         client, deployment = _load_client()

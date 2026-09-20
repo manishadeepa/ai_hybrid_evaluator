@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -17,7 +18,7 @@ STATE_PATH = Path('ai_hybrid_evaluator/state/facilitator_state.py')
 tree = ast.parse(STATE_PATH.read_text(encoding='utf-8'))
 state_class = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'FacilitatorState')
 helper_names = {'_evaluation_candidate_id', '_assessment_result_view', '_saved_evaluation', '_batch_candidate_display'}
-method_names = {'run_ai_evaluation', 'run_all_candidates_ai_evaluation', 'set_selected_evaluation_candidate',
+method_names = {'run_ai_evaluation', 'run_all_candidates_ai_evaluation', '_start_ai_run', '_selected_ai_run', '_apply_ai_run', '_restore_selected_ai_run', 'execute_ai_run', 'set_selected_evaluation_candidate',
                 'set_evaluation_selected_test', 'evaluation_candidate_options', 'assessment_evaluation_results',
                 'open_manual_eval_modal', 'save_manual_evaluation', 'results_eval_status'}
 namespace = {'asyncio': asyncio, 'Path': Path, 'datetime': datetime}
@@ -31,6 +32,13 @@ for node in state_class.body:
 
 
 class StateHarness:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        if hasattr(self, 'progress_snapshots'):
+            self.progress_snapshots.append((self.eval_progress_current, list(self.eval_progress_questions)))
+
     @property
     def my_assessments(self):
         async def value():
@@ -49,6 +57,7 @@ def state():
     obj.selected_evaluation_candidate = 'All Candidates'
     obj.results_selected_candidate = 'Alice (A)'
     obj.results_selected_test = 'Test'
+    obj.active_ai_run_id = ""
     obj.is_ai_evaluating = False
     obj.answer_key_uploaded = False
     obj.answer_key_uploaded_path = ''
@@ -91,12 +100,80 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         namespace['_evaluate_candidate'] = self.single
         namespace['get_latest_candidate_response'] = self.lookup
         namespace['_find_response_file_path'] = Mock(return_value=Path('response.xlsx'))
-        patch.object(Path, 'exists', return_value=True).start()
+        original_exists = Path.exists
+        patch.object(Path, 'exists', lambda path: True if path.name in ('paper.xlsx', 'response.xlsx') else original_exists(path)).start()
         self.addCleanup(patch.stopall)
         self.progress_snapshots = []
+        # The UI now dispatches a background event. Exercise that event with real run
+        # persistence, while retaining the existing aggregate engine test doubles.
+        from backend.services.ai_evaluation_run_service import AIEvaluationRunService
+        from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        repository = AIEvaluationRunRepository(Path(directory.name)/'runs.json')
+        owner = self
+        class AdapterRunService(AIEvaluationRunService):
+            def __init__(self):
+                super().__init__(repository)
+                self.invocations = {}
+
+            def normalized(self, candidate, row):
+                return {'candidate_id':candidate,'question_no':row['question_no'],
+                        'question':row.get('question','Question'),'candidate_answer':'Answer',
+                        'unanswered':row.get('unanswered',False),'max_marks':row.get('maximum_marks',10),
+                        'answer_key':'Reference','metadata':{k:row.get(k,question_result(candidate).get(k,'')) for k in ('co','lo','domain','knowledge_type','rbt_level')}}
+
+            def prepare_single(self, assessment, test, candidate, label, paper, response, answer_key, **ids):
+                fixture = owner.single.return_value
+                rows = fixture.get('results', []) + fixture.get('errors', [])
+                run = self.create_run(assessment,test,[self.normalized(candidate,r) for r in rows],labels={candidate:label},**ids)
+                self.invocations[run['run_id']] = lambda: owner.single(str(paper),str(response),answer_key)
+                return run
+
+            def prepare_batch(self, assessment, test, rows, labels, paper, answer_key, skipped=None, **ids):
+                normalized = [self.normalized(r['candidate_id'],dict(r,maximum_marks=float(r['maximum_marks']))) for r in rows]
+                fixture = namespace['_evaluate_candidates_questionwise'].return_value
+                if isinstance(fixture,dict):
+                    existing={(r['candidate_id'],r['question_no']) for r in normalized}
+                    for candidate, results in fixture.get('results_by_candidate',{}).items():
+                        for row in results:
+                            if (candidate,row['question_no']) not in existing:
+                                normalized.append(self.normalized(candidate,row))
+                run=self.create_run(assessment,test,normalized,candidate_scope='all',labels=labels,skipped=skipped,**ids)
+                self.invocations[run['run_id']]=lambda: namespace['_evaluate_candidates_questionwise'](str(paper),rows,answer_key,progress_callback=lambda event:None)
+                return run
+
+            def execute(self, run_id):
+                run=self.start(run_id);token=run['execution_token']
+                try:
+                    output=self.invocations[run_id]()
+                    rows=([r for group in output['results_by_candidate'].values() for r in group]
+                          if 'results_by_candidate' in output else output.get('results',[])+output.get('errors',[]))
+                    while True:
+                        chunk=self._next_chunk(run_id,token,1)
+                        if not chunk: break
+                        q=chunk[0];record=q['record']
+                        row=next(r for r in rows if r['candidate_id']==record['candidate_id'] and r['question_no']==record['question_no'])
+                        if row.get('status')=='failed' or row.get('error'):
+                            self.checkpoint(run_id,token,q['pair_id'],error=row.get('error','Failed'))
+                        else:
+                            self.checkpoint(run_id,token,q['pair_id'],result=row)
+                        time.sleep(0.12)  # allow background state polling to observe each checkpoint
+                    return self.finish(run_id,token)
+                except Exception as exc:
+                    return self.finish(run_id,token,str(exc))
+        service=AdapterRunService()
+        def provider(): return service
+        provider.result_rows=AIEvaluationRunService.result_rows
+        namespace['AIEvaluationRunService']=provider
+        namespace['FacilitatorState']=SimpleNamespace(execute_ai_run=lambda run_id:('execute',run_id))
 
     async def consume(self, obj):
+        obj.progress_snapshots = self.progress_snapshots
         async for value in obj.run_ai_evaluation():
+            if isinstance(value, tuple) and value[0] == 'execute':
+                async for message in obj.execute_ai_run(value[1]):
+                    pass
             self.progress_snapshots.append((getattr(obj, 'eval_progress_current', 0), list(getattr(obj, 'eval_progress_questions', []))))
 
     async def test_all_routing_keys_independence_and_skips(self):
