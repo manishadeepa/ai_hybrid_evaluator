@@ -20,7 +20,7 @@ class TestDependencyService:
         paper = test.get("question_paper", "")
         if paper and (self.upload_dir / paper).is_file():
             reasons.append("question paper")
-        for name in ("manual_evaluations.json", "ai_evaluation_runs.json"):
+        for name in ("manual_evaluations.json", "ai_evaluation_runs.json", "test_candidates.json"):
             path = self.data_dir / name
             if path.exists() and any(matches(r) for r in JSONRepository(path).get_all()):
                 reasons.append(name)

@@ -1,46 +1,46 @@
-﻿from pathlib import Path
-from typing import Any
-
+from copy import deepcopy
+from pathlib import Path
 from backend.repositories.json_repository import JSONRepository
 
 
 class CandidateRepository:
-    """JSON-backed candidate repository.
+    """Candidate directory; retain the existing public repository operations."""
+    def __init__(self, file_path=None):
+        self.file_path = Path(file_path) if file_path is not None else Path(__file__).resolve().parents[1] / "data" / "candidates.json"
+        self.storage = JSONRepository(self.file_path)
 
-    This is temporary persistence and can later be replaced
-    by a TVS database-backed repository without changing the
-    candidate business logic.
-    """
+    @staticmethod
+    def _validate(records):
+        ids = []
+        for row in records:
+            identity = row.get("candidate_id")
+            if not isinstance(identity, str) or not identity.strip() or identity != identity.strip():
+                raise ValueError("Invalid candidate ID in candidates.json.")
+            if any(not isinstance(row.get(k), str) or not row[k].strip() for k in ("name", "email")):
+                raise ValueError("Invalid candidate name/email in candidates.json.")
+            ids.append(identity.casefold())
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate candidate ID in candidates.json.")
 
-    def __init__(self):
-        data_file = Path(__file__).resolve().parent.parent / "data" / "candidates.json"
-        self.storage = JSONRepository(data_file)
+    def get_all(self, include_deleted=False):
+        rows = self.storage.get_all()
+        self._validate(rows)
+        return rows if include_deleted else [r for r in rows if not r.get("deleted_at")]
 
-    def get_all(self) -> list[dict[str, Any]]:
-        """Return all candidates."""
-        return self.storage.get_all()
+    def get_by_id(self, candidate_id):
+        return next((r for r in self.get_all() if r["candidate_id"] == candidate_id), None)
 
-    def get_by_id(self, candidate_id: str) -> dict[str, Any] | None:
-        """Return a candidate by candidate ID."""
-        candidates = self.storage.get_all()
+    def save_all(self, records):
+        self.get_all(include_deleted=True)  # Never overwrite malformed existing data.
+        self._validate(records)
+        return self.storage.save_all(deepcopy(records))
 
-        for candidate in candidates:
-            if str(candidate.get("candidate_id")) == str(candidate_id):
-                return candidate
+    def save(self, candidate):
+        rows = self.get_all(include_deleted=True)
+        identity = candidate["candidate_id"]
+        rows = [r for r in rows if r["candidate_id"] != identity] + [deepcopy(candidate)]
+        self.save_all(rows)
+        return deepcopy(candidate)
 
-        return None
-
-    def save(self, candidate: dict[str, Any]) -> dict[str, Any]:
-        """Create or update a candidate."""
-        candidates = self.storage.get_all()
-        candidate_id = str(candidate["candidate_id"])
-
-        for index, existing_candidate in enumerate(candidates):
-            if str(existing_candidate.get("candidate_id")) == candidate_id:
-                candidates[index] = dict(candidate)
-                self.storage.save_all(candidates)
-                return candidates[index]
-
-        candidates.append(dict(candidate))
-        self.storage.save_all(candidates)
-        return candidate
+    def delete(self, candidate_id):
+        self.save_all([r for r in self.get_all(include_deleted=True) if r["candidate_id"] != candidate_id])

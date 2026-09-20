@@ -57,6 +57,7 @@ class AssessmentService:
             if any(r["name"].strip().casefold() == name.casefold() and r["assessment_id"] != identity for r in existing):
                 raise ValueError("An assessment with this name already exists.")
             value["assessment_id"] = identity
+            self._protect_test_assignments(identity, value.get("assigned_candidates", []))
             self._validate_lifecycle(value)
             for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals"):
                 if field in value and not isinstance(value[field], dict):
@@ -87,6 +88,7 @@ class AssessmentService:
             self._require_id(assessment_id)
             if self.repository.get_by_id(assessment_id) is None:
                 return False
+            self._protect_test_assignments(assessment_id, [])
             previous_tests = self.tests.repository.get_all()
             self.tests.delete_assessment_tests(assessment_id)
             try:
@@ -191,9 +193,8 @@ class AssessmentService:
     def _candidates(self):
         if self.candidate_catalog is not None:
             return self.candidate_catalog()
-        from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
-        from backend.repositories.candidate_repository import CandidateRepository
-        return list(SHARED_CANDIDATES) + CandidateRepository().get_all()
+        from backend.services.candidate_management_service import CandidateManagementService
+        return CandidateManagementService().list_candidates()
 
     def _candidate_ids(self, ids):
         ids = self._unique_ids(ids, "candidate")
@@ -298,3 +299,9 @@ class AssessmentService:
             self.get_test(assessment_id, test_id)
             self.tests.update_test(test_id, changes)
             return self.get_assessment(assessment_id)
+
+    def _protect_test_assignments(self, assessment_id, candidate_ids):
+        from backend.repositories.test_candidate_repository import TestCandidateRepository
+        records = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json").get_all()
+        if any(r["assessment_id"] == assessment_id and r["candidate_id"] not in candidate_ids for r in records):
+            raise ValueError("Cannot remove assessment assignment because candidate test assignments exist.")
