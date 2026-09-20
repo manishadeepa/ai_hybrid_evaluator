@@ -12,6 +12,7 @@ import asyncio
 import base64
 from datetime import datetime
 from backend.services.manual_evaluation_service import ManualEvaluationService
+from backend.services.assessment_service import AssessmentService
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
 from pathlib import Path
 import reflex as rx
@@ -1990,55 +1991,49 @@ class FacilitatorState(rx.State):
         self.is_replacing_qp = value
 
     async def handle_upload_for_test(self, files: list[rx.UploadFile]):
-        """Real file upload handler: writes file to disk and updates test metadata."""
-        if not files:
-            return rx.toast.error("Please select a file to upload.")
-
-        assessment_name = self.selected_assessment_name
-        if not assessment_name:
-            return rx.toast.error("No assessment selected.")
-
-        test_name = self.selected_test_name or "Test 1"
-
-        admin_state = await self.get_state(AdminState)
-        assessment = next((dict(a) for a in admin_state.assessments if a["name"] == assessment_name), None)
-        if assessment is None or test_name not in list(assessment.get("tests", [])) + [assessment.get("final_test", "")]:
-            return rx.toast.error("Select an existing assessment and test before uploading.")
-        for file in files:
-            upload_data = await file.read()
-            out_dir = rx.get_upload_dir()
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / file.filename
-            with open(out_path, "wb") as f:
-                f.write(upload_data)
-
-            qps = dict(assessment.get("question_papers", {}))
-            qps[test_name] = file.filename
-            assessment["question_papers"] = qps
-            assessment = admin_state._persist_assessment_record(assessment)
+        """Publish only a completely validated paper for the selected test."""
+        from backend.services.question_paper_service import QuestionPaperService
+        try:
+            if len(files) != 1:
+                raise ValueError("Please select exactly one question paper to upload.")
+            assessment_name = self.selected_assessment_name
+            test_name = self.selected_test_name
+            admin_state = await self.get_state(AdminState)
+            assessment = next((a for a in admin_state.assessments if a["name"] == assessment_name), None)
+            if not assessment or not assessment.get("assessment_id") or test_name not in assessment.get("test_ids", {}):
+                raise ValueError("Select an existing assessment and test; reload the workspace if necessary.")
+            service = AssessmentService()
+            papers = QuestionPaperService(service.tests, rx.get_upload_dir())
+            file = files[0]
+            await asyncio.to_thread(papers.import_upload, assessment["assessment_id"],
+                                    assessment["test_ids"][test_name], file.filename, await file.read())
+            admin_state._apply_assessment_records(service.load_assessments())
             self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
-
+        except (ValueError, OSError) as exc:
+            self.qp_validation_status = "error"
+            self.qp_validation_popup_open = True
+            return rx.toast.error(str(exc) if isinstance(exc, ValueError) else "Unable to save question paper; please try again.")
         self.is_replacing_qp = False
-        # Validation result popup (UI only; isolated state for backend developer connection)
         self.qp_validation_status = "success"
         self.qp_validation_popup_open = True
-        return rx.toast.success(f"Question paper uploaded for {test_name}: {files[0].filename}")
+        return rx.toast.success(f"Question paper uploaded for {test_name}: {file.filename}")
 
     async def remove_test_question_paper(self, test_name: str):
-        """Remove a persisted association; keep the uploaded file untouched."""
-        admin_state = await self.get_state(AdminState)
-        for record in admin_state.assessments:
-            if record["name"] == self.selected_assessment_name:
-                assessment = dict(record)
-                qps = dict(assessment.get("question_papers", {}))
-                if test_name not in qps:
-                    return
-                qps.pop(test_name)
-                assessment["question_papers"] = qps
-                admin_state._persist_assessment_record(assessment)
-                self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
-                self.is_replacing_qp = False
-                return rx.toast.info(f"Question paper removed for {test_name}.")
+        """Detach safely while retaining the original workbook."""
+        from backend.services.question_paper_service import QuestionPaperService
+        try:
+            admin_state = await self.get_state(AdminState)
+            assessment = next((a for a in admin_state.assessments if a["name"] == self.selected_assessment_name), None)
+            if not assessment or not assessment.get("assessment_id"):
+                raise ValueError("Select an existing assessment; reload the workspace if necessary.")
+            service = AssessmentService()
+            QuestionPaperService(service.tests).remove_paper(assessment["assessment_id"], assessment.get("test_ids", {}).get(test_name, ""))
+            admin_state._apply_assessment_records(service.load_assessments())
+            self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
+            self.is_replacing_qp = False
+            return rx.toast.info(f"Question paper removed for {test_name}.")
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc) if isinstance(exc, ValueError) else "Unable to remove question paper; please try again.")
 
     async def remove_current_test_question_paper(self):
         return await self.remove_test_question_paper(self.selected_test_name)
