@@ -1,6 +1,7 @@
 """
-Candidate State — manages candidate dashboard and active test environment session.
-Includes mock questions, candidate answers, navigation, proctoring alerts, and submission flow.
+Candidate State â€” manages candidate dashboard and active test environment session.
+Includes question loading from Facilitator-uploaded papers, answers, navigation,
+proctoring alerts, and submission flow.
 """
 
 import asyncio
@@ -16,141 +17,148 @@ from ai_hybrid_evaluator.models.models import get_candidate_profile, save_candid
 from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response
 
 
-MOCK_SUBJECTIVE_QUESTIONS = [
-    {
-        "id": 1,
-        "title": "Machine Learning Fundamentals in Assessment",
-        "marks": 10,
-        "category": "Artificial Intelligence",
-        "text": "Explain how supervised machine learning models can be trained to evaluate structured coding and technical assessment submissions.",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    },
-    {
-        "id": 2,
-        "title": "Natural Language Processing for Subjective Grading",
-        "marks": 10,
-        "category": "NLP & Evaluation",
-        "text": "Describe the architecture of Large Language Models (LLMs) used in evaluating semantic similarity between student answers and model answer keys.",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    },
-    {
-        "id": 3,
-        "title": "Automated Evaluation Systems in Education",
-        "marks": 10,
-        "category": "GenAI Systems",
-        "text": "Discuss the key advantages and limitations of using Artificial Intelligence in automated evaluation systems in education.",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    },
-    {
-        "id": 4,
-        "title": "Quality Assurance in Model Output Verification",
-        "marks": 10,
-        "category": "Quality Assurance",
-        "text": "How do human-in-the-loop (HITL) workflows ensure fairness, accountability, and reliability in automated AI grading pipelines?",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    },
-    {
-        "id": 5,
-        "title": "Statistical Process Control & Capability Indices",
-        "marks": 10,
-        "category": "Quality Engineering",
-        "text": "Explain the fundamental difference between Process Capability (Cp) and Process Performance (Cpk) in manufacturing quality assurance.",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    },
-] + [
-    {
-        "id": i,
-        "title": f"Technical Engineering & Quality Analysis — Part {i}",
-        "marks": 10,
-        "category": "Core Engineering",
-        "text": f"Analyze the engineering parameters, failure modes, and mitigation strategies applicable to Section {i} of industrial manufacturing quality systems.",
-        "guidelines": [
-            "Your answer should be structured and clear.",
-            "Support your points with relevant examples.",
-            "Write in your own words.",
-        ],
-    }
-    for i in range(6, 21)
-]
-
-QUESTION_PAPER_PATH = Path("uploaded_files") / "Question sheet.xlsx"
+# â”€â”€ Per-session question store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Key: "{assessment_name}::{test_name}"
+# Value: list of question dicts loaded from the Facilitator-uploaded file.
+# Populated in start_test / on_test_page_load from FacilitatorState.question_papers.
+LOADED_TEST_QUESTIONS: dict[str, list[dict]] = {}
 
 
-def load_question_paper_questions() -> list[dict]:
-    """Load the candidate questions from the real Question Paper Excel file."""
-    path_to_use = QUESTION_PAPER_PATH
-    if not path_to_use.exists():
-        alt = Path(__file__).resolve().parents[2] / "uploaded_files" / "Question sheet.xlsx"
-        if alt.exists():
-            path_to_use = alt
-
+def _load_questions_from_file(filepath: Path) -> list[dict]:
+    """Parse an uploaded question-paper Excel file and return a list of question dicts.
+    Detects Objective questions by the presence of Option_A / Option A columns.
+    Detects Subjective questions otherwise.
+    Preserves the row order of the uploaded file exactly."""
+    if not filepath.exists():
+        print(f"[QP] File not found: {filepath}")
+        return []
     try:
-        df = pd.read_excel(path_to_use)
-        questions = []
-        for _, row in df.iterrows():
-            q_num_str = str(row["Question No"]).replace("Q", "").strip()
-            q_id = int(q_num_str) if q_num_str.isdigit() else len(questions) + 1
+        df = pd.read_excel(filepath)
+    except Exception as e:
+        print(f"[QP] Failed to read {filepath}: {e}")
+        return []
+
+    cols = [str(c).strip() for c in df.columns]
+    # Detect format by looking for option columns
+    has_option_cols = any(c in cols for c in [
+        "Option_A", "Option A", "Option_B", "Option B",
+        "Option_C", "Option C", "Option_D", "Option D",
+    ])
+    # Also detect inline A) / B) format (single Question column with embedded options)
+    has_inline_options = (
+        not has_option_cols
+        and "Question" in cols
+        and df["Question"].astype(str).str.contains(r"\n[A-D]\)", regex=True).any()
+    )
+
+    questions: list[dict] = []
+
+    def _safe(row, *keys, default=""):
+        for k in keys:
+            v = row.get(k)
+            if v is not None and pd.notna(v) and str(v).strip():
+                return str(v).strip()
+        return default
+
+    for _, row in df.iterrows():
+        idx = len(questions) + 1
+
+        if has_option_cols:
+            # â”€â”€ Structured Objective (separate option columns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             questions.append({
-                "id": q_id,
-                "title": str(row["Question No"]),
-                "marks": int(row["Marks"]) if pd.notna(row.get("Marks")) else 10,
-                "co": str(row.get("CO", "")),
-                "lo": str(row.get("LO", "")),
-                "knowledge_type": str(row.get("Knowledge Type", "")),
-                "category": str(row.get("Domain", "")),
-                "rbt_level": str(row.get("RBT level", "")),
-                "text": str(row.get("Question", "")),
+                "id": idx,
+                "title": f"Q{idx}",
+                "marks": int(float(_safe(row, "Marks", default="1"))),
+                "co": _safe(row, "CO", default=""),
+                "lo": _safe(row, "LO", default=""),
+                "knowledge_type": _safe(row, "Knowledge Type", default=""),
+                "category": _safe(row, "Topic_Domain", "Domain", "Category", default=""),
+                "rbt_level": _safe(row, "RBT level", "RBT_Level", default=""),
+                "text": _safe(row, "Question_Text", "Question", default=""),
+                "question_type": "Objective",
+                "options": {
+                    "A": _safe(row, "Option_A", "Option A", default=""),
+                    "B": _safe(row, "Option_B", "Option B", default=""),
+                    "C": _safe(row, "Option_C", "Option C", default=""),
+                    "D": _safe(row, "Option_D", "Option D", default=""),
+                },
+                "correct_option": _safe(row, "Correct_Option", "Answer Key", default=""),
+                "guidelines": [],
+            })
+
+        elif has_inline_options:
+            # â”€â”€ Inline Objective (A) B) C) D) embedded in Question text) â”€â”€â”€â”€
+            text = str(row.get("Question", ""))
+            parts = re.split(r"\n(?=[A-D]\))", text)
+            q_prompt = parts[0].strip()
+            opts: dict[str, str] = {}
+            for part in parts[1:]:
+                m = re.match(r"^([A-D])\)\s*(.*)", part.strip(), re.DOTALL)
+                if m:
+                    opts[m.group(1)] = m.group(2).strip()
+            questions.append({
+                "id": idx,
+                "title": _safe(row, "Question No", default=f"Q{idx}"),
+                "marks": int(float(_safe(row, "Marks", default="1"))),
+                "co": _safe(row, "CO", default=""),
+                "lo": _safe(row, "LO", default=""),
+                "knowledge_type": _safe(row, "Knowledge Type", default=""),
+                "category": _safe(row, "Domain", "Category", default=""),
+                "rbt_level": _safe(row, "RBT level", "RBT_Level", default=""),
+                "text": q_prompt,
+                "question_type": "Objective",
+                "options": opts,
+                "correct_option": _safe(row, "Answer Key", "Correct_Option", default=""),
+                "guidelines": [],
+            })
+
+        else:
+            # â”€â”€ Subjective â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            questions.append({
+                "id": idx,
+                "title": _safe(row, "Question No", default=f"Q{idx}"),
+                "marks": int(float(_safe(row, "Marks", default="10"))),
+                "co": _safe(row, "CO", default=""),
+                "lo": _safe(row, "LO", default=""),
+                "knowledge_type": _safe(row, "Knowledge Type", default=""),
+                "category": _safe(row, "Domain", "Category", default=""),
+                "rbt_level": _safe(row, "RBT level", "RBT_Level", default=""),
+                "text": _safe(row, "Question", default=""),
+                "question_type": "Subjective",
+                "options": {},
+                "correct_option": "",
                 "guidelines": [
                     "Read the question carefully.",
                     "Answer in your own words.",
                     "Support your answer with relevant points.",
                 ],
             })
-        if questions:
-            return questions
-    except Exception as e:
-        print(f"Error loading {path_to_use}: {e}")
-    return MOCK_SUBJECTIVE_QUESTIONS
+
+    print(f"[QP] Loaded {len(questions)} questions from {filepath.name}")
+    return questions
 
 
-REAL_QUESTIONS = load_question_paper_questions()
+def _get_upload_dir() -> Path:
+    """Return Reflex's upload directory."""
+    try:
+        p = rx.get_upload_dir()
+        return Path(str(p))
+    except Exception:
+        return Path("uploaded_files")
 
 
 def _strip_html(html: str) -> str:
     """Best-effort plain-text extraction from the rich-text editor's HTML,
-    used only for word-counting / "has the candidate answered this
-    question yet" checks — never for grading or storage."""
+    used only for word-counting / 'has the candidate answered this
+    question yet' checks â€” never for grading or storage."""
     if not html:
         return ""
-    # Turn block-level breaks into spaces so words across separate
-    # <div>/<p>/<br> lines don't get glued together when tags are stripped.
     text = re.sub(r"<(br|/div|/p|/li)\s*/?>", " ", html, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", "", text)
     text = re.sub(r"&nbsp;", " ", text)
     return text.strip()
 
 
-# ── Persistent test completion & violation store ──────────────────────────────
 # In-memory global store that persists across sessions, refreshes, and page navigation.
 # Key: f"{candidate_id}::{assessment_name}::{test_name}"
 # Value: dict with keys:
@@ -163,7 +171,7 @@ class CandidateState(rx.State):
     # Candidate identity (emp_id or email)
     candidate_id: str = "CAND-2031"
 
-    # ── Active Test Session Metadata ─────────────────────────────────────
+    # â”€â”€ Active Test Session Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     active_assessment_name: str = "Quality"
     active_test_name: str = "Formative 1"
 
@@ -174,9 +182,13 @@ class CandidateState(rx.State):
     is_time_expired: bool = False
     timer_session_id: int = 0
 
-    # Candidate Answers — dictionary mapping question ID (str) to answer
-    # HTML (rich-text content from the answer editor).
+    # Candidate Answers â€” dictionary mapping question ID (str) to answer
+    # HTML (rich-text content from the answer editor) for Subjective questions.
     answers: dict[str, str] = {}
+
+    # MCQ Answers â€” dictionary mapping question ID (str) to selected option letter
+    # e.g. {"1": "A", "3": "C"}  for Objective questions.
+    mcq_answers: dict[str, str] = {}
 
     # Marked for Review question IDs (list of ints)
     marked_for_review: list[int] = []
@@ -184,13 +196,17 @@ class CandidateState(rx.State):
     # Auto-save indicator text
     auto_save_status: str = ""
 
-    # ── Test completion stores for dashboard reactivity ───────────────────
+    # â”€â”€ Question Navigation Panel State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    nav_filter: str = "all"  # "all" | "objective" | "subjective"
+    show_instructions: bool = True
+
+    # â”€â”€ Test completion stores for dashboard reactivity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Structure: { assessment_name: { test_name: timestamp } }
     # Mirrors FacilitatorState.question_papers for seamless .contains() checks in Reflex
     submitted_tests: dict[str, dict[str, str]] = {}
     disqualified_tests: dict[str, dict[str, str]] = {}
 
-    # ── Proctoring State ────────────────────────────────────────────────
+    # â”€â”€ Proctoring State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     is_fullscreen: bool = True
     is_tab_locked: bool = True
     camera_active: bool = True
@@ -200,26 +216,26 @@ class CandidateState(rx.State):
     show_violation_modal: bool = False
     violation_warning_msg: str = ""
 
-    # ── Submission State ────────────────────────────────────────────────
+    # â”€â”€ Submission State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     show_submit_dialog: bool = False
     is_test_submitted: bool = False
     submission_receipt: str = ""
     submitted_at: str = ""
 
-    # ── Score snapshot (populated on dashboard load from FacilitatorState) ──
+    # â”€â”€ Score snapshot (populated on dashboard load from FacilitatorState) â”€â”€
     # Flat dicts with composite keys to work cleanly inside rx.foreach vars.
     # Key for test-level: "AssessmentName::TestName"
     candidate_test_scores: dict[str, str] = {}      # -> score_str e.g. "72%" or "-"
     candidate_test_evaluated: dict[str, bool] = {}  # -> True / False
 
-    # ── Candidate Feedback State (Post-submission) ───────────────────────
+    # â”€â”€ Candidate Feedback State (Post-submission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     show_candidate_feedback_modal: bool = False
     candidate_feedback_questions: list[dict] = []
     candidate_feedback_answers: dict[str, str] = {}
     candidate_feedback_error: str = ""
     saved_candidate_feedbacks: dict[str, dict] = {}
 
-    # ── Candidate Identity Helper ───────────────────────────────────────
+    # â”€â”€ Candidate Identity Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     async def _get_current_candidate_id(self) -> str:
         try:
             auth = await self.get_state(AuthState)
@@ -249,15 +265,20 @@ class CandidateState(rx.State):
             "submitted_at": self.submitted_at or existing.get("submitted_at", ""),
             "submission_receipt": self.submission_receipt or existing.get("submission_receipt", ""),
             "answers": dict(self.answers),
+            "mcq_answers": dict(self.mcq_answers),
             "marked_for_review": list(self.marked_for_review),
         }
 
-    # ── Computed Variables ──────────────────────────────────────────────
+    # â”€â”€ Computed Variables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @rx.var
     def current_question(self) -> dict:
-        if 0 <= self.current_question_index < len(REAL_QUESTIONS):
-            return REAL_QUESTIONS[self.current_question_index]
-        return REAL_QUESTIONS[0]
+        qs = LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])
+        if not qs:
+            return {}
+        idx = self.current_question_index
+        if 0 <= idx < len(qs):
+            return qs[idx]
+        return qs[0]
 
     @rx.var
     def current_question_number(self) -> int:
@@ -265,7 +286,7 @@ class CandidateState(rx.State):
 
     @rx.var
     def total_questions(self) -> int:
-        return len(REAL_QUESTIONS)
+        return len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []))
 
     @rx.var
     def current_answer_text(self) -> str:
@@ -286,10 +307,15 @@ class CandidateState(rx.State):
     @rx.var
     def answered_count(self) -> int:
         count = 0
-        for q in REAL_QUESTIONS:
+        for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []):
             qid_str = str(q["id"])
-            if _strip_html(self.answers.get(qid_str, "")).strip():
-                count += 1
+            if q.get("question_type") == "Objective":
+                # MCQ: answered if an option has been selected
+                if self.mcq_answers.get(qid_str, "").strip():
+                    count += 1
+            else:
+                if _strip_html(self.answers.get(qid_str, "")).strip():
+                    count += 1
         return count
 
     @rx.var
@@ -308,6 +334,100 @@ class CandidateState(rx.State):
             "Support your points with relevant examples.",
             "Write in your own words.",
         ])
+
+    @rx.var
+    def current_question_type(self) -> str:
+        """Returns 'Objective' or 'Subjective' for the current question."""
+        idx = self.current_question_index
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("question_type", "Subjective"))
+        return "Subjective"
+
+    @rx.var
+    def current_mcq_answer(self) -> str:
+        """Returns the selected option letter (e.g. 'A') for the current MCQ question."""
+        qid_str = str(self.current_question_number)
+        return self.mcq_answers.get(qid_str, "")
+
+    @rx.var
+    def current_option_a(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("A", ""))
+        return ""
+
+    @rx.var
+    def current_option_b(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("B", ""))
+        return ""
+
+    @rx.var
+    def current_option_c(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("C", ""))
+        return ""
+
+    @rx.var
+    def current_option_d(self) -> str:
+        idx = self.current_question_index
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("D", ""))
+        return ""
+
+    # â”€â”€ Question Navigation Computed Vars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    @rx.var
+    def nav_questions(self) -> list[dict]:
+        """All uploaded questions for the navigation panel â€” no type filtering."""
+        items = []
+        curr = self.current_question_number
+        marked_set = set(self.marked_for_review)
+
+        for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []):
+            q_id = q["id"]
+            q_type = q.get("question_type", "Subjective")
+            qid_str = str(q_id)
+            is_curr = (q_id == curr)
+            is_marked = (q_id in marked_set)
+
+            if q_type == "Objective":
+                is_answered = bool(self.mcq_answers.get(qid_str, "").strip())
+            else:
+                is_answered = bool(_strip_html(self.answers.get(qid_str, "")).strip())
+
+            if is_curr:
+                status = "current"
+            elif is_marked:
+                status = "marked"
+            elif is_answered:
+                status = "answered"
+            else:
+                status = "unanswered"
+
+            items.append({
+                "id": q_id,
+                "number": str(q_id),
+                "type": q_type,
+                "status": status,
+                "is_current": is_curr,
+                "is_marked": is_marked,
+                "is_answered": is_answered,
+            })
+        return items
+
+    @rx.var
+    def total_nav_count(self) -> int:
+        return len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []))
+
+    @rx.var
+    def objective_nav_count(self) -> int:
+        return sum(1 for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []) if q.get("question_type") == "Objective")
+
+    @rx.var
+    def subjective_nav_count(self) -> int:
+        return sum(1 for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []) if q.get("question_type") == "Subjective")
 
     @rx.var
     def active_test_key(self) -> str:
@@ -340,40 +460,40 @@ class CandidateState(rx.State):
     @rx.var
     def is_last_question(self) -> bool:
         """True when the candidate is on the final question."""
-        return self.current_question_index >= len(REAL_QUESTIONS) - 1
+        return self.current_question_index >= len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])) - 1
 
-    # ── Question metadata computed vars (CO / LO / RBT / Marks) ───────
-    # Access REAL_QUESTIONS directly (cannot chain .get() on an rx.var result)
+    # â”€â”€ Question metadata computed vars (CO / LO / RBT / Marks) â”€â”€â”€â”€â”€â”€â”€
+    # Access LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []) directly (cannot chain .get() on an rx.var result)
     @rx.var
     def current_question_marks(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(REAL_QUESTIONS):
-            v = REAL_QUESTIONS[idx].get("marks", "")
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            v = LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("marks", "")
             return str(v) if v != "" else ""
         return ""
 
     @rx.var
     def current_question_co(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(REAL_QUESTIONS):
-            return str(REAL_QUESTIONS[idx].get("co", ""))
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("co", ""))
         return ""
 
     @rx.var
     def current_question_lo(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(REAL_QUESTIONS):
-            return str(REAL_QUESTIONS[idx].get("lo", ""))
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("lo", ""))
         return ""
 
     @rx.var
     def current_question_rbt(self) -> str:
         idx = self.current_question_index
-        if 0 <= idx < len(REAL_QUESTIONS):
-            return str(REAL_QUESTIONS[idx].get("rbt_level", ""))
+        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
+            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("rbt_level", ""))
         return ""
 
-    # ── Timer & Actions ──────────────────────────────────────────────────
+    # â”€â”€ Timer & Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @rx.event(background=True)
     async def run_timer(self):
@@ -418,7 +538,7 @@ class CandidateState(rx.State):
     async def refresh_candidate_scores(self):
         """Read evaluation results + weightages from FacilitatorState and build
         a per-assessment score snapshot for the currently logged-in candidate.
-        Only reads data — never writes to any submission or proctoring store."""
+        Only reads data â€” never writes to any submission or proctoring store."""
         from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
         from ai_hybrid_evaluator.state.admin_state import AdminState as _AdminState
 
@@ -523,10 +643,12 @@ class CandidateState(rx.State):
                 self.violation_count = min(record.get("violation_count", 0), self.max_violations)
                 if record.get("answers"):
                     self.answers = dict(record.get("answers"))
+                if record.get("mcq_answers"):
+                    self.mcq_answers = dict(record.get("mcq_answers"))
                 if record.get("marked_for_review"):
                     self.marked_for_review = list(record.get("marked_for_review"))
 
-        # Always start at Question 1 (index 0) — even for In Progress tests
+        # Always start at Question 1 (index 0) â€” even for In Progress tests
         self.current_question_index = 0
 
         if not self.is_test_submitted and not self.is_time_expired:
@@ -565,6 +687,32 @@ class CandidateState(rx.State):
 
         self.active_assessment_name = assessment_name
         self.active_test_name = test_name
+
+        # ── Load questions from the Facilitator-uploaded file ────────────
+        # Import here to avoid circular imports; FacilitatorState lives in the same process.
+        q_key = f"{assessment_name}::{test_name}"
+        if q_key not in LOADED_TEST_QUESTIONS:
+            try:
+                from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState as FS
+                fac = await self.get_state(FS)
+                filename = fac.question_papers.get(assessment_name, {}).get(test_name, "")
+                if filename:
+                    upload_dir = _get_upload_dir()
+                    filepath = upload_dir / filename
+                    qs = _load_questions_from_file(filepath)
+                    if qs:
+                        LOADED_TEST_QUESTIONS[q_key] = qs
+                        print(f"[QP] Loaded {len(qs)} questions for {q_key} from {filename}")
+                    else:
+                        print(f"[QP] WARNING: No questions loaded for {q_key} from {filename}")
+                        LOADED_TEST_QUESTIONS[q_key] = []
+                else:
+                    print(f"[QP] WARNING: No QP uploaded for {q_key}")
+                    LOADED_TEST_QUESTIONS[q_key] = []
+            except Exception as e:
+                print(f"[QP] ERROR loading questions for {q_key}: {e}")
+                LOADED_TEST_QUESTIONS[q_key] = []
+
         # Always start at Question 1 (index 0)
         self.current_question_index = 0
         self.is_test_submitted = False
@@ -580,15 +728,18 @@ class CandidateState(rx.State):
         if record:
             self.violation_count = min(record.get("violation_count", 0), self.max_violations)
             self.answers = dict(record.get("answers", {}))
+            self.mcq_answers = dict(record.get("mcq_answers", {}))
             self.marked_for_review = list(record.get("marked_for_review", []))
         else:
             self.violation_count = 0
             self.answers = {}
+            self.mcq_answers = {}
             self.marked_for_review = []
             self._save_current_test_record(status="In Progress")
 
         self.timer_session_id += 1
         return [rx.redirect("/candidate/test"), CandidateState.run_timer]
+
 
     def _restore_rte_script(self):
         """Return a call_script that pushes the currently saved answer HTML
@@ -627,12 +778,23 @@ class CandidateState(rx.State):
         return rx.call_script(js)
 
     def set_question_index(self, index: int):
-        if 0 <= index < len(REAL_QUESTIONS):
+        if 0 <= index < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
             self.current_question_index = index
+            self._save_current_test_record()
             return self._restore_rte_script()
 
+    def jump_to_question(self, q_num: int):
+        """Immediately open the specified question number (1-based index)."""
+        return self.set_question_index(q_num - 1)
+
+    def set_nav_filter(self, f: str):
+        self.nav_filter = f
+
+    def toggle_instructions(self):
+        self.show_instructions = not self.show_instructions
+
     def next_question(self):
-        if self.current_question_index < len(REAL_QUESTIONS) - 1:
+        if self.current_question_index < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])) - 1:
             self.current_question_index += 1
             return self._restore_rte_script()
 
@@ -648,6 +810,28 @@ class CandidateState(rx.State):
         new_answers = dict(self.answers)
         new_answers[qid_str] = text
         self.answers = new_answers
+        self.auto_save_status = "Auto-saved"
+        self._save_current_test_record()
+
+    def select_mcq_option(self, option: str):
+        """Save the selected MCQ option for the current Objective question."""
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
+            return
+        qid_str = str(self.current_question_number)
+        new_mcq = dict(self.mcq_answers)
+        new_mcq[qid_str] = option
+        self.mcq_answers = new_mcq
+        self.auto_save_status = "Auto-saved"
+        self._save_current_test_record()
+
+    def clear_mcq_answer(self):
+        """Clear the MCQ answer for the current Objective question."""
+        if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
+            return
+        qid_str = str(self.current_question_number)
+        new_mcq = dict(self.mcq_answers)
+        new_mcq.pop(qid_str, None)
+        self.mcq_answers = new_mcq
         self.auto_save_status = "Auto-saved"
         self._save_current_test_record()
 
@@ -695,7 +879,7 @@ class CandidateState(rx.State):
         # Persist current answers (already in state via set_answer_html)
         self._save_current_test_record()
         self.auto_save_status = "Auto-saved"
-        if self.current_question_index < len(REAL_QUESTIONS) - 1:
+        if self.current_question_index < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])) - 1:
             self.current_question_index += 1
             return self._restore_rte_script()
 
@@ -777,7 +961,7 @@ class CandidateState(rx.State):
         """Detected when browser enters fullscreen."""
         self.is_fullscreen = True
 
-    # ── Submission Flow ─────────────────────────────────────────────────
+    # â”€â”€ Submission Flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def open_submit_dialog(self):
         if not self.is_test_submitted and not self.is_time_expired and not self.is_disqualified:
@@ -797,7 +981,7 @@ class CandidateState(rx.State):
                 candidate_name=cand_id,
                 assessment_name=self.active_assessment_name,
                 test_name=self.active_test_name,
-                questions=REAL_QUESTIONS,
+                questions=LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []),
                 answers=self.answers,
             )
         except Exception as e:
@@ -840,7 +1024,7 @@ class CandidateState(rx.State):
             rx.redirect("/candidate/dashboard"),
         ]
 
-    # ── Candidate Test Feedback Methods ──────────────────────────────────
+    # â”€â”€ Candidate Test Feedback Methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @staticmethod
     def _get_candidate_feedback_file_path() -> Path:
         base_dir = Path(__file__).resolve().parent.parent
@@ -955,9 +1139,9 @@ class CandidateState(rx.State):
             yield action
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Candidate Profile State
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class CandidateProfileState(rx.State):
     """Candidate Profile state with photo upload and organization details."""
@@ -1107,3 +1291,4 @@ class CandidateProfileState(rx.State):
         }
         save_candidate_profile(self.emp_id, data)
         return rx.toast.success("Profile saved successfully!")
+

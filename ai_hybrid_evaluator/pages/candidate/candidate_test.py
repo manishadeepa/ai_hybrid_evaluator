@@ -105,7 +105,7 @@ def test_header() -> rx.Component:
                 ),
                 rx.box(
                     rx.text(
-                        CandidateState.current_question_number.to_string() + " of 20",
+                        CandidateState.current_question_number.to_string() + " of " + CandidateState.total_questions.to_string(),
                         font_family=FONT_BODY,
                         size="1",
                         weight="medium",
@@ -263,12 +263,29 @@ def question_card() -> rx.Component:
                     align_items="center",
                 ),
 
-                # Metadata row: CO / LO / RBT Level / Marks
+                # Metadata row: CO / LO / RBT Level / Marks / Question Type
                 rx.hstack(
                     _meta_pill("CO", CandidateState.current_question_co),
                     _meta_pill("LO", CandidateState.current_question_lo),
                     _meta_pill("RBT Level", CandidateState.current_question_rbt),
                     _meta_pill("Max Marks", CandidateState.current_question_marks),
+                    rx.cond(
+                        CandidateState.current_question_type == "Objective",
+                        rx.box(
+                            rx.text("Objective", font_family=FONT_BODY, size="1", weight="bold", color="#4338CA"),
+                            background="#EEF2FF",
+                            border="1px solid #C7D2FE",
+                            border_radius="6px",
+                            padding="0.2em 0.7em",
+                        ),
+                        rx.box(
+                            rx.text("Subjective", font_family=FONT_BODY, size="1", weight="bold", color="#027A48"),
+                            background="#ECFDF5",
+                            border="1px solid #A7F3D0",
+                            border_radius="6px",
+                            padding="0.2em 0.7em",
+                        ),
+                    ),
                     spacing="2",
                     padding_top="0.8em",
                     flex_wrap="wrap",
@@ -284,39 +301,46 @@ def question_card() -> rx.Component:
                     padding_top="1.2em",
                 ),
 
-                # Guidelines Heading
-                rx.text(
-                    "Guidelines:",
-                    font_family=FONT_BODY,
-                    size="2",
-                    weight="bold",
-                    color="#111827",
-                    padding_top="1.4em",
-                ),
-
-                # Guidelines Bullet Points
-                rx.vstack(
-                    rx.hstack(
-                        rx.text("•", size="3", color="#4B5563"),
-                        rx.text("Your answer should be structured and clear.", font_family=FONT_BODY, size="2", color="#4B5563"),
-                        spacing="2",
+                # Guidelines Heading + Bullet Points (Subjective only)
+                rx.cond(
+                    CandidateState.current_question_type == "Subjective",
+                    rx.vstack(
+                        rx.text(
+                            "Guidelines:",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color="#111827",
+                            padding_top="1.4em",
+                        ),
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("•", size="3", color="#4B5563"),
+                                rx.text("Your answer should be structured and clear.", font_family=FONT_BODY, size="2", color="#4B5563"),
+                                spacing="2",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", size="3", color="#4B5563"),
+                                rx.text("Support your points with relevant examples.", font_family=FONT_BODY, size="2", color="#4B5563"),
+                                spacing="2",
+                                align_items="start",
+                            ),
+                            rx.hstack(
+                                rx.text("•", size="3", color="#4B5563"),
+                                rx.text("Write in your own words.", font_family=FONT_BODY, size="2", color="#4B5563"),
+                                spacing="2",
+                                align_items="start",
+                            ),
+                            spacing="1",
+                            padding_top="0.3em",
+                            align_items="start",
+                        ),
+                        spacing="0",
                         align_items="start",
+                        width="100%",
                     ),
-                    rx.hstack(
-                        rx.text("•", size="3", color="#4B5563"),
-                        rx.text("Support your points with relevant examples.", font_family=FONT_BODY, size="2", color="#4B5563"),
-                        spacing="2",
-                        align_items="start",
-                    ),
-                    rx.hstack(
-                        rx.text("•", size="3", color="#4B5563"),
-                        rx.text("Write in your own words.", font_family=FONT_BODY, size="2", color="#4B5563"),
-                        spacing="2",
-                        align_items="start",
-                    ),
-                    spacing="1",
-                    padding_top="0.3em",
-                    align_items="start",
+                    rx.fragment(),
                 ),
 
                 spacing="0",
@@ -327,100 +351,7 @@ def question_card() -> rx.Component:
             rx.spacer(),
 
             # Bottom Navigation Buttons: Previous | Next (skip) | Save & Next / Save & Submit
-            rx.hstack(
-                # Previous
-                rx.button(
-                    rx.hstack(
-                        rx.icon("arrow-left", size=14),
-                        rx.text("Previous", font_family=FONT_BODY, size="2", weight="medium"),
-                        spacing="1",
-                        align_items="center",
-                    ),
-                    on_click=[
-                        rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                        CandidateState.prev_question,
-                    ],
-                    disabled=CandidateState.current_question_index == 0,
-                    variant="outline",
-                    color_scheme="gray",
-                    size="2",
-                    border="1px solid #D1D5DB",
-                    border_radius="8px",
-                    padding="0.5em 1.2em",
-                    background="white",
-                ),
-                rx.spacer(),
-                # Next → (skip, only visible when not on last question)
-                rx.cond(
-                    ~CandidateState.is_last_question,
-                    rx.button(
-                        rx.hstack(
-                            rx.text("Next", font_family=FONT_BODY, size="2", weight="medium"),
-                            rx.icon("arrow-right", size=14),
-                            spacing="1",
-                            align_items="center",
-                        ),
-                        on_click=[
-                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                            CandidateState.next_question,
-                        ],
-                        size="2",
-                        variant="outline",
-                        color_scheme="gray",
-                        border="1px solid #D1D5DB",
-                        border_radius="8px",
-                        padding="0.5em 1.2em",
-                        background="white",
-                    ),
-                    rx.fragment(),
-                ),
-                # Save & Next (saves answer + advance) — only on non-last questions
-                # Save & Submit — on the final question
-                rx.cond(
-                    CandidateState.is_last_question,
-                    rx.button(
-                        rx.hstack(
-                            rx.text("Save & Submit", font_family=FONT_BODY, size="2", weight="medium"),
-                            rx.icon("send", size=14),
-                            spacing="1",
-                            align_items="center",
-                        ),
-                        on_click=[
-                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                            CandidateState.save_and_next_question,
-                            CandidateState.open_submit_dialog,
-                        ],
-                        size="2",
-                        background="#027A48",
-                        color="white",
-                        border_radius="8px",
-                        padding="0.5em 1.5em",
-                        _hover={"background": "#05603A"},
-                    ),
-                    rx.button(
-                        rx.hstack(
-                            rx.text("Save & Next", font_family=FONT_BODY, size="2", weight="medium"),
-                            rx.icon("arrow-right", size=14),
-                            spacing="1",
-                            align_items="center",
-                        ),
-                        on_click=[
-                            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                            CandidateState.save_and_next_question,
-                        ],
-                        size="2",
-                        background="#4338CA",
-                        color="white",
-                        border_radius="8px",
-                        padding="0.5em 1.5em",
-                        _hover={"background": "#3730A3"},
-                    ),
-                ),
-                width="100%",
-                align_items="center",
-                padding_top="1.5em",
-                spacing="2",
-            ),
+            _test_bottom_nav_buttons(),
 
             spacing="0",
             width="100%",
@@ -434,6 +365,103 @@ def question_card() -> rx.Component:
         width="50%",
         min_height="580px",
         box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
+    )
+
+
+def _test_bottom_nav_buttons() -> rx.Component:
+    return rx.hstack(
+        # Previous
+        rx.button(
+            rx.hstack(
+                rx.icon("arrow-left", size=14),
+                rx.text("Previous", font_family=FONT_BODY, size="2", weight="medium"),
+                spacing="1",
+                align_items="center",
+            ),
+            on_click=[
+                rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                CandidateState.prev_question,
+            ],
+            disabled=CandidateState.current_question_index == 0,
+            variant="outline",
+            color_scheme="gray",
+            size="2",
+            border="1px solid #D1D5DB",
+            border_radius="8px",
+            padding="0.5em 1.2em",
+            background="white",
+        ),
+        rx.spacer(),
+        # Next → (skip, only visible when not on last question)
+        rx.cond(
+            ~CandidateState.is_last_question,
+            rx.button(
+                rx.hstack(
+                    rx.text("Next", font_family=FONT_BODY, size="2", weight="medium"),
+                    rx.icon("arrow-right", size=14),
+                    spacing="1",
+                    align_items="center",
+                ),
+                on_click=[
+                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                    CandidateState.next_question,
+                ],
+                size="2",
+                variant="outline",
+                color_scheme="gray",
+                border="1px solid #D1D5DB",
+                border_radius="8px",
+                padding="0.5em 1.2em",
+                background="white",
+            ),
+            rx.fragment(),
+        ),
+        # Save & Next (saves answer + advance) — only on non-last questions
+        # Save & Submit — on the final question
+        rx.cond(
+            CandidateState.is_last_question,
+            rx.button(
+                rx.hstack(
+                    rx.text("Save & Submit", font_family=FONT_BODY, size="2", weight="medium"),
+                    rx.icon("send", size=14),
+                    spacing="1",
+                    align_items="center",
+                ),
+                on_click=[
+                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                    CandidateState.save_and_next_question,
+                    CandidateState.open_submit_dialog,
+                ],
+                size="2",
+                background="#027A48",
+                color="white",
+                border_radius="8px",
+                padding="0.5em 1.5em",
+                _hover={"background": "#05603A"},
+            ),
+            rx.button(
+                rx.hstack(
+                    rx.text("Save & Next", font_family=FONT_BODY, size="2", weight="medium"),
+                    rx.icon("arrow-right", size=14),
+                    spacing="1",
+                    align_items="center",
+                ),
+                on_click=[
+                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+                    CandidateState.save_and_next_question,
+                ],
+                size="2",
+                background="#4338CA",
+                color="white",
+                border_radius="8px",
+                padding="0.5em 1.5em",
+                _hover={"background": "#3730A3"},
+            ),
+        ),
+        width="100%",
+        align_items="center",
+        padding_top="1.5em",
+        spacing="2",
     )
 
 
@@ -635,6 +663,483 @@ def answer_card() -> rx.Component:
         width="50%",
         min_height="580px",
         box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Right Column: MCQ (Objective) Answer Card
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _mcq_option_card(letter: str, text_var: rx.Var) -> rx.Component:
+    is_selected = CandidateState.current_mcq_answer == letter
+    return rx.cond(
+        text_var != "",
+        rx.box(
+            rx.hstack(
+                # Radio button indicator matching reference UI
+                rx.cond(
+                    is_selected,
+                    rx.box(
+                        rx.box(
+                            width="8px",
+                            height="8px",
+                            border_radius="50%",
+                            background="#4F46E5",
+                        ),
+                        width="20px",
+                        height="20px",
+                        border_radius="50%",
+                        border="2px solid #4F46E5",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        flex_shrink="0",
+                    ),
+                    rx.box(
+                        width="20px",
+                        height="20px",
+                        border_radius="50%",
+                        border="2px solid #D1D5DB",
+                        flex_shrink="0",
+                    ),
+                ),
+                # Option letter
+                rx.text(
+                    letter + ".",
+                    font_family=FONT_BODY,
+                    size="3",
+                    weight="bold",
+                    color=rx.cond(is_selected, "#4F46E5", "#374151"),
+                    margin_left="0.4em",
+                    margin_right="0.5em",
+                ),
+                # Option text
+                rx.text(
+                    text_var,
+                    font_family=FONT_BODY,
+                    size="3",
+                    color=rx.cond(is_selected, "#1E1B4B", "#1F2937"),
+                    weight=rx.cond(is_selected, "medium", "regular"),
+                    line_height="1.5",
+                ),
+                align_items="center",
+                width="100%",
+            ),
+            width="100%",
+            padding="1.1em 1.4em",
+            border_radius="10px",
+            border=rx.cond(is_selected, "1.5px solid #6366F1", "1px solid #E5E7EB"),
+            background=rx.cond(is_selected, "#F5F3FF", "white"),
+            box_shadow=rx.cond(is_selected, "0 1px 3px rgba(99, 102, 241, 0.12)", "0 1px 2px rgba(0, 0, 0, 0.02)"),
+            cursor=rx.cond(
+                CandidateState.is_test_submitted | CandidateState.is_time_expired | CandidateState.is_disqualified,
+                "not-allowed",
+                "pointer",
+            ),
+            transition="all 0.15s ease",
+            _hover=rx.cond(
+                CandidateState.is_test_submitted | CandidateState.is_time_expired | CandidateState.is_disqualified,
+                {},
+                rx.cond(
+                    is_selected,
+                    {"background": "#EDE9FE", "border_color": "#6366F1"},
+                    {"background": "#F9FAFB", "border_color": "#D1D5DB"},
+                ),
+            ),
+            on_click=CandidateState.select_mcq_option(letter),
+        ),
+        rx.fragment(),
+    )
+
+
+def objective_question_card() -> rx.Component:
+    """Single full-width Question & Answer Card for Objective questions matching reference UI."""
+    return rx.box(
+        rx.vstack(
+            # Top Section: Header + Metadata + Prompt + Options + Clear Answer
+            rx.vstack(
+                # Card Top Row: Question Number + Mark for Review
+                rx.hstack(
+                    rx.text(
+                        "Question " + CandidateState.current_question_number.to_string(),
+                        font_family=FONT_DISPLAY,
+                        size="5",
+                        weight="bold",
+                        color="#111827",
+                    ),
+                    rx.spacer(),
+                    rx.hstack(
+                        rx.icon(
+                            "bookmark",
+                            size=16,
+                            color=rx.cond(CandidateState.is_current_marked, "#D97706", "#4B5563"),
+                        ),
+                        rx.text(
+                            rx.cond(
+                                CandidateState.is_current_marked,
+                                "Marked for Review",
+                                "Mark for Review",
+                            ),
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="medium",
+                            color=rx.cond(CandidateState.is_current_marked, "#D97706", "#4B5563"),
+                        ),
+                        spacing="1",
+                        align_items="center",
+                        cursor="pointer",
+                        on_click=CandidateState.toggle_mark_for_review,
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+
+                # Metadata row: CO / LO / RBT Level / Marks / Objective Badge
+                rx.hstack(
+                    _meta_pill("CO", CandidateState.current_question_co),
+                    _meta_pill("LO", CandidateState.current_question_lo),
+                    _meta_pill("RBT Level", CandidateState.current_question_rbt),
+                    _meta_pill("Max Marks", CandidateState.current_question_marks),
+                    rx.box(
+                        rx.text("Objective", font_family=FONT_BODY, size="1", weight="bold", color="#4338CA"),
+                        background="#EEF2FF",
+                        border="1px solid #C7D2FE",
+                        border_radius="6px",
+                        padding="0.2em 0.7em",
+                    ),
+                    spacing="2",
+                    padding_top="0.8em",
+                    flex_wrap="wrap",
+                ),
+
+                # Question prompt
+                rx.text(
+                    CandidateState.current_question["text"],
+                    font_family=FONT_BODY,
+                    size="3",
+                    color="#1F2937",
+                    line_height="1.65",
+                    padding_top="1.2em",
+                ),
+
+                # MCQ Options Stack (cards A, B, C, D)
+                rx.vstack(
+                    _mcq_option_card("A", CandidateState.current_option_a),
+                    _mcq_option_card("B", CandidateState.current_option_b),
+                    _mcq_option_card("C", CandidateState.current_option_c),
+                    _mcq_option_card("D", CandidateState.current_option_d),
+                    spacing="3",
+                    width="100%",
+                    padding_top="1.5em",
+                ),
+
+                # Clear Answer Button (Right-aligned matching UI)
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Clear Answer",
+                        on_click=CandidateState.clear_mcq_answer,
+                        variant="outline",
+                        size="2",
+                        color_scheme="gray",
+                        border="1px solid #D1D5DB",
+                        border_radius="8px",
+                        background="white",
+                        color="#374151",
+                        font_family=FONT_BODY,
+                        font_weight="medium",
+                        padding="0.5em 1.2em",
+                        cursor=rx.cond(
+                            (CandidateState.current_mcq_answer == "") | CandidateState.is_test_submitted | CandidateState.is_time_expired | CandidateState.is_disqualified,
+                            "not-allowed",
+                            "pointer",
+                        ),
+                        _hover={"background": "#F3F4F6", "color": "#111827"},
+                        disabled=(CandidateState.current_mcq_answer == "") | CandidateState.is_test_submitted | CandidateState.is_time_expired | CandidateState.is_disqualified,
+                    ),
+                    width="100%",
+                    padding_top="1.2em",
+                ),
+
+                spacing="0",
+                align_items="start",
+                width="100%",
+            ),
+
+            rx.spacer(),
+
+            # Bottom Navigation Buttons: Previous | Next | Save & Next
+            _test_bottom_nav_buttons(),
+
+            spacing="0",
+            width="100%",
+            height="100%",
+            justify_content="space-between",
+        ),
+        background="white",
+        border="1px solid #E5E7EB",
+        border_radius="12px",
+        padding="2em",
+        width="100%",
+        min_height="580px",
+        box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Right Column: Question Navigation Sidebar Components
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _nav_question_button(item: dict) -> rx.Component:
+    return rx.box(
+        rx.text(item["number"], font_family=FONT_BODY, size="2"),
+        border=rx.cond(
+            item["status"] == "current",
+            "1.5px solid #6366F1",
+            rx.cond(
+                item["status"] == "marked",
+                "1.5px solid #F59E0B",
+                rx.cond(
+                    item["status"] == "answered",
+                    "1px solid #16A34A",
+                    "1px solid #E5E7EB",
+                ),
+            ),
+        ),
+        background=rx.cond(
+            item["status"] == "current",
+            "#EEF2FF",
+            rx.cond(
+                item["status"] == "marked",
+                "#FEF08A",
+                rx.cond(
+                    item["status"] == "answered",
+                    "#22C55E",
+                    "#F3F4F6",
+                ),
+            ),
+        ),
+        color=rx.cond(
+            item["status"] == "current",
+            "#4338CA",
+            rx.cond(
+                item["status"] == "marked",
+                "#92400E",
+                rx.cond(
+                    item["status"] == "answered",
+                    "white",
+                    "#374151",
+                ),
+            ),
+        ),
+        font_weight=rx.cond(item["status"] == "unanswered", "medium", "bold"),
+        border_radius="8px",
+        height="44px",
+        width="100%",
+        display="flex",
+        align_items="center",
+        justify_content="center",
+        cursor="pointer",
+        transition="all 0.15s ease",
+        _hover=rx.cond(
+            item["status"] == "current",
+            {"background": "#E0E7FF"},
+            rx.cond(
+                item["status"] == "marked",
+                {"background": "#FDE047"},
+                rx.cond(
+                    item["status"] == "answered",
+                    {"background": "#16A34A"},
+                    {"background": "#E5E7EB"},
+                ),
+            ),
+        ),
+        on_click=[
+            rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
+            CandidateState.jump_to_question(item["id"]),
+        ],
+    )
+
+
+def question_navigation_card() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            # 1. Header: [::] Question Navigation
+            rx.hstack(
+                rx.icon("layout-grid", size=18, color="#4F46E5"),
+                rx.text(
+                    "Question Navigation",
+                    font_family=FONT_DISPLAY,
+                    size="3",
+                    weight="bold",
+                    color="#111827",
+                ),
+                spacing="2",
+                align_items="center",
+                width="100%",
+            ),
+
+            # 2. Status Legend
+            rx.vstack(
+                rx.hstack(
+                    # Answered
+                    rx.hstack(
+                        rx.box(width="14px", height="14px", border_radius="3px", background="#22C55E", flex_shrink="0"),
+                        rx.text("Answered", font_family=FONT_BODY, size="1", color="#374151"),
+                        spacing="2",
+                        align_items="center",
+                        width="50%",
+                    ),
+                    # Not Answered
+                    rx.hstack(
+                        rx.box(width="14px", height="14px", border_radius="3px", background="#D1D5DB", flex_shrink="0"),
+                        rx.text("Not Answered", font_family=FONT_BODY, size="1", color="#374151"),
+                        spacing="2",
+                        align_items="center",
+                        width="50%",
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+                rx.hstack(
+                    # Marked for Review
+                    rx.hstack(
+                        rx.box(width="14px", height="14px", border_radius="3px", background="#FACC15", flex_shrink="0"),
+                        rx.text("Marked for Review", font_family=FONT_BODY, size="1", color="#374151"),
+                        spacing="2",
+                        align_items="center",
+                        width="50%",
+                    ),
+                    # Current Question
+                    rx.hstack(
+                        rx.box(width="14px", height="14px", border_radius="3px", background="#8B5CF6", flex_shrink="0"),
+                        rx.text("Current Question", font_family=FONT_BODY, size="1", color="#374151"),
+                        spacing="2",
+                        align_items="center",
+                        width="50%",
+                    ),
+                    width="100%",
+                    align_items="center",
+                ),
+                spacing="2",
+                width="100%",
+                padding_y="0.8em",
+            ),
+
+            # Grid of Question Buttons (5 columns) — all uploaded questions
+            rx.grid(
+                rx.foreach(CandidateState.nav_questions, _nav_question_button),
+                columns="5",
+                spacing="2",
+                width="100%",
+            ),
+
+            spacing="2",
+            width="100%",
+        ),
+        background="white",
+        border="1px solid #E5E7EB",
+        border_radius="12px",
+        padding="1.4em",
+        box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
+        width="100%",
+    )
+
+
+def instructions_card() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            # Header with toggle chevron
+            rx.hstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("info", size=14, color="#4F46E5"),
+                        border="1.5px solid #4F46E5",
+                        border_radius="50%",
+                        padding="2px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.text(
+                        "Instructions",
+                        font_family=FONT_DISPLAY,
+                        size="2",
+                        weight="bold",
+                        color="#111827",
+                    ),
+                    spacing="2",
+                    align_items="center",
+                ),
+                rx.spacer(),
+                rx.icon(
+                    rx.cond(CandidateState.show_instructions, "chevron-up", "chevron-down"),
+                    size=16,
+                    color="#6B7280",
+                ),
+                width="100%",
+                align_items="center",
+                cursor="pointer",
+                on_click=CandidateState.toggle_instructions,
+            ),
+
+            # Instructions List (collapsible)
+            rx.cond(
+                CandidateState.show_instructions,
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("1.", font_family=FONT_BODY, size="1", color="#6B7280", weight="medium"),
+                        rx.text("Read each question carefully.", font_family=FONT_BODY, size="1", color="#4B5563"),
+                        spacing="2",
+                        align_items="start",
+                    ),
+                    rx.hstack(
+                        rx.text("2.", font_family=FONT_BODY, size="1", color="#6B7280", weight="medium"),
+                        rx.text("Answer all questions.", font_family=FONT_BODY, size="1", color="#4B5563"),
+                        spacing="2",
+                        align_items="start",
+                    ),
+                    rx.hstack(
+                        rx.text("3.", font_family=FONT_BODY, size="1", color="#6B7280", weight="medium"),
+                        rx.text("You can mark questions for review and come back to them later.", font_family=FONT_BODY, size="1", color="#4B5563"),
+                        spacing="2",
+                        align_items="start",
+                    ),
+                    rx.hstack(
+                        rx.text("4.", font_family=FONT_BODY, size="1", color="#6B7280", weight="medium"),
+                        rx.text("Click on Submit Test after completing all questions.", font_family=FONT_BODY, size="1", color="#4B5563"),
+                        spacing="2",
+                        align_items="start",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    padding_top="0.8em",
+                    border_top="1px solid #F3F4F6",
+                ),
+                rx.fragment(),
+            ),
+
+            spacing="2",
+            width="100%",
+        ),
+        background="white",
+        border="1px solid #E5E7EB",
+        border_radius="12px",
+        padding="1.2em",
+        box_shadow="0 1px 3px rgba(0, 0, 0, 0.05)",
+        width="100%",
+    )
+
+
+def question_navigation_sidebar() -> rx.Component:
+    return rx.vstack(
+        question_navigation_card(),
+        instructions_card(),
+        spacing="3",
+        width="310px",
+        min_width="290px",
+        max_width="340px",
+        flex_shrink="0",
     )
 
 
@@ -843,7 +1348,7 @@ def submit_confirmation_dialog() -> rx.Component:
                         rx.hstack(
                             rx.text("Total Questions:", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
                             rx.spacer(),
-                            rx.text("20", font_family=FONT_BODY, size="2", weight="bold"),
+                            rx.text(CandidateState.total_questions.to_string(), font_family=FONT_BODY, size="2", weight="bold"),
                             width="100%",
                         ),
                         rx.hstack(
@@ -1504,14 +2009,28 @@ def candidate_test_page() -> rx.Component:
                     ),
                     rx.vstack(
                         test_header(),
-                        # Main Two-Column Body
+                        # Main Body: Active Question Area (flex="1") + Question Navigation Sidebar (width="310px")
                         rx.box(
                             rx.hstack(
-                                question_card(),
-                                answer_card(),
+                                rx.box(
+                                    rx.cond(
+                                        CandidateState.current_question_type == "Objective",
+                                        objective_question_card(),
+                                        rx.hstack(
+                                            question_card(),
+                                            answer_card(),
+                                            spacing="3",
+                                            width="100%",
+                                            align_items="stretch",
+                                        ),
+                                    ),
+                                    flex="1",
+                                    width="100%",
+                                ),
+                                question_navigation_sidebar(),
                                 spacing="4",
                                 width="100%",
-                                align_items="stretch",
+                                align_items="start",
                             ),
                             padding="1.8em 2.5em",
                             width="100%",
