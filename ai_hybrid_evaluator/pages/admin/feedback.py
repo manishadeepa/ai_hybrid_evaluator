@@ -49,11 +49,10 @@ def candidate_row(row: dict) -> rx.Component:
         ),
         rx.table.cell(rx.text(row["assessment"], font_family=FONT_BODY, size="2", color=COLORS["ink"])),
         rx.table.cell(rx.text(row["test"], font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(render_stars(row)),
         rx.table.cell(
             rx.text(
                 row["preview"], font_family=FONT_BODY, size="2", color=COLORS["slate"],
-                style={"fontStyle": "italic", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap", "maxWidth": "200px"},
+                style={"fontStyle": "italic", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap", "maxWidth": "240px"},
             ),
         ),
         rx.table.cell(
@@ -80,22 +79,14 @@ def candidate_row(row: dict) -> rx.Component:
 def facilitator_row(row: dict) -> rx.Component:
     return rx.table.row(
         rx.table.cell(rx.text(row["id"], font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(
-            rx.vstack(
-                rx.text(row["candidate_name"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                rx.text(row["candidate_id"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                spacing="0", align_items="start",
-            ),
-        ),
-        rx.table.cell(rx.text(row["assessment"], font_family=FONT_BODY, size="2", color=COLORS["ink"])),
-        rx.table.cell(rx.text(row["test"], font_family=FONT_BODY, size="2", color=COLORS["slate"])),
+        rx.table.cell(rx.text(row["assessment"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"])),
         rx.table.cell(
             rx.badge(rx.icon("user", size=11), row["facilitator"], variant="soft", color_scheme="indigo", size="1"),
         ),
         rx.table.cell(
             rx.text(
                 row["preview"], font_family=FONT_BODY, size="2", color=COLORS["slate"],
-                style={"fontStyle": "italic", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap", "maxWidth": "200px"},
+                style={"fontStyle": "italic", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap", "maxWidth": "320px"},
             ),
         ),
         rx.table.cell(
@@ -119,6 +110,35 @@ def facilitator_row(row: dict) -> rx.Component:
     )
 
 
+def _qa_card(item: dict) -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.text(
+                item["question"],
+                font_family=FONT_BODY,
+                size="1",
+                weight="bold",
+                color=COLORS["slate"],
+            ),
+            rx.text(
+                item["answer"],
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["ink"],
+                style={"lineHeight": "1.5"},
+            ),
+            spacing="1",
+            align_items="start",
+            width="100%",
+        ),
+        background="#F8FAFC",
+        border=f"1px solid {_LINE}",
+        border_radius="8px",
+        padding="0.85em 1em",
+        width="100%",
+    )
+
+
 def feedback_details_panel() -> rx.Component:
     e = AdminFeedbackState.selected_entry
     return rx.box(
@@ -132,18 +152,34 @@ def feedback_details_panel() -> rx.Component:
                 padding="1em 1.2em 0.8em 1.2em",
                 border_bottom=f"1px solid {_LINE}",
             ),
-            rx.hstack(
-                rx.center(
-                    rx.text(e["initial"], font_family=FONT_DISPLAY, weight="bold", size="4", color=COLORS["primary"]),
-                    background=COLORS["primary_soft"], width="44px", height="44px", border_radius="999px",
+            rx.cond(
+                e["type"] == "candidate",
+                rx.hstack(
+                    rx.center(
+                        rx.text(e["initial"], font_family=FONT_DISPLAY, weight="bold", size="4", color=COLORS["primary"]),
+                        background=COLORS["primary_soft"], width="44px", height="44px", border_radius="999px",
+                    ),
+                    rx.vstack(
+                        rx.text(e["candidate_name"], font_family=FONT_BODY, weight="bold", size="3", color=COLORS["ink"]),
+                        rx.text(e["candidate_id"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                        spacing="0", align_items="start",
+                    ),
+                    spacing="3", align_items="center",
+                    padding="1em 1.2em", width="100%",
                 ),
-                rx.vstack(
-                    rx.text(e["candidate_name"], font_family=FONT_BODY, weight="bold", size="3", color=COLORS["ink"]),
-                    rx.text(e["candidate_id"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                    spacing="0", align_items="start",
+                rx.hstack(
+                    rx.center(
+                        rx.icon("user", size=22, color=COLORS["primary"]),
+                        background=COLORS["primary_soft"], width="44px", height="44px", border_radius="999px",
+                    ),
+                    rx.vstack(
+                        rx.text(e["facilitator"], font_family=FONT_BODY, weight="bold", size="3", color=COLORS["ink"]),
+                        rx.badge("Facilitator", variant="soft", color_scheme="indigo", size="1"),
+                        spacing="1", align_items="start",
+                    ),
+                    spacing="3", align_items="center",
+                    padding="1em 1.2em", width="100%",
                 ),
-                spacing="3", align_items="center",
-                padding="1em 1.2em", width="100%",
             ),
             rx.vstack(
                 rx.hstack(
@@ -151,17 +187,12 @@ def feedback_details_panel() -> rx.Component:
                     rx.text(e["assessment"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
                     width="100%",
                 ),
-                rx.hstack(
-                    rx.text("Test", font_family=FONT_BODY, size="2", color=COLORS["slate"], min_width="100px"),
-                    rx.text(e["test"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
-                    width="100%",
-                ),
                 rx.cond(
                     e["type"] == "candidate",
                     rx.hstack(
-                        rx.text("Rating", font_family=FONT_BODY, size="2", color=COLORS["slate"], min_width="100px"),
-                        render_stars(e),
-                        width="100%", align_items="center",
+                        rx.text("Test", font_family=FONT_BODY, size="2", color=COLORS["slate"], min_width="100px"),
+                        rx.text(e["test"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                        width="100%",
                     ),
                     rx.hstack(
                         rx.text("Facilitator", font_family=FONT_BODY, size="2", color=COLORS["slate"], min_width="100px"),
@@ -177,37 +208,32 @@ def feedback_details_panel() -> rx.Component:
                 spacing="2", padding="0 1.2em 1em 1.2em", width="100%",
             ),
             rx.vstack(
-                rx.text("Feedback", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                rx.box(
-                    rx.text(
-                        e["feedback"], font_family=FONT_BODY, size="2", color=COLORS["ink"],
-                        style={"lineHeight": "1.65", "fontStyle": "italic"},
+                rx.text("Form Responses", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                rx.cond(
+                    AdminFeedbackState.selected_qa_pairs.length() > 0,
+                    rx.vstack(
+                        rx.foreach(AdminFeedbackState.selected_qa_pairs, _qa_card),
+                        spacing="2",
+                        width="100%",
+                        align_items="stretch",
                     ),
-                    background="#F8FAFC",
-                    border=f"1px solid {_LINE}",
-                    border_radius="8px", padding="1em 1.1em", width="100%",
-                ),
-                spacing="2", padding="0 1.2em 1em 1.2em",
-                width="100%", align_items="start",
-            ),
-            rx.cond(
-                AdminFeedbackState.selected_has_tags,
-                rx.vstack(
-                    rx.text("Feedback Tags", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                    rx.flex(
-                        rx.foreach(
-                            AdminFeedbackState.selected_entry_tags,
-                            lambda tag: rx.badge(
-                                tag, background="#EDE9FE", color=COLORS["primary"],
-                                border="1px solid #DDD6FE", border_radius="999px",
-                                padding="0.3em 0.8em", size="1", font_family=FONT_BODY,
-                            ),
+                    rx.box(
+                        rx.text(
+                            "No responses recorded.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                            style={"fontStyle": "italic"},
                         ),
-                        wrap="wrap", gap="2", width="100%",
+                        background="#F8FAFC",
+                        border=f"1px solid {_LINE}",
+                        border_radius="8px",
+                        padding="0.9em 1.1em",
+                        width="100%",
                     ),
-                    spacing="2", padding="0 1.2em 1.2em 1.2em",
-                    width="100%", align_items="start",
                 ),
+                spacing="2", padding="0 1.2em 1.2em 1.2em",
+                width="100%", align_items="start",
             ),
             spacing="0", width="100%",
         ),
@@ -253,12 +279,11 @@ def feedback_table_card() -> rx.Component:
                         rx.table.header(
                             rx.table.row(
                                 rx.table.column_header_cell("#", width="4%"),
-                                rx.table.column_header_cell("Candidate Name", width="18%"),
-                                rx.table.column_header_cell("Assessment", width="12%"),
-                                rx.table.column_header_cell("Test", width="10%"),
-                                rx.table.column_header_cell("Rating", width="14%"),
-                                rx.table.column_header_cell("Feedback (Preview)", width="22%"),
-                                rx.table.column_header_cell("Submitted On", width="13%"),
+                                rx.table.column_header_cell("Candidate Name", width="20%"),
+                                rx.table.column_header_cell("Assessment", width="15%"),
+                                rx.table.column_header_cell("Test", width="12%"),
+                                rx.table.column_header_cell("Feedback (Preview)", width="28%"),
+                                rx.table.column_header_cell("Submitted On", width="14%"),
                                 rx.table.column_header_cell("Actions", width="7%"),
                             ),
                         ),
@@ -268,14 +293,12 @@ def feedback_table_card() -> rx.Component:
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(
-                                rx.table.column_header_cell("#", width="4%"),
-                                rx.table.column_header_cell("Candidate Name", width="18%"),
-                                rx.table.column_header_cell("Assessment", width="12%"),
-                                rx.table.column_header_cell("Test", width="10%"),
-                                rx.table.column_header_cell("Facilitator", width="14%"),
-                                rx.table.column_header_cell("Feedback (Preview)", width="22%"),
-                                rx.table.column_header_cell("Submitted On", width="13%"),
-                                rx.table.column_header_cell("Actions", width="7%"),
+                                rx.table.column_header_cell("#", width="5%"),
+                                rx.table.column_header_cell("Assessment", width="22%"),
+                                rx.table.column_header_cell("Facilitator", width="18%"),
+                                rx.table.column_header_cell("Feedback (Preview)", width="33%"),
+                                rx.table.column_header_cell("Submitted On", width="14%"),
+                                rx.table.column_header_cell("Actions", width="8%"),
                             ),
                         ),
                         rx.table.body(rx.foreach(AdminFeedbackState.paginated_entries, facilitator_row)),
@@ -393,65 +416,76 @@ def admin_feedback_page() -> rx.Component:
             spacing="3", width="100%",
         ),
         rx.box(
-            rx.hstack(
-                rx.vstack(
-                    rx.text("Assessment", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
-                    rx.select(AdminFeedbackState.assessment_options, value=AdminFeedbackState.filter_assessment,
-                              on_change=AdminFeedbackState.set_filter_assessment, size="2", width="100%"),
-                    spacing="1", flex="1",
-                ),
-                rx.vstack(
-                    rx.text("Test", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
-                    rx.select(AdminFeedbackState.test_options, value=AdminFeedbackState.filter_test,
-                              on_change=AdminFeedbackState.set_filter_test, size="2", width="100%"),
-                    spacing="1", flex="1",
-                ),
-                rx.vstack(
-                    rx.text("Candidate", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
-                    rx.input(
-                        rx.input.slot(rx.icon("search", size=14, color=COLORS["placeholder"])),
-                        placeholder="Search candidate...",
-                        value=AdminFeedbackState.search_query,
-                        on_change=AdminFeedbackState.set_search_query,
-                        size="2", width="100%",
-                    ),
-                    spacing="1", flex="1.4",
-                ),
-                rx.cond(
-                    AdminFeedbackState.active_tab == "candidate",
+            rx.cond(
+                AdminFeedbackState.active_tab == "candidate",
+                rx.hstack(
                     rx.vstack(
-                        rx.text("Rating", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
-                        rx.select(
-                            ["All Ratings", "5 Stars", "4 Stars", "3 Stars", "2 Stars", "1 Star"],
-                            value=AdminFeedbackState.filter_rating,
-                            on_change=AdminFeedbackState.set_filter_rating, size="2", width="100%",
-                        ),
+                        rx.text("Assessment", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                        rx.select(AdminFeedbackState.assessment_options, value=AdminFeedbackState.filter_assessment,
+                                  on_change=AdminFeedbackState.set_filter_assessment, size="2", width="100%"),
                         spacing="1", flex="1",
                     ),
-                ),
-                rx.vstack(
-                    rx.text("Date Range", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
-                    rx.input(
-                        rx.input.slot(rx.icon("calendar", size=14, color=COLORS["placeholder"])),
-                        placeholder="Select date range",
-                        value=AdminFeedbackState.filter_date_range,
-                        on_change=AdminFeedbackState.set_filter_date_range,
-                        size="2", width="100%",
+                    rx.vstack(
+                        rx.text("Test", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                        rx.select(AdminFeedbackState.test_options, value=AdminFeedbackState.filter_test,
+                                  on_change=AdminFeedbackState.set_filter_test, size="2", width="100%"),
+                        spacing="1", flex="1",
                     ),
-                    spacing="1", flex="1.2",
-                ),
-                rx.vstack(
-                    rx.text("", size="1", font_family=FONT_BODY),
-                    rx.button(
-                        "Reset", variant="outline", color=COLORS["ink"],
-                        border=f"1px solid {_LINE}",
-                        font_family=FONT_BODY, size="2",
-                        _hover={"background": COLORS["canvas"]},
-                        on_click=AdminFeedbackState.reset_filters,
+                    rx.vstack(
+                        rx.text("Candidate", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                        rx.input(
+                            rx.input.slot(rx.icon("search", size=14, color=COLORS["placeholder"])),
+                            placeholder="Search candidate...",
+                            value=AdminFeedbackState.search_query,
+                            on_change=AdminFeedbackState.set_search_query,
+                            size="2", width="100%",
+                        ),
+                        spacing="1", flex="1.4",
                     ),
-                    spacing="1",
+                    rx.vstack(
+                        rx.text("Date Range", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                        rx.input(
+                            rx.input.slot(rx.icon("calendar", size=14, color=COLORS["placeholder"])),
+                            placeholder="Select date range",
+                            value=AdminFeedbackState.filter_date_range,
+                            on_change=AdminFeedbackState.set_filter_date_range,
+                            size="2", width="100%",
+                        ),
+                        spacing="1", flex="1.2",
+                    ),
+                    rx.vstack(
+                        rx.text("", size="1", font_family=FONT_BODY),
+                        rx.button(
+                            "Reset", variant="outline", color=COLORS["ink"],
+                            border=f"1px solid {_LINE}",
+                            font_family=FONT_BODY, size="2",
+                            _hover={"background": COLORS["canvas"]},
+                            on_click=AdminFeedbackState.reset_filters,
+                        ),
+                        spacing="1",
+                    ),
+                    spacing="3", align_items="end", width="100%",
                 ),
-                spacing="3", align_items="end", width="100%",
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("Assessment", size="1", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
+                        rx.select(AdminFeedbackState.assessment_options, value=AdminFeedbackState.filter_assessment,
+                                  on_change=AdminFeedbackState.set_filter_assessment, size="2", width="280px"),
+                        spacing="1",
+                    ),
+                    rx.vstack(
+                        rx.text("", size="1", font_family=FONT_BODY),
+                        rx.button(
+                            "Reset", variant="outline", color=COLORS["ink"],
+                            border=f"1px solid {_LINE}",
+                            font_family=FONT_BODY, size="2",
+                            _hover={"background": COLORS["canvas"]},
+                            on_click=AdminFeedbackState.reset_filters,
+                        ),
+                        spacing="1",
+                    ),
+                    spacing="3", align_items="end", width="100%",
+                ),
             ),
             background=COLORS["surface"],
             border=f"1px solid {_LINE}",
