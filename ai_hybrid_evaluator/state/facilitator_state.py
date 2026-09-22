@@ -4949,7 +4949,7 @@ class FacilitatorState(rx.State):
             self.show_manual_eval_modal = False
             return rx.toast.info("No candidate responses to evaluate.")
 
-        candidate_id = str(self.selected_evaluation_candidate or "").strip()
+        candidate_id = _evaluation_candidate_id(self.selected_evaluation_candidate)
         assessment_name = str(self.selected_assessment_name or "").strip()
         test_name = str(self.selected_test_name or "").strip()
 
