@@ -7,8 +7,8 @@ from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import (
 )
 from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
-from ai_hybrid_evaluator.state.candidate_state import CandidateState
-from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
+from ai_hybrid_evaluator.state.candidate_state import CandidateState, _strip_html
+from backend.services.evaluation_result_service import EvaluationResultService
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
 
 
@@ -18,6 +18,7 @@ class CandidateResultsState(rx.State):
     Provides a clean, read-only integration point for finalized evaluation results.
     """
 
+    results_revision: int = 0
     selected_assessment_name: str = ""
     selected_test_name: str = ""
     active_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
@@ -28,6 +29,7 @@ class CandidateResultsState(rx.State):
 
     def select_test(self, test_name: str):
         self.selected_test_name = test_name
+        self.results_revision += 1
         self.active_tab = "co"
 
     def clear_selected_test(self):
@@ -37,85 +39,123 @@ class CandidateResultsState(rx.State):
         self.active_tab = tab
 
     async def on_load(self):
+        auth_st = await self.get_state(AuthState)
+        if not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id:
+            self.selected_assessment_name = ""
+            self.selected_test_name = ""
+            self.results_revision += 1
+            return
+        admin_st = await self.get_state(AdminState)
+        error = admin_st.load_persisted_assessments()
+        self.results_revision += 1
         opts = await self.assessment_options
-        if not self.selected_assessment_name and opts:
-            self.selected_assessment_name = opts[0]
+        if self.selected_assessment_name not in opts:
+            self.selected_assessment_name = opts[0] if opts else ""
+            self.selected_test_name = ""
+        return error
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # FUTURE BACKEND RESULT-DATA INTEGRATION POINT
-    # ─────────────────────────────────────────────────────────────────────────
-    # This method is the centralized frontend integration point where finalized
-    # candidate evaluation data is retrieved.
-    #
-    # Flow:
-    #   Facilitator evaluates candidate
-    #   → Facilitator Results contains finalized result
-    #   → Backend stores/provides finalized result
-    #   → Candidate Results loads that candidate's result
-    #   → Candidate sees only their own data
-    #
-    # When backend APIs/database endpoints are connected, replace or augment this
-    # lookup with the corresponding backend fetch call.
-    # ─────────────────────────────────────────────────────────────────────────
     async def _fetch_finalized_test_result(self, cand_id: str, assessment_name: str, test_name: str) -> dict:
-        if not assessment_name or not test_name:
+        """Resolve exact persisted names to IDs and read only this authenticated candidate's result."""
+        auth_st = await self.get_state(AuthState)
+        if (not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id
+                or cand_id != auth_st.candidate_emp_id or not assessment_name or not test_name):
             return {}
+        service = EvaluationResultService()
         try:
-            fac_st = await self.get_state(FacilitatorState)
-            results = fac_st.real_ai_results_per_candidate
-        except Exception:
+            assessments = service.assessments.load_assessments()
+            matches = [a for a in assessments if a.get("name") == assessment_name]
+            if len(matches) != 1:
+                return {}
+            assessment = matches[0]
+
+            assigned = assessment.get("assigned_candidates", [])
+            if auth_st.candidate_emp_id not in assigned:
+                return {}
+
+            assessment_id = assessment.get("assessment_id")
+            test_id = assessment.get("test_ids", {}).get(test_name)
+            if not assessment_id or not test_id:
+                return {}
+            return service.get_result(auth_st.candidate_emp_id, assessment_id, test_id) or {}
+        except ValueError:
+            # Missing/deleted identities and invalid stored results are not finalized UI data.
             return {}
 
-        target_test = test_name.strip().lower()
-        target_cand = cand_id.strip().lower()
+    async def _submission_dates(self, assessment_name: str) -> dict:
+        auth_st = await self.get_state(AuthState)
+        cand_st = await self.get_state(CandidateState)
+        if (not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id
+                or cand_st.candidate_id != auth_st.candidate_emp_id):
+            return {}
+        return dict(cand_st.submitted_tests.get(assessment_name, {}))
 
-        for key, res in results.items():
-            parts = key.split(":")
-            cand_part = parts[0].strip()
-            test_part = parts[1].strip() if len(parts) > 1 else ""
-
-            part_id = cand_part.split("(")[-1].rstrip(")").strip() if "(" in cand_part else cand_part
-
-            if test_part.lower() == target_test:
-                if (target_cand and target_cand == part_id.lower()) or (target_cand in cand_part.lower()):
-                    return res
-        return {}
+    def _dimension_items(self, data: dict, field: str) -> list[dict]:
+        """Use marks-weighted percentages from this result's normalized questions."""
+        totals = {}
+        for question in data.get("questions", []):
+            label = question.get(field)
+            if label is None or not str(label).strip():
+                continue
+            marks = totals.setdefault(str(label), [0.0, 0.0])
+            marks[0] += question["awarded_marks"]
+            marks[1] += question["maximum_marks"]
+        return [{"name": label, "score": round(100 * marks[0] / marks[1], 2)}
+                for label, marks in totals.items() if marks[1] > 0]
 
     @rx.var
     async def assessment_options(self) -> list[str]:
-        """Assessments assigned to the logged-in candidate."""
+        """Return only assessments explicitly assigned to the logged-in candidate."""
         auth_st = await self.get_state(AuthState)
         admin_st = await self.get_state(AdminState)
-        cand_id = auth_st.candidate_emp_id or "CAND-2031"
+        cand_id = auth_st.candidate_emp_id
+
+        if not auth_st.is_candidate_authenticated or not cand_id:
+            return []
 
         options = []
-        for a in admin_st.assessments:
-            assigned = a.get("assigned_candidates", [])
-            if not assigned or cand_id in assigned:
-                name = a.get("name", "")
-                if name and name not in options:
-                    options.append(name)
-        if not options and admin_st.assessments:
-            options = [a.get("name", "") for a in admin_st.assessments if a.get("name")]
+        for assessment in admin_st.assessments:
+            assigned = assessment.get("assigned_candidates", [])
+
+            if cand_id not in assigned:
+                continue
+
+            name = assessment.get("name", "")
+            if name and name not in options:
+                options.append(name)
+
         return options
 
     @rx.var
     async def current_assessment_name(self) -> str:
-        if self.selected_assessment_name:
+        """Return the selected assessment only when the candidate is authorized for it."""
+        options = await self.assessment_options
+
+        if self.selected_assessment_name in options:
             return self.selected_assessment_name
-        opts = await self.assessment_options
-        return opts[0] if opts else "Quality"
+
+        return options[0] if options else ""
 
     @rx.var
     async def tests_table_rows(self) -> list[dict]:
         """Table data for 'Tests in this Assessment'."""
         auth_st = await self.get_state(AuthState)
         admin_st = await self.get_state(AdminState)
-        cand_st = await self.get_state(CandidateState)
-        cand_id = auth_st.candidate_emp_id or "CAND-2031"
+        _ = self.results_revision  # Refresh persisted results when the page is revisited.
+        cand_id = auth_st.candidate_emp_id
+        if not auth_st.is_candidate_authenticated or not cand_id:
+            return []
         asmn = await self.current_assessment_name
 
-        target_a = next((a for a in admin_st.assessments if a.get("name") == asmn), None)
+        target_a = next(
+            (
+                a
+                for a in admin_st.assessments
+                if a.get("name") == asmn
+                and cand_id in a.get("assigned_candidates", [])
+            ),
+            None,
+        )
+
         if not target_a:
             return []
 
@@ -124,7 +164,7 @@ class CandidateResultsState(rx.State):
         if final_test and final_test not in all_tests:
             all_tests.append(final_test)
 
-        submitted_map = cand_st.submitted_tests.get(asmn, [])
+        submitted_map = await self._submission_dates(asmn)
 
         rows = []
         for i, t_name in enumerate(all_tests, 1):
@@ -135,8 +175,8 @@ class CandidateResultsState(rx.State):
                 pct = eval_data.get("percentage", "—")
                 if pct != "—" and not str(pct).endswith("%"):
                     pct = f"{pct}%"
-                sub_date = eval_data.get("submission_date") or eval_data.get("submitted_on") or "2026-09-10"
-                eval_date = eval_data.get("eval_date") or eval_data.get("evaluated_on") or "2026-09-12"
+                sub_date = submitted_map.get(t_name) or "—"
+                eval_date = eval_data.get("evaluated_at") or "—"
 
                 rows.append({
                     "idx": str(i),
@@ -155,7 +195,7 @@ class CandidateResultsState(rx.State):
                     "status": "Submitted",
                     "status_color": "indigo",
                     "score": "—",
-                    "submitted_on": "2026-09-15",
+                    "submitted_on": str(submitted_map.get(t_name) or "—"),
                     "evaluated_on": "—",
                     "is_evaluated": False,
                 })
@@ -175,10 +215,13 @@ class CandidateResultsState(rx.State):
     @rx.var
     async def selected_test_eval_data(self) -> dict:
         """Fetch finalized evaluation data for currently selected test."""
+        _ = self.results_revision
         if not self.selected_test_name:
             return {}
         auth_st = await self.get_state(AuthState)
-        cand_id = auth_st.candidate_emp_id or "CAND-2031"
+        cand_id = auth_st.candidate_emp_id
+        if not auth_st.is_candidate_authenticated or not cand_id:
+            return {}
         asmn = await self.current_assessment_name
         return await self._fetch_finalized_test_result(cand_id, asmn, self.selected_test_name)
 
@@ -197,8 +240,8 @@ class CandidateResultsState(rx.State):
     @rx.var
     async def test_marks_display(self) -> str:
         d = await self.selected_test_eval_data
-        score = d.get("score", "—")
-        max_s = d.get("max_score", "—")
+        score = d.get("total_marks", "—")
+        max_s = d.get("max_marks", "—")
         if score != "—" and max_s != "—":
             return f"{score} / {max_s} marks"
         return "—"
@@ -206,126 +249,100 @@ class CandidateResultsState(rx.State):
     @rx.var
     async def test_result_status(self) -> str:
         d = await self.selected_test_eval_data
-        pct_raw = str(d.get("percentage", "0")).replace("%", "").strip()
-        try:
-            val = float(pct_raw)
-            return "Pass" if val >= 50.0 else "Fail"
-        except Exception:
-            return "Pass" if d else "—"
+        if not d:
+            return "—"
+        return "Pass" if d["percentage"] >= 50.0 else "Fail"
 
     @rx.var
     async def test_result_subtext(self) -> str:
         st = await self.test_result_status
-        return "Good performance!" if st == "Pass" else "Needs Improvement"
+        return "Good performance!" if st == "Pass" else "Needs Improvement" if st == "Fail" else "—"
 
     @rx.var
     async def test_total_questions(self) -> str:
         d = await self.selected_test_eval_data
         qs = d.get("questions", [])
-        return str(len(qs)) if qs else "10"
+        return str(len(qs)) if d else "—"
 
     @rx.var
     async def test_attempted_questions(self) -> str:
         d = await self.selected_test_eval_data
         qs = d.get("questions", [])
-        return f"{len(qs)} attempted" if qs else "10 attempted"
+        if not d:
+            return "—"
+        attempted = sum(bool(_strip_html(q.get("candidate_answer") or "").strip()) for q in qs)
+        return f"{attempted} attempted"
 
     @rx.var
     async def test_time_taken(self) -> str:
         d = await self.selected_test_eval_data
-        return str(d.get("time_taken", "28m 15s"))
+        return str(d.get("time_taken") or "—")
 
     @rx.var
     async def test_total_time(self) -> str:
-        return "of 60 minutes"
+        return "—"
 
     @rx.var
     async def test_submitted_on_display(self) -> str:
-        d = await self.selected_test_eval_data
-        return str(d.get("submission_date") or d.get("submitted_on") or "2026-09-10")
+        dates = await self._submission_dates(await self.current_assessment_name)
+        return str(dates.get(self.selected_test_name) or "—")
 
     @rx.var
     async def test_evaluated_on_display(self) -> str:
         d = await self.selected_test_eval_data
-        return str(d.get("eval_date") or d.get("evaluated_on") or "2026-09-12")
+        return str(d.get("evaluated_at") or "—")
 
     @rx.var
     async def chart_items_co(self) -> list[dict]:
-        d = await self.selected_test_eval_data
-        items = d.get("co", [])
-        return [{"name": item.get("name", f"CO{i+1}"), "score": int(item.get("score", 0))} for i, item in enumerate(items)]
+        return self._dimension_items(await self.selected_test_eval_data, "co")
 
     @rx.var
     async def chart_items_lo(self) -> list[dict]:
-        d = await self.selected_test_eval_data
-        items = d.get("lo", [])
-        return [{"name": item.get("name", f"LO{i+1}"), "score": int(item.get("score", 0))} for i, item in enumerate(items)]
+        return self._dimension_items(await self.selected_test_eval_data, "lo")
 
     @rx.var
     async def chart_items_kt(self) -> list[dict]:
-        d = await self.selected_test_eval_data
-        items = d.get("knowledge_type", [])
-        return [{"name": item.get("name", "KT"), "score": int(item.get("score", 0))} for item in items]
+        return self._dimension_items(await self.selected_test_eval_data, "knowledge_type")
 
     @rx.var
     async def chart_items_domain(self) -> list[dict]:
-        d = await self.selected_test_eval_data
-        items = d.get("domain", [])
-        return [{"name": item.get("name", "Domain"), "score": int(item.get("score", 0))} for item in items]
+        return self._dimension_items(await self.selected_test_eval_data, "domain")
 
     @rx.var
     async def chart_items_rbt(self) -> list[dict]:
-        d = await self.selected_test_eval_data
-        items = d.get("rbt_level", [])
-        return [{"name": item.get("name", "RBT"), "score": int(item.get("score", 0))} for item in items]
+        return self._dimension_items(await self.selected_test_eval_data, "rbt_level")
 
     @rx.var
     async def chart_items_test_wise(self) -> list[dict]:
         d = await self.selected_test_eval_data
-        pct_raw = str(d.get("percentage", "0")).replace("%", "").strip()
-        try:
-            score = int(float(pct_raw))
-        except Exception:
-            score = 0
-        return [{"name": self.selected_test_name or "Test", "score": score}]
+        return [{"name": self.selected_test_name, "score": d["percentage"]}] if d else []
 
     @rx.var
     async def question_items(self) -> list[dict]:
         d = await self.selected_test_eval_data
         qs = d.get("questions", [])
         res = []
-        for i, q in enumerate(qs, 1):
-            obt = q.get("marks_obtained") or q.get("ai_score") or q.get("marks") or 0
-            mx = q.get("max_marks", 5)
-            q_text = q.get("question") or q.get("question_text") or f"Question {i}"
-            c_ans = q.get("candidate_answer") or q.get("answer") or q.get("user_answer") or "—"
-            corr_ans = q.get("correct_answer") or q.get("ideal_answer") or "—"
-            try:
-                obt_f = float(obt)
-                mx_f = float(mx)
-                if obt_f >= mx_f:
-                    status = "Correct"
-                    status_color = "green"
-                elif obt_f > 0:
-                    status = "Partially Correct"
-                    status_color = "amber"
-                else:
-                    status = "Incorrect"
-                    status_color = "red"
-            except Exception:
-                status = "Correct"
-                status_color = "green"
-
+        for q in qs:
+            obt = q["awarded_marks"]
+            mx = q["maximum_marks"]
+            if mx <= 0:
+                status, status_color = "—", "gray"
+            elif obt >= mx:
+                status, status_color = "Correct", "green"
+            elif obt > 0:
+                status, status_color = "Partially Correct", "amber"
+            else:
+                status, status_color = "Incorrect", "red"
             res.append({
-                "idx": str(i),
-                "question": str(q_text),
-                "co": str(q.get("co", f"CO{((i-1)%4)+1}")),
-                "lo": str(q.get("lo", f"LO{((i-1)%4)+1}")),
-                "knowledge_type": str(q.get("knowledge_type", "Conceptual")),
-                "domain": str(q.get("domain", "Engineering")),
-                "rbt_level": str(q.get("rbt_level", "Understand")),
-                "candidate_answer": str(c_ans),
-                "correct_answer": str(corr_ans),
+                "idx": str(q.get("question_no") or "—"),
+                "question": str(q.get("question") or "—"),
+                "co": str(q.get("co") if q.get("co") not in (None, "") else "—"),
+                "lo": str(q.get("lo") if q.get("lo") not in (None, "") else "—"),
+                "knowledge_type": str(q.get("knowledge_type") or "—"),
+                "domain": str(q.get("domain") or "—"),
+                "rbt_level": str(q.get("rbt_level") or "—"),
+                "candidate_answer": str(q.get("candidate_answer") or "—"),
+                "correct_answer": "—",  # Finalized results do not expose an answer key.
                 "marks": f"{obt} / {mx}",
                 "status": status,
                 "status_color": status_color,
