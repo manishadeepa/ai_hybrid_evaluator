@@ -87,9 +87,6 @@ def status_overview_card(
     title: str,
     count: rx.Var | str,
     subtitle: rx.Var | str,
-    icon: str,
-    icon_color: str,
-    icon_bg: str,
     card_bg: str,
     card_border: str,
 ) -> rx.Component:
@@ -109,16 +106,6 @@ def status_overview_card(
                     size="2",
                     weight="bold",
                     color=COLORS["ink"],
-                ),
-                rx.spacer(),
-                rx.box(
-                    rx.icon(icon, size=18, color=icon_color),
-                    background=icon_bg,
-                    padding="0.35em",
-                    border_radius="8px",
-                    display="flex",
-                    align_items="center",
-                    justify_content="center",
                 ),
                 spacing="2",
                 align_items="center",
@@ -160,7 +147,7 @@ def assessments_overview_card() -> rx.Component:
             # Header
             rx.vstack(
                 rx.text("Assessment Overview", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
-                rx.text("Assessments by status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                rx.text("Current assessment status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                 spacing="0",
                 align_items="start",
             ),
@@ -184,9 +171,6 @@ def assessments_overview_card() -> rx.Component:
                         title="In Progress",
                         count=AdminState.assessment_in_progress_count.to_string(),
                         subtitle=AdminState.assessment_in_progress_pct_subtitle,
-                        icon="file-text",
-                        icon_color="#10B981",
-                        icon_bg="#D1FAE5",
                         card_bg="#ECFDF5",
                         card_border="#D1FAE5",
                     ),
@@ -195,9 +179,6 @@ def assessments_overview_card() -> rx.Component:
                         title="Pending",
                         count=AdminState.assessment_pending_count.to_string(),
                         subtitle=AdminState.assessment_pending_pct_subtitle,
-                        icon="file-text",
-                        icon_color="#F59E0B",
-                        icon_bg="#FEF3C7",
                         card_bg="#FFFBEB",
                         card_border="#FEF3C7",
                     ),
@@ -206,9 +187,6 @@ def assessments_overview_card() -> rx.Component:
                         title="Completed",
                         count=AdminState.assessment_completed_count.to_string(),
                         subtitle=AdminState.assessment_completed_pct_subtitle,
-                        icon="file-text",
-                        icon_color="#2563EB",
-                        icon_bg="#DBEAFE",
                         card_bg="#EFF6FF",
                         card_border="#DBEAFE",
                     ),
@@ -264,31 +242,39 @@ def assessments_overview_card() -> rx.Component:
 # 3. Recent Assessments Table
 # ─────────────────────────────────────────────────────────────
 
-def recent_assessment_row(
-    doc_color: str,
-    doc_bg: str,
-    name: str,
-    facilitator: str,
-    candidates: str,
-    tests: str,
-) -> rx.Component:
+def recent_assessment_row(a: dict) -> rx.Component:
     return rx.table.row(
         rx.table.cell(
             rx.hstack(
                 rx.box(
-                    rx.icon("file-text", size=16, color=doc_color),
-                    background=doc_bg,
+                    rx.icon("file-text", size=16, color="#8B5CF6"),
+                    background="#EDE9FE",
                     padding="0.35em",
                     border_radius="6px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
                 ),
-                rx.text(name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                rx.text(a["name"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                 spacing="2",
                 align_items="center",
             ),
         ),
-        rx.table.cell(rx.text(facilitator, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(rx.text(candidates, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(rx.text(tests, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
+        rx.table.cell(
+            rx.cond(
+                a["facilitator_names"].length() > 0,
+                rx.text(a["facilitator_names"].join(", "), font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+                rx.text(a["facilitator_name"], font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+            ),
+        ),
+        rx.table.cell(
+            rx.text(
+                a["assigned_candidates"].length().to_string() + " Candidates",
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+        ),
     )
 
 
@@ -314,19 +300,10 @@ def recent_assessments_card() -> rx.Component:
                         rx.table.column_header_cell(rx.text("Assessment Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
                         rx.table.column_header_cell(rx.text("Facilitator", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
                         rx.table.column_header_cell(rx.text("Candidates", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Tests", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
                     ),
                 ),
                 rx.table.body(
-                    recent_assessment_row(
-                        "#8B5CF6", "#EDE9FE", "Quality", "Ravi Kumar", "4 Candidates", "3 + Final"
-                    ),
-                    recent_assessment_row(
-                        "#10B981", "#ECFDF3", "Safety", "Anitha Sharma", "6 Candidates", "3 + Final"
-                    ),
-                    recent_assessment_row(
-                        "#F59E0B", "#FEF3C7", "EV Systems", "Karthik Rao", "5 Candidates", "3 + Final"
-                    ),
+                    rx.foreach(AdminState.assessments, recent_assessment_row)
                 ),
                 width="100%",
             ),
