@@ -6,6 +6,7 @@ shapes kept stable on purpose so that swap is easy later.
 """
 
 import json
+import math
 from pathlib import Path
 import re
 import reflex as rx
@@ -21,6 +22,108 @@ FACILITATOR_ID_REGEX = r"^F\d{3}$"
 PHONE_REGEX = r"^\d{10}$"
 
 
+def generate_assessment_donut_svg(
+    in_prog: int,
+    pending: int,
+    completed: int,
+    cx: float = 100.0,
+    cy: float = 100.0,
+    R: float = 86.0,
+    r: float = 51.0,
+) -> str:
+    total = in_prog + pending + completed
+
+    if total > 0:
+        pct_ip = (in_prog / total) * 100.0
+        pct_pe = (pending / total) * 100.0
+        pct_co = (completed / total) * 100.0
+    else:
+        pct_ip, pct_pe, pct_co = 0.0, 0.0, 0.0
+
+    def fmt_pct(p: float) -> str:
+        if p == 0:
+            return "0%"
+        elif p % 1 == 0:
+            return f"{int(p)}%"
+        else:
+            return f"{p:.1f}%"
+
+    lbl_ip = fmt_pct(pct_ip)
+    lbl_pe = fmt_pct(pct_pe)
+    lbl_co = fmt_pct(pct_co)
+
+    items = [
+        ("Completed", pct_co, lbl_co, "#2563EB"),      # Blue
+        ("In Progress", pct_ip, lbl_ip, "#10B981"),    # Green
+        ("Pending", pct_pe, lbl_pe, "#F59E0B"),        # Orange
+    ]
+
+    # Angular allocation:
+    # Ensure minimum arc of 44 degrees so that even 0% Completed has plenty of padding and never clips or touches borders
+    min_arc = 44.0
+    zero_count = sum(1 for _, p, _, _ in items if p == 0)
+
+    if total == 0 or zero_count == 3:
+        spans = [120.0, 120.0, 120.0]
+    elif zero_count > 0:
+        reserved_for_zero = zero_count * min_arc
+        remaining_deg = 360.0 - reserved_for_zero
+        non_zero_sum = sum(p for _, p, _, _ in items if p > 0)
+        spans = [min_arc if p == 0 else (p / non_zero_sum) * remaining_deg for _, p, _, _ in items]
+    else:
+        raw_spans = [(p / 100.0) * 360.0 for _, p, _, _ in items]
+        small_count = sum(1 for s in raw_spans if s < min_arc)
+        if small_count > 0:
+            rem = 360.0 - (small_count * min_arc)
+            large_sum = sum(p for s, (_, p, _, _) in zip(raw_spans, items) if s >= min_arc)
+            spans = [min_arc if s < min_arc else (p / large_sum) * rem for s, (_, p, _, _) in zip(raw_spans, items)]
+        else:
+            spans = raw_spans
+
+    current_angle = 345.0
+    paths = []
+    labels = []
+    r_mid = (R + r) / 2.0
+
+    for i, (name, pct, lbl, fill_color) in enumerate(items):
+        span = spans[i]
+        a1 = current_angle
+        a2 = current_angle + span
+        current_angle += span
+
+        t1 = math.radians(a1 - 90)
+        t2 = math.radians(a2 - 90)
+
+        x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+        x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+        x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+        x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+
+        large = 1 if (span % 360) > 180 else 0
+
+        d = f"M {x1_o:.2f} {y1_o:.2f} A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} L {x2_i:.2f} {y2_i:.2f} A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+        paths.append(f'<path d="{d}" fill="{fill_color}" stroke="#ffffff" stroke-width="1.5" />')
+
+        mid = (a1 + a2) / 2.0
+        tm = math.radians(mid - 90)
+        tx, ty = cx + r_mid * math.cos(tm), cy + r_mid * math.sin(tm)
+        labels.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="11" font-weight="700" font-family="Inter, system-ui, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.35);">{lbl}</text>')
+
+    svg = (
+        f'<svg width="190" height="190" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+        f'<g>'
+        + "".join(paths)
+        + f'<circle cx="{cx}" cy="{cy}" r="{r-1}" fill="#ffffff" />'
+        + "".join(labels)
+        + f'<text x="{cx}" y="{cy-9}" text-anchor="middle" dominant-baseline="central" fill="#0F172A" font-size="28" font-weight="700" font-family="Plus Jakarta Sans, system-ui, sans-serif">{total}</text>'
+        + f'<text x="{cx}" y="{cy+11}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Total</text>'
+        + f'<text x="{cx}" y="{cy+25}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Assessments</text>'
+        f'</g>'
+        f'</svg>'
+    )
+    return svg
+
+
 class AdminState(rx.State):
     # ---- Sidebar UI state ----
     users_menu_open: bool = True
@@ -32,6 +135,7 @@ class AdminState(rx.State):
     facilitators: list[Facilitator] = list(SHARED_FACILITATORS)
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
     active_assessments: int = 3
+    completed_assessments: int = 1
     pending_evaluations: int = 12
 
     # =========================================================
@@ -436,10 +540,10 @@ class AdminState(rx.State):
             "facilitator_id": "F001",
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
-            "status": "Scheduled",
+            "status": "In Progress",
             # Tests start empty — Facilitators add them via their workspace
-            "tests": [],
-            "final_test": "",
+            "tests": ["Quality Standard Test", "Safety Protocol Test", "Defect Analysis"],
+            "final_test": "Final Comprehensive Quality Evaluation",
             "approval_status": "approved",
             "facilitator_approvals": {
                 "F001": "approved",
@@ -447,10 +551,44 @@ class AdminState(rx.State):
             },
             "question_papers": {},
             "test_dates": {},
-        }
+        },
+        {
+            "name": "Safety",
+            "facilitator_ids": ["F001"],
+            "facilitator_names": ["Anitha Sharma"],
+            "facilitator_id": "F001",
+            "facilitator_name": "Anitha Sharma",
+            "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
+            "status": "Pending",
+            "tests": ["Hazmat Test", "Emergency Response", "Machine Guarding"],
+            "final_test": "Final Practical Safety Assessment",
+            "approval_status": "pending",
+            "facilitator_approvals": {
+                "F001": "pending",
+            },
+            "question_papers": {},
+            "test_dates": {},
+        },
+        {
+            "name": "EV Systems",
+            "facilitator_ids": ["F002"],
+            "facilitator_names": ["Karthik Rao"],
+            "facilitator_id": "F002",
+            "facilitator_name": "Karthik Rao",
+            "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
+            "status": "In Progress",
+            "tests": ["Battery Tech", "BMS Diagnostic", "Motor Control"],
+            "final_test": "Final High-Voltage Safety Evaluation",
+            "approval_status": "approved",
+            "facilitator_approvals": {
+                "F002": "approved",
+            },
+            "question_papers": {},
+            "test_dates": {},
+        },
     ]
 
-    assessment_status_options: list[str] = ["Draft", "Scheduled", "Active", "Completed"]
+    assessment_status_options: list[str] = ["Draft", "Scheduled", "In Progress", "Pending", "Active", "Completed"]
 
     @rx.var
     def total_assessments(self) -> int:
@@ -467,6 +605,66 @@ class AdminState(rx.State):
     @rx.var
     def total_declined_assessments(self) -> int:
         return sum(1 for a in self.assessments if a.get("approval_status", "pending") == "declined")
+
+    @rx.var
+    def assessment_in_progress_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["in progress", "active"]
+        )
+
+    @rx.var
+    def assessment_pending_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["pending", "scheduled", "draft", "awaiting evaluation"]
+        )
+
+    @rx.var
+    def assessment_completed_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["completed", "done", "finished"]
+        )
+
+    @rx.var
+    def assessment_total_count(self) -> int:
+        return self.assessment_in_progress_count + self.assessment_pending_count + self.assessment_completed_count
+
+    @rx.var
+    def assessment_in_progress_pct_subtitle(self) -> str:
+        tot = self.assessment_total_count
+        if tot == 0:
+            return "0% of total"
+        pct = (self.assessment_in_progress_count / tot) * 100.0
+        pct_str = "0%" if pct == 0 else f"{pct:.1f}%" if pct % 1 != 0 else f"{int(pct)}%"
+        return f"{pct_str} of total"
+
+    @rx.var
+    def assessment_pending_pct_subtitle(self) -> str:
+        tot = self.assessment_total_count
+        if tot == 0:
+            return "0% of total"
+        pct = (self.assessment_pending_count / tot) * 100.0
+        pct_str = "0%" if pct == 0 else f"{pct:.1f}%" if pct % 1 != 0 else f"{int(pct)}%"
+        return f"{pct_str} of total"
+
+    @rx.var
+    def assessment_completed_pct_subtitle(self) -> str:
+        tot = self.assessment_total_count
+        if tot == 0:
+            return "0% of total"
+        pct = (self.assessment_completed_count / tot) * 100.0
+        pct_str = "0%" if pct == 0 else f"{pct:.1f}%" if pct % 1 != 0 else f"{int(pct)}%"
+        return f"{pct_str} of total"
+
+    @rx.var
+    def assessment_donut_svg_html(self) -> str:
+        return generate_assessment_donut_svg(
+            self.assessment_in_progress_count,
+            self.assessment_pending_count,
+            self.assessment_completed_count,
+        )
 
     # =========================================================
     # ADD ASSESSMENT (dialog/form)
