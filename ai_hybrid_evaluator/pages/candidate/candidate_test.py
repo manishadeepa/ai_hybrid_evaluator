@@ -1200,20 +1200,7 @@ def bottom_status_bar() -> rx.Component:
                     spacing="1",
                     align_items="center",
                 ),
-                # Mic Active
-                rx.hstack(
-                    rx.icon("mic", size=15, color="#16A34A"),
-                    rx.text("Mic Active", font_family=FONT_BODY, size="1", weight="medium", color="#16A34A"),
-                    spacing="1",
-                    align_items="center",
-                ),
-                # Camera Active
-                rx.hstack(
-                    rx.icon("video", size=15, color="#16A34A"),
-                    rx.text("Camera Active", font_family=FONT_BODY, size="1", weight="medium", color="#16A34A"),
-                    spacing="1",
-                    align_items="center",
-                ),
+
                 # Tab Locked
                 rx.hstack(
                     rx.icon("lock", size=15, color="#4338CA"),

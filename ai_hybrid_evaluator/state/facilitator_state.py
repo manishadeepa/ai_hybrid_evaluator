@@ -37,6 +37,12 @@ from ai_hybrid_evaluator.services.candidate_response_service import (
     find_candidate_response_file,
     get_latest_candidate_response,
 )
+from ai_hybrid_evaluator.services.pdf_report_generator import (
+    build_all_candidates_pdf_html,
+    build_individual_test_pdf_html,
+    generate_iframe_print_script,
+)
+
 
 
 def load_latest_candidate_response(candidate_id: str = "") -> dict:
@@ -3017,6 +3023,9 @@ class FacilitatorState(rx.State):
     show_all_questions: bool = False
     show_results_report_modal: bool = False
     show_download_pdf_modal: bool = False
+    show_pdf_preview_modal: bool = False
+    pdf_preview_html: str = ""
+    pdf_preview_title: str = "Results PDF Preview"
     download_pdf_report_type: str = "individual"  # "individual" or "all"
     download_pdf_candidate: str = ""
     download_pdf_selected_tests: list[str] = []
@@ -3068,7 +3077,9 @@ class FacilitatorState(rx.State):
                     c = self._current_assessment_candidates[0]
                     self.download_pdf_candidate = f"{c['name']} ({c['emp_id']})"
         tests = await self.download_pdf_test_options
-        if not self.download_pdf_selected_tests and tests:
+        if self.results_selected_test and self.results_selected_test in tests:
+            self.download_pdf_selected_tests = [self.results_selected_test]
+        elif not self.download_pdf_selected_tests and tests:
             self.download_pdf_selected_tests = [tests[0]]
 
     def close_download_pdf_modal(self):
@@ -3089,19 +3100,451 @@ class FacilitatorState(rx.State):
                 elif self._current_assessment_candidates:
                     c = self._current_assessment_candidates[0]
                     self.download_pdf_candidate = f"{c['name']} ({c['emp_id']})"
+        if rtype == "individual" and not self.download_pdf_selected_tests:
+            tests = await self.download_pdf_test_options
+            if self.results_selected_test and self.results_selected_test in tests:
+                self.download_pdf_selected_tests = [self.results_selected_test]
+            elif tests:
+                self.download_pdf_selected_tests = [tests[0]]
 
     def set_download_pdf_candidate(self, cand: str):
         self.download_pdf_candidate = cand
 
     def toggle_download_pdf_test(self, test_name: str):
+        if self.download_pdf_report_type == "individual":
+            self.download_pdf_selected_tests = [test_name]
+            return
         if test_name in self.download_pdf_selected_tests:
             self.download_pdf_selected_tests = [t for t in self.download_pdf_selected_tests if t != test_name]
         else:
             self.download_pdf_selected_tests = self.download_pdf_selected_tests + [test_name]
 
-    def download_pdf_modal_submit(self):
+    async def _get_individual_test_report_data(self, test_name_override: str = "") -> tuple[dict | None, str, str]:
+        cand = self.download_pdf_candidate or self.results_selected_candidate
+        if not cand or cand == "All Candidates":
+            if self._current_assessment_candidates:
+                c = self._current_assessment_candidates[0]
+                cand = f"{c['name']} ({c['emp_id']})"
+            else:
+                opts = await self.results_candidate_options
+                if opts:
+                    cand = opts[0]
+
+        cand_id = cand.split("(")[-1].rstrip(")").strip() if "(" in cand else cand.strip()
+        cand_name = cand.split("(")[0].strip() if "(" in cand else cand.strip()
+
+        target_test = test_name_override.strip() if test_name_override else ""
+        if not target_test:
+            if self.download_pdf_selected_tests:
+                target_test = self.download_pdf_selected_tests[0]
+            else:
+                target_test = self.results_selected_analysis_test or self.results_selected_test or self.selected_test_name
+        if not target_test or target_test == "All Tests (Overall)":
+            test_opts = await self.download_pdf_test_options
+            target_test = test_opts[0] if test_opts else "Formative 1"
+
+        asmn = self.selected_assessment_name
+
+        # Find evaluation result for cand + target_test
+        target_res = None
+        for key, res in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            if target_test and t_part and (target_test.lower() != t_part.lower() and target_test.lower() not in t_part.lower() and t_part.lower() not in target_test.lower()):
+                continue
+            pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if (cand_id and cand_id == pid) or (cand_name and cand_name.lower() == pname.lower()) or (cand.strip() == c_part) or (cand_id and cand_id.lower() in c_part.lower()) or (cand_name and cand_name.lower() in c_part.lower()):
+                target_res = res
+                break
+
+        if not target_res:
+            return None, cand_name, target_test
+
+        # Test Type: Formative or Summative
+        is_final = False
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if match:
+            for t in match.get("test_items", []):
+                if t.get("name", "").lower() == target_test.lower():
+                    is_final = t.get("is_final", False) or t.get("type", "").lower() == "summative"
+                    break
+        test_type = "Summative" if (is_final or "summative" in target_test.lower()) else "Formative"
+
+        pass_thresh = self.get_test_pass_percentage(target_test, asmn)
+        pass_percentage = int(round(pass_thresh))
+        norm_score = self._calculate_normalized_score(target_res)
+        norm_score_round = round(norm_score, 1)
+        score_str = f"{int(norm_score_round)}%" if norm_score_round == int(norm_score_round) else f"{norm_score_round}%"
+
+        marks_obt = target_res.get("marks_obtained", "—")
+        max_m = target_res.get("max_marks", "—")
+        obt_d = int(marks_obt) if isinstance(marks_obt, float) and marks_obt == int(marks_obt) else marks_obt
+        max_d = int(max_m) if isinstance(max_m, float) and max_m == int(max_m) else max_m
+        marks_str = f"{obt_d} / {max_d}"
+
+        passed = norm_score >= pass_thresh
+        pass_status = "Pass" if passed else "Fail"
+
+        co_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in target_res.get("co", [])]
+        lo_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in target_res.get("lo", [])]
+        kt_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in target_res.get("knowledge_type", [])]
+        domain_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in target_res.get("domain", [])]
+        rbt_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in target_res.get("rbt_level", [])]
+
+        c_data = self.current_results_data
+        if not co_items and c_data.get("co"):
+            co_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in c_data.get("co", [])]
+        if not lo_items and c_data.get("lo"):
+            lo_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in c_data.get("lo", [])]
+        if not kt_items and c_data.get("knowledge_type"):
+            kt_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in c_data.get("knowledge_type", [])]
+        if not domain_items and c_data.get("domain"):
+            domain_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in c_data.get("domain", [])]
+        if not rbt_items and c_data.get("rbt_level"):
+            rbt_items = [{"name": item.get("name", ""), "score": int(round(item.get("score", 0)))} for item in c_data.get("rbt_level", [])]
+
+        questions = []
+        for i, q in enumerate(target_res.get("questions", []), 1):
+            try:
+                q_obt = float(q.get("ai_score", q.get("awarded_marks", 0)) or 0)
+                q_mx = float(q.get("max_marks", q.get("maximum_marks", 0)) or 0)
+                pct = round((q_obt / q_mx) * 100, 1) if q_mx > 0 else 0.0
+            except (ValueError, TypeError):
+                q_obt, q_mx, pct = 0.0, 0.0, 0.0
+            pct_int = int(pct) if pct == int(pct) else pct
+            q_raw = str(q.get("q_no", i))
+            q_disp = f"Q{q_raw}" if q_raw.isdigit() else (q_raw if q_raw.startswith("Q") else f"Q{q_raw}")
+            q_num = q_raw.lstrip("Q") if q_raw.startswith("Q") and q_raw[1:].isdigit() else q_raw
+            raw_just = q.get("justification") or q.get("feedback") or q.get("ai_feedback") or q.get("reasoning") or q.get("remarks") or ""
+            justification = str(raw_just).strip() if raw_just else "—"
+
+            questions.append({
+                "q_no": q_num,
+                "q_display": q_disp,
+                "question": str(q.get("question", f"Question {i}")),
+                "marks_obtained": str(int(q_obt) if q_obt == int(q_obt) else q_obt),
+                "max_marks": str(int(q_mx) if q_mx == int(q_mx) else q_mx),
+                "score_pct": f"{pct_int}%",
+                "score_pct_num": pct,
+                "justification": justification,
+            })
+
+        report_data = {
+            "assessment_name": asmn,
+            "test_type": test_type,
+            "candidate_name": cand_name,
+            "candidate_id": cand_id,
+            "score": score_str,
+            "marks_obtained_str": marks_str,
+            "pass_status": pass_status,
+            "pass_percentage": pass_percentage,
+            "co_items": co_items,
+            "lo_items": lo_items,
+            "kt_items": kt_items,
+            "domain_items": domain_items,
+            "rbt_items": rbt_items,
+            "questions": questions,
+        }
+        return report_data, cand_name, target_test
+
+    async def generate_individual_test_pdf(self, test_name_override: str = ""):
+        report_data, cand_name, target_test = await self._get_individual_test_report_data(test_name_override)
+        if not report_data:
+            return rx.toast.warning(f"No evaluation results available for {cand_name} in {target_test}.")
+        html_content = build_individual_test_pdf_html(report_data)
+        script = generate_iframe_print_script(html_content)
+        return rx.call_script(script)
+
+    async def download_individual_pdf(self):
+        """No-arg wrapper around generate_individual_test_pdf — safe for use as on_click handler."""
+        return await self.generate_individual_test_pdf()
+
+    async def _get_all_candidates_report_data(self) -> dict | None:
+        """Build the data dict for the All Candidates PDF report from live state."""
+        from datetime import datetime
+
+        asmn = self.selected_assessment_name
+        if not asmn:
+            return None
+
+        # Determine target test(s)
+        selected_tests = self.download_pdf_selected_tests or []
+        if not selected_tests:
+            tests = await self.results_assessment_tests
+            selected_tests = [t["name"] for t in tests]
+        target_test = selected_tests[0] if len(selected_tests) == 1 else ""
+
+        # Test type
+        admin_state = await self.get_state(AdminState)
+        mine = await self.my_assessments
+        asmn_clean = asmn.strip().lower()
+        match = next((a for a in mine if a.get("name", "").strip().lower() == asmn_clean), None)
+        if match is None and admin_state.assessments:
+            match = next((a for a in admin_state.assessments if a.get("name", "").strip().lower() == asmn_clean), None)
+
+        test_type = "Formative"
+        if match:
+            for t in match.get("test_items", []):
+                t_name = t.get("name", "")
+                if target_test and t_name.lower() == target_test.lower():
+                    is_final = t.get("is_final", False) or t.get("type", "").lower() == "summative"
+                    test_type = "Summative" if is_final else "Formative"
+                    break
+
+        pass_percentage = int(round(self.get_test_pass_percentage(target_test, asmn) if target_test else self.get_assessment_overall_pass_percentage(asmn)))
+
+        # Candidate name lookup
+        cand_map = {c["emp_id"]: c["name"] for c in admin_state.candidates if "emp_id" in c and "name" in c}
+        from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
+        for c in SHARED_CANDIDATES:
+            if c["emp_id"] not in cand_map:
+                cand_map[c["emp_id"]] = c["name"]
+
+        # Build candidate list from assessment + real_ai_results
+        candidates_list: list[dict] = []
+        seen_ids: set = set()
+        if match:
+            for c in match.get("candidate_details", []):
+                cid = c.get("emp_id") or c.get("id") or ""
+                cname = c.get("name") or cand_map.get(cid, cid)
+                if cid and cid != "All Candidates" and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    candidates_list.append({"name": cname, "emp_id": cid})
+
+            for cid in match.get("assigned_candidates", []):
+                if cid and cid != "All Candidates" and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    cname = cand_map.get(cid, cid)
+                    candidates_list.append({"name": cname, "emp_id": cid})
+
+            for c in match.get("candidates", []):
+                if isinstance(c, dict):
+                    cid = c.get("emp_id") or c.get("id") or ""
+                    cname = c.get("name") or cand_map.get(cid, cid)
+                else:
+                    cid = str(c)
+                    cname = cand_map.get(cid, cid)
+                if cid and cid != "All Candidates" and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    candidates_list.append({"name": cname, "emp_id": cid})
+
+        for key in self.real_ai_results_per_candidate.keys():
+            c_part = key.split(":")[0].strip()
+            if not c_part or c_part == "All Candidates":
+                continue
+            cid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+            cname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+            if cid and cid != "All Candidates" and cid not in seen_ids:
+                seen_ids.add(cid)
+                candidates_list.append({"name": cname, "emp_id": cid})
+
+        # Per-candidate score for the selected test
+        cand_rows: list[dict] = []
+        total_scores: list[float] = []
+        passed_count = 0
+        failed_count = 0
+
+        for cand in candidates_list:
+            cname = cand["name"]
+            cid = cand["emp_id"]
+            found_res = None
+            for key, res in self.real_ai_results_per_candidate.items():
+                parts = key.split(":")
+                c_part = parts[0].strip()
+                if "all candidates" in c_part.lower():
+                    continue
+                t_part = parts[1].strip() if len(parts) > 1 else ""
+                pid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
+                pname = c_part.split("(")[0].strip() if "(" in c_part else c_part
+                test_match = (not target_test) or (target_test.strip().lower() == t_part.strip().lower())
+                cand_match = (
+                    (cid and (cid == pid or cid in c_part)) or
+                    (cname and (cname.lower() == pname.lower() or cname.lower() in c_part.lower() or c_part.lower().startswith(cname.lower()))) or
+                    f"{cname} ({cid})" == c_part
+                )
+                if test_match and cand_match:
+                    found_res = res
+                    break
+
+            if found_res:
+                norm = self._calculate_normalized_score(found_res)
+                norm_int = int(round(norm))
+                score_pct = f"{norm_int}%"
+                obt = found_res.get("marks_obtained", "—")
+                mx = found_res.get("max_marks", "—")
+                obt_d = int(obt) if isinstance(obt, float) and obt == int(obt) else obt
+                mx_d = int(mx) if isinstance(mx, float) and mx == int(mx) else mx
+                marks_str = f"{obt_d} / {mx_d}"
+                is_pass = norm >= pass_percentage
+                result = "Pass" if is_pass else "Fail"
+                if is_pass:
+                    passed_count += 1
+                else:
+                    failed_count += 1
+                total_scores.append(float(norm_int))
+                cand_rows.append({
+                    "cand_id": cid, "cand_name": cname,
+                    "score_pct": score_pct, "marks_str": marks_str,
+                    "result": result, "evaluated": True,
+                })
+            else:
+                cand_rows.append({
+                    "cand_id": cid, "cand_name": cname,
+                    "score_pct": "Not Evaluated", "marks_str": "—",
+                    "result": "Not Evaluated", "evaluated": False,
+                })
+
+        total_candidates = len(cand_rows)
+        evaluated_candidates = len(total_scores)
+        avg_score_val = int(round(sum(total_scores) / len(total_scores))) if total_scores else 0
+        avg_score_str = f"{avg_score_val}%"
+
+        # Aggregate performance data for the target test across all evaluated candidates
+        co_agg: dict = {}
+        lo_agg: dict = {}
+        kt_agg: dict = {}
+        domain_agg: dict = {}
+        rbt_agg: dict = {}
+        q_agg: dict = {}
+
+        for key, res in self.real_ai_results_per_candidate.items():
+            parts = key.split(":")
+            c_part = parts[0].strip()
+            if "all candidates" in c_part.lower():
+                continue
+            t_part = parts[1].strip() if len(parts) > 1 else ""
+            if target_test and t_part.strip().lower() != target_test.strip().lower():
+                continue
+            for item in res.get("co", []):
+                co_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+            for item in res.get("lo", []):
+                lo_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+            for item in res.get("knowledge_type", []):
+                kt_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+            for item in res.get("domain", []):
+                domain_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+            for item in res.get("rbt_level", []):
+                rbt_agg.setdefault(item.get("name", ""), []).append(item.get("score", 0))
+            for i, q in enumerate(res.get("questions", []), 1):
+                q_raw = str(q.get("q_no", i))
+                q_key = q_raw.lstrip("Q") if q_raw.startswith("Q") and q_raw[1:].isdigit() else q_raw
+                q_disp = f"Q{q_key}" if q_key.isdigit() else q_key
+                if q_key not in q_agg:
+                    try:
+                        mx = float(q.get("max_marks", q.get("maximum_marks", 0)) or 0)
+                    except (ValueError, TypeError):
+                        mx = 0.0
+                    q_agg[q_key] = {"q_display": q_disp, "marks": [], "max": mx}
+                try:
+                    obt = float(q.get("ai_score", q.get("awarded_marks", 0)) or 0)
+                except (ValueError, TypeError):
+                    obt = 0.0
+                q_agg[q_key]["marks"].append(obt)
+
+        def _avg_items(agg: dict) -> list[dict]:
+            return [{"name": k, "score": int(round(sum(v) / len(v)))} for k, v in agg.items() if v]
+
+        q_items = []
+        for q_key, info in sorted(q_agg.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 999):
+            m_list = info["marks"]
+            mx = info["max"]
+            avg_obt = round(sum(m_list) / len(m_list), 1) if m_list else 0.0
+            pct = round((avg_obt / mx) * 100, 1) if mx > 0 else 0.0
+            q_items.append({"q_display": info.get("q_display", f"Q{q_key}"), "score_pct_num": pct})
+
+        report_data = {
+            "assessment_name": asmn,
+            "selected_tests": selected_tests,
+            "test_type": test_type,
+            "pass_percentage": pass_percentage,
+            "generated_at": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+            "summary": {
+                "total_candidates": total_candidates,
+                "evaluated_candidates": evaluated_candidates,
+                "passed": passed_count,
+                "failed": failed_count,
+                "avg_score": avg_score_str,
+            },
+            "candidates": cand_rows,
+            "co_items": _avg_items(co_agg),
+            "lo_items": _avg_items(lo_agg),
+            "kt_items": _avg_items(kt_agg),
+            "domain_items": _avg_items(domain_agg),
+            "rbt_items": _avg_items(rbt_agg),
+            "questions": q_items,
+        }
+        return report_data
+
+    async def generate_all_candidates_pdf(self):
+        """Generate and print the All Candidates PDF report."""
+        if not self.selected_assessment_name:
+            return rx.toast.warning("No assessment selected.")
+        report_data = await self._get_all_candidates_report_data()
+        if not report_data or not report_data.get("candidates"):
+            return rx.toast.warning("No candidate data available to generate PDF.")
+        html_content = build_all_candidates_pdf_html(report_data)
+        script = generate_iframe_print_script(html_content)
+        return rx.call_script(script)
+
+    async def view_pdf_preview(self):
+        """Open PDF preview for either All Candidates or Individual Candidate depending on download_pdf_report_type."""
+        if self.download_pdf_report_type == "all":
+            report_data = await self._get_all_candidates_report_data()
+            if not report_data or not report_data.get("candidates"):
+                return rx.toast.warning("No candidate data available to preview.")
+            html_content = build_all_candidates_pdf_html(report_data)
+            self.pdf_preview_html = html_content
+            asmn = report_data.get("assessment_name", "Assessment")
+            tests_str = ", ".join(report_data.get("selected_tests", [])) or "All Tests"
+            self.pdf_preview_title = f"All Candidates - {asmn} ({tests_str}) Results PDF Preview"
+            self.show_download_pdf_modal = False
+            self.show_pdf_preview_modal = True
+            return
+
+        report_data, cand_name, target_test = await self._get_individual_test_report_data()
+        if not report_data:
+            return rx.toast.warning(f"No evaluation results available for {cand_name} in {target_test}.")
+        html_content = build_individual_test_pdf_html(report_data)
+        self.pdf_preview_html = html_content
+        self.pdf_preview_title = f"{cand_name} - {target_test} Results PDF Preview"
         self.show_download_pdf_modal = False
-        return rx.toast.info("Download PDF submitted (UI action).")
+        self.show_pdf_preview_modal = True
+
+    def close_pdf_preview_modal(self):
+        self.show_pdf_preview_modal = False
+
+    def set_show_pdf_preview_modal(self, val: bool):
+        self.show_pdf_preview_modal = val
+
+    def back_to_download_options(self):
+        self.show_pdf_preview_modal = False
+        self.show_download_pdf_modal = True
+
+    async def download_pdf_from_preview(self):
+        """Download PDF from the active preview modal based on report type."""
+        if self.download_pdf_report_type == "all":
+            return await self.generate_all_candidates_pdf()
+        return await self.download_individual_pdf()
+
+    async def print_pdf_from_preview(self):
+        """Print directly from the active preview HTML."""
+        if self.pdf_preview_html:
+            script = generate_iframe_print_script(self.pdf_preview_html)
+            return rx.call_script(script)
+        if self.download_pdf_report_type == "all":
+            return await self.generate_all_candidates_pdf()
+        return await self.generate_individual_test_pdf()
+
+    async def download_pdf_modal_submit(self):
+        self.show_download_pdf_modal = False
+        if self.download_pdf_report_type == "individual":
+            return await self.generate_individual_test_pdf()
+        return await self.generate_all_candidates_pdf()
+
+
 
     def open_close_assessment_dialog(self):
         self.show_close_assessment_confirm_dialog = True
@@ -3186,10 +3629,14 @@ class FacilitatorState(rx.State):
         self.results_selected_candidate = f"{name} ({emp_id})"
         self.results_view_mode = "individual"
 
-    def results_report_print(self):
+    async def results_report_print(self):
+        if self.results_view_mode == "individual":
+            return await self.generate_individual_test_pdf()
         return rx.call_script("if (window.printReportDocument) window.printReportDocument(); else window.print();")
 
-    def results_report_download_pdf(self):
+    async def results_report_download_pdf(self):
+        if self.results_view_mode == "individual":
+            return await self.generate_individual_test_pdf()
         return rx.call_script("if (window.printReportDocument) window.printReportDocument(); else window.print();")
 
     def set_results_selected_candidate(self, candidate_name: str):

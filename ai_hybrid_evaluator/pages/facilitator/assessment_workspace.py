@@ -6428,6 +6428,22 @@ def _results_download_pdf_modal() -> rx.Component:
                         ),
                     ),
                     rx.button(
+                        rx.icon("eye", size=15),
+                        "View PDF",
+                        variant="outline",
+                        color=COLORS["primary"],
+                        border=f"1px solid {COLORS['primary']}",
+                        background="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": "#F5F3FF"},
+                        on_click=FacilitatorState.view_pdf_preview,
+                    ),
+                    rx.button(
                         "Download PDF",
                         background=COLORS["primary"],
                         color="white",
@@ -6457,6 +6473,134 @@ def _results_download_pdf_modal() -> rx.Component:
         open=FacilitatorState.show_download_pdf_modal,
         on_open_change=FacilitatorState.set_show_download_pdf_modal,
     )
+
+
+def _results_pdf_preview_modal() -> rx.Component:
+    """Preview modal displaying the complete rendered results PDF before downloading."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Modal Header Toolbar
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("file-text", size=20, color=COLORS["primary"]),
+                            background="#EEF2FF",
+                            padding="8px",
+                            border_radius="10px",
+                            border="1px solid #E0E7FF",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                FacilitatorState.pdf_preview_title,
+                                font_family=FONT_DISPLAY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "Review evaluation results, visual performance charts, and question justifications before downloading.",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            rx.icon("x", size=18),
+                            variant="ghost",
+                            color=COLORS["slate"],
+                            size="2",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_pdf_preview_modal,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                ),
+
+                # Preview Iframe Container
+                rx.box(
+                    rx.el.iframe(
+                        src_doc=FacilitatorState.pdf_preview_html,
+                        width="100%",
+                        height="70vh",
+                        style={
+                            "border": "1px solid #E2E8F0",
+                            "borderRadius": "8px",
+                            "background": "#FFFFFF",
+                            "boxShadow": "inset 0 1px 3px rgba(0,0,0,0.06)",
+                        },
+                    ),
+                    width="100%",
+                    padding_y="0.6em",
+                ),
+
+                # Modal Footer
+                rx.hstack(
+                    rx.text(
+                        "Print-ready document generated directly from real AI evaluation records.",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color="#64748B",
+                        font_style="italic",
+                    ),
+                    rx.spacer(),
+                    rx.button(
+                        "Close Preview",
+                        variant="outline",
+                        color="#1E293B",
+                        border="1px solid #CBD5E1",
+                        background="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": "#F8FAFC"},
+                        on_click=FacilitatorState.close_pdf_preview_modal,
+                    ),
+                    rx.button(
+                        rx.icon("download", size=14),
+                        "Download PDF",
+                        background=COLORS["primary"],
+                        color="white",
+                        size="2",
+                        font_family=FONT_BODY,
+                        weight="medium",
+                        border_radius="8px",
+                        padding_x="1.4em",
+                        cursor="pointer",
+                        _hover={"background": COLORS["primary_hover"]},
+                        on_click=FacilitatorState.download_pdf_from_preview,
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.4em",
+                ),
+
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            style={"maxWidth": "1000px", "width": "92vw"},
+            padding="1.6em",
+            border_radius="16px",
+        ),
+        open=FacilitatorState.show_pdf_preview_modal,
+        on_open_change=FacilitatorState.set_show_pdf_preview_modal,
+    )
+
 
 # ── Shared section-banner helper (used in Results and previously Report Detail) ─
 def _report_doc_section_banner(icon_name: str, title: str, sec_id: str) -> rx.Component:
@@ -6744,6 +6888,7 @@ def results_tab() -> rx.Component:
 
         # Results Download PDF Modal Dialog
         _results_download_pdf_modal(),
+        _results_pdf_preview_modal(),
 
         # Close Assessment is intentionally the final Results-page section.
         _close_assessment_section(),
