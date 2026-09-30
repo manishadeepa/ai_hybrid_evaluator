@@ -78,7 +78,6 @@ def build_all_candidates_pdf_html(data: dict) -> str:
             <div class="mini-chart-header">
                 <span class="chart-icon">{icon_symbol}</span>
                 <span class="mini-chart-title">{html.escape(title)}</span>
-                <span class="mini-pass-hint">Pass: {pass_mark_str}</span>
             </div>
             <div class="mini-bars-container">
                 {joined_bars}
@@ -449,17 +448,15 @@ def build_all_candidates_pdf_html(data: dict) -> str:
         }}
         
         .mini-pass-hint {{
-            font-size: 9.5px;
-            color: #DC2626;
-            font-weight: 600;
+            display: none;
         }}
         
         .mini-bars-container {{
             display: flex;
             align-items: flex-end;
             justify-content: space-around;
-            height: 90px;
-            padding-bottom: 22px;
+            height: 118px;
+            padding-bottom: 46px;
             position: relative;
         }}
         
@@ -471,15 +468,17 @@ def build_all_candidates_pdf_html(data: dict) -> str:
             height: 100%;
             position: relative;
             flex: 1;
-            max-width: 44px;
-            min-width: 20px;
+            min-width: 18px;
+            overflow: visible;
         }}
         
         .mini-score-label {{
-            font-size: 9px;
+            font-size: 7.5px;
             font-weight: 700;
-            margin-bottom: 3px;
+            color: inherit;
             white-space: nowrap;
+            margin-bottom: 2px;
+            line-height: 1;
         }}
         
         .mini-bar-track {{
@@ -512,16 +511,14 @@ def build_all_candidates_pdf_html(data: dict) -> str:
             position: absolute;
             top: 100%;
             left: 50%;
-            transform: translateX(-50%);
-            margin-top: 3px;
-            font-size: 9px;
+            transform: translateX(-50%) rotate(-40deg);
+            transform-origin: top center;
+            margin-top: 2px;
+            font-size: 8.5px;
             font-weight: 600;
             color: #64748B;
-            max-width: 42px;
-            overflow: hidden;
-            text-overflow: ellipsis;
             white-space: nowrap;
-            text-align: center;
+            text-align: left;
         }}
         
         .empty-chart-note {{
@@ -971,7 +968,6 @@ def build_individual_test_pdf_html(data: dict) -> str:
             <div class="mini-chart-header">
                 <span class="chart-icon">{icon_symbol}</span>
                 <span class="mini-chart-title">{html.escape(title)}</span>
-                <span class="mini-pass-hint">Pass: {pass_mark_str}</span>
             </div>
             <div class="mini-bars-container">
                 {joined_bars}
@@ -1349,17 +1345,15 @@ def build_individual_test_pdf_html(data: dict) -> str:
         }}
         
         .mini-pass-hint {{
-            font-size: 9.5px;
-            color: #DC2626;
-            font-weight: 600;
+            display: none;
         }}
         
         .mini-bars-container {{
             display: flex;
             align-items: flex-end;
             justify-content: space-around;
-            height: 90px;
-            padding-bottom: 22px;
+            height: 118px;
+            padding-bottom: 46px;
             position: relative;
         }}
         
@@ -1371,15 +1365,17 @@ def build_individual_test_pdf_html(data: dict) -> str:
             height: 100%;
             position: relative;
             flex: 1;
-            max-width: 44px;
-            min-width: 20px;
+            min-width: 18px;
+            overflow: visible;
         }}
         
         .mini-score-label {{
-            font-size: 9px;
+            font-size: 7.5px;
             font-weight: 700;
-            margin-bottom: 3px;
+            color: inherit;
             white-space: nowrap;
+            margin-bottom: 2px;
+            line-height: 1;
         }}
         
         .mini-bar-track {{
@@ -1412,16 +1408,14 @@ def build_individual_test_pdf_html(data: dict) -> str:
             position: absolute;
             top: 100%;
             left: 50%;
-            transform: translateX(-50%);
-            margin-top: 3px;
-            font-size: 9px;
+            transform: translateX(-50%) rotate(-40deg);
+            transform-origin: top center;
+            margin-top: 2px;
+            font-size: 8.5px;
             font-weight: 600;
             color: #64748B;
-            max-width: 42px;
-            overflow: hidden;
-            text-overflow: ellipsis;
             white-space: nowrap;
-            text-align: center;
+            text-align: left;
         }}
         
         .empty-chart-note {{
