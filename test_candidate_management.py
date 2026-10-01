@@ -129,7 +129,7 @@ class CandidateManagementTests(unittest.TestCase):
         self.assertEqual(result["assessment_id"], self.a["assessment_id"])
         self.assertEqual(result["status"], "Assigned")
         self.assertIsNone(result["started_at"]); self.assertIsNone(result["submitted_at"])
-        with self.assertRaises(ValueError): self.assignments.assign_candidate_to_test("C1", self.tid)
+        self.assertEqual(self.assignments.assign_candidate_to_test("C1", self.tid), result)
         with self.assertRaises(ValueError): self.assignments.assign_candidate_to_test("C1", self.b["test_ids"]["Formative 1"])
 
     def test_status_transitions_and_timestamp_preservation(self):
@@ -154,12 +154,58 @@ class CandidateManagementTests(unittest.TestCase):
         self.assertIsNone(result["submitted_at"])
         with self.assertRaises(ValueError): self.assignments.update_test_status("C1", self.tid, "In Progress")
 
-    def test_assignment_dependencies_protect_assessment_and_test(self):
+    def test_assignment_dependencies_protect_assessment_but_allow_unstarted_test_delete(self):
         self.assign()
-        with self.assertRaises(ValueError): self.assessments.remove_candidate(self.a["assessment_id"], "C1")
-        with self.assertRaises(ValueError): self.assessments.delete_assessment(self.a["assessment_id"])
-        with self.assertRaises(ValueError): self.assessments.delete_test(self.a["assessment_id"], self.tid)
-        self.assertEqual(self.assessments.list_candidates(self.a["assessment_id"]), ["C1"])
+
+        # A plain "Assigned" test has no candidate attempt yet, so the
+        # facilitator may delete it.
+        self.assessments.delete_test(
+            self.a["assessment_id"],
+            self.tid,
+        )
+
+        # The test itself must no longer exist.
+        with self.assertRaises(ValueError):
+            self.assessments.tests.get_test(self.tid)
+
+        # Deleting the test must also remove its candidate assignment.
+        self.assertIsNone(
+            self.assignments.repository.get("C1", self.tid)
+        )
+
+        # Candidate remains assigned to the assessment itself.
+        self.assertEqual(
+            self.assessments.list_candidates(self.a["assessment_id"]),
+            ["C1"],
+        )
+
+    def test_started_test_cannot_be_deleted(self):
+        self.assign()
+
+        # Once the candidate starts the test, deletion must be blocked.
+        self.assignments.update_test_status(
+            "C1",
+            self.tid,
+            "In Progress",
+        )
+
+        with self.assertRaises(ValueError):
+            self.assessments.delete_test(
+                self.a["assessment_id"],
+                self.tid,
+            )
+
+        # Test must still exist after the rejected deletion.
+        existing = self.assessments.tests.get_test(self.tid)
+        self.assertEqual(existing["test_id"], self.tid)
+
+        # Candidate assignment must also remain intact.
+        assignment = self.assignments.repository.get(
+            "C1",
+            self.tid,
+        )
+        self.assertIsNotNone(assignment)
+        self.assertEqual(assignment["status"], "In Progress")
 
     def test_failed_writes_leave_candidates_and_assignments_intact(self):
         self.create(); before = self.repo.file_path.read_bytes()

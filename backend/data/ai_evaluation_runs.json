@@ -1,0 +1,1165 @@
+[
+    {
+        "run_id": "1d268a8928264e4fbaeaf073e2e3086b",
+        "candidate_ids": [
+            "CAND-2031"
+        ],
+        "candidate_id": "CAND-2031",
+        "candidate_scope": "single",
+        "candidate_labels": {
+            "CAND-2031": "Priya Sharma (CAND-2031)"
+        },
+        "assessment_name": "AEE",
+        "test_name": "Formative 1",
+        "assessment_id": "f2258824f4bc487ea814aebd309a5652",
+        "test_id": "6ff39fa84b8a472ab3e1fd7322ad1dc2",
+        "evaluation_type": "ai",
+        "status": "completed",
+        "questions": [
+            {
+                "pair_id": "677cffc9c0b14062aa3a61e9c7bbae3c",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q4",
+                    "question": "What are basic electrical hazards in HV systems?",
+                    "answer_key": "Electric shock, arc flash, and potential ground faults.",
+                    "max_marks": 2,
+                    "candidate_answer": "Electric shock, arc flash and potential ground fault",
+                    "unanswered": false,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "awarded_marks": 2,
+                    "percentage": 100.0,
+                    "evaluation": {
+                        "correctness": "The answer is technically correct.",
+                        "relevance": "The answer is relevant to the question asked.",
+                        "completeness": "The answer includes all key hazards mentioned in the reference.",
+                        "strengths": [
+                            "All key hazards are identified.",
+                            "The answer is concise and clear."
+                        ],
+                        "missing_points": [],
+                        "incorrect_points": []
+                    },
+                    "justification": "The student's answer accurately identifies the basic electrical hazards in high voltage systems as electric shock, arc flash, and potential ground fault, which are all correct and relevant. The answer is complete as it matches the reference answer in terms of content, thus deserving full marks.",
+                    "question_no": "Q4",
+                    "question": "What are basic electrical hazards in HV systems?",
+                    "maximum_marks": 2,
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": "Electric shock, arc flash and potential ground fault",
+                    "unanswered": false,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 2,
+                    "lo": 2.1,
+                    "knowledge_type": "Procedure",
+                    "domain": "Affective",
+                    "rbt_level": "C-Apply",
+                    "status": "completed"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "4b60dd47ba3a4792876f5e4c0f9b15b6",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q13",
+                    "question": "How do you recognize HV warning labels?",
+                    "answer_key": "By identifying yellow triangular labels with high-voltage symbols.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 5,
+                        "lo": 5.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q13",
+                    "question": "How do you recognize HV warning labels?",
+                    "maximum_marks": 5,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 5,
+                    "lo": 5.1,
+                    "knowledge_type": "Procedure",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Apply",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "6c692b82de2a4fbbaa0b75128065a6d2",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q10",
+                    "question": "How should HV incidents be reported?",
+                    "answer_key": "Report immediately following established safety protocols.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q10",
+                    "question": "How should HV incidents be reported?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 4,
+                    "lo": 4.1,
+                    "knowledge_type": "Procedure",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Understand",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "c70150cbad814cebb0d5d4e82614ed92",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q5",
+                    "question": "How does safety differ between LV and HV systems?",
+                    "answer_key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.2,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q5",
+                    "question": "How does safety differ between LV and HV systems?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 2,
+                    "lo": 2.2,
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Understand",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "3531c51c93984444b88695276ced0125",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q3",
+                    "question": "What standards regulate HV safety in EVs?",
+                    "answer_key": "ISO 6469, ISO 26262, IEC 61851.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q3",
+                    "question": "What standards regulate HV safety in EVs?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 1,
+                    "lo": 1.3,
+                    "knowledge_type": "Fact",
+                    "domain": "Psychomotor",
+                    "rbt_level": "C-Understand",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "e199f85b473843d6815be7d84b9b5bf2",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q8",
+                    "question": "Why is PPE important during HV maintenance?",
+                    "answer_key": "It protects against electric shock and arc flashes.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.2,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q8",
+                    "question": "Why is PPE important during HV maintenance?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 3,
+                    "lo": 3.2,
+                    "knowledge_type": "Procedure",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Remember",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "7306d69b340c4f459d9a30acbe15a648",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q12",
+                    "question": "What are basic guidelines for assisting in HV emergencies?",
+                    "answer_key": "Turn off power, avoid direct contact, and notify safety personnel.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.3,
+                        "knowledge_type": "Procedure",
+                        "domain": "Affective",
+                        "rbt_level": "C-Analyse"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q12",
+                    "question": "What are basic guidelines for assisting in HV emergencies?",
+                    "maximum_marks": 5,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 4,
+                    "lo": 4.3,
+                    "knowledge_type": "Procedure",
+                    "domain": "Affective",
+                    "rbt_level": "C-Analyse",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "25804a4d82cf426f8ee30d2492298469",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q11",
+                    "question": "What is the role of first responders in EV emergencies?",
+                    "answer_key": "To ensure personal safety, secure the area, and provide first aid if necessary.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.2,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q11",
+                    "question": "What is the role of first responders in EV emergencies?",
+                    "maximum_marks": 5,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 4,
+                    "lo": 4.2,
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Remember",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "831519fe65b04f1db2abca0aae967add",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q6",
+                    "question": "How are HV safety zones identified in vehicles?",
+                    "answer_key": "Safety zones are color-coded, labeled, and have restricted access points.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q6",
+                    "question": "How are HV safety zones identified in vehicles?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 2,
+                    "lo": 2.3,
+                    "knowledge_type": "Fact",
+                    "domain": "Psychomotor",
+                    "rbt_level": "C-Apply",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "c69c10d438b64a50bdb3469b4f5944ac",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q9",
+                    "question": "How should HV safety gear be stored?",
+                    "answer_key": "PPE should be stored in dry, temperature-controlled areas away from contaminants.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q9",
+                    "question": "How should HV safety gear be stored?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 3,
+                    "lo": 3.3,
+                    "knowledge_type": "Fact",
+                    "domain": "Affective",
+                    "rbt_level": "C-Apply",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "34870e5a7f7c48a0baea40896d493581",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q7",
+                    "question": "What PPE is required for HV handling?",
+                    "answer_key": "Insulated gloves, boots, face shields.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.1,
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q7",
+                    "question": "What PPE is required for HV handling?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 3,
+                    "lo": 3.1,
+                    "knowledge_type": "Concept",
+                    "domain": "Affective",
+                    "rbt_level": "C-Understand",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "59c68df5d0604acf9b5b0a2a8cff8844",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q14",
+                    "question": "Why is following manufacturer safety guidelines important?",
+                    "answer_key": "Ensures safety, compliance, and prevents electrical hazards.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 5,
+                        "lo": 5.2,
+                        "knowledge_type": "Concept",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q14",
+                    "question": "Why is following manufacturer safety guidelines important?",
+                    "maximum_marks": 5,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 5,
+                    "lo": 5.2,
+                    "knowledge_type": "Concept",
+                    "domain": "Psychomotor",
+                    "rbt_level": "C-Remember",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "e8279e73682344299cc57eba6584eb8d",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q2",
+                    "question": "Name three common hazards in HV EV systems.",
+                    "answer_key": "Electrical shock, arc flash, thermal runaway, and fire.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.2,
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q2",
+                    "question": "Name three common hazards in HV EV systems.",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 1,
+                    "lo": 1.2,
+                    "knowledge_type": "Concept",
+                    "domain": "Affective",
+                    "rbt_level": "C-Apply",
+                    "status": "unanswered"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "63bbe387a1ac46aa867e180559e631c5",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_144929_435228_Response",
+                    "question_no": "Q1",
+                    "question": "Why is safety important in High-Voltage EV systems?",
+                    "answer_key": "Safety prevents electric shock, arc flash, and ensures user protection.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.1,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1"
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q1",
+                    "question": "Why is safety important in High-Voltage EV systems?",
+                    "maximum_marks": 2,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "candidate_id": "CAND-2031",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "AEE",
+                    "test_name": "Formative 1",
+                    "co": 1,
+                    "lo": 1.1,
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Remember",
+                    "status": "unanswered"
+                },
+                "error": ""
+            }
+        ],
+        "current_question": null,
+        "created_at": "2026-09-30T09:38:08.150477+00:00",
+        "updated_at": "2026-09-30T09:58:56.166037+00:00",
+        "stop_requested": false,
+        "restarted_from_run_id": null,
+        "superseded_by_run_id": null,
+        "execution_token": "41ec0bf491a24c69a21f2f9d6fc57199",
+        "owner_process": "5b3c6a5a3e0149b8ba9e1f332f3ab071",
+        "owner_pid": 30684,
+        "skipped": [],
+        "error": "",
+        "total_questions": 14,
+        "completed_questions": 14,
+        "failed_questions": 0,
+        "pending_questions": 0,
+        "percentage": 100.0
+    },
+    {
+        "run_id": "cab8af7591184bc58709ace60487029e",
+        "candidate_ids": [
+            "CAND-2031"
+        ],
+        "candidate_id": "CAND-2031",
+        "candidate_scope": "single",
+        "candidate_labels": {
+            "CAND-2031": "Priya Sharma (CAND-2031)"
+        },
+        "assessment_name": "Assessment 2",
+        "test_name": "Formative 1",
+        "assessment_id": "74c1935883a04ae4a567b8337f8b70d1",
+        "test_id": "212005cf96924f0fb8b3f95a6ed6bc6b",
+        "evaluation_type": "ai",
+        "status": "running",
+        "questions": [
+            {
+                "pair_id": "cf1e0b3814354794bd2c2f31d835ba29",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q10",
+                    "question": "How should HV incidents be reported?",
+                    "answer_key": "Report immediately following established safety protocols.",
+                    "max_marks": 2,
+                    "candidate_answer": "Report immediately following established safety protocols",
+                    "unanswered": false,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "evaluating",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "da4fc104173540a7b8ee16bddec1dd11",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q3",
+                    "question": "What standards regulate HV safety in EVs?",
+                    "answer_key": "ISO 6469, ISO 26262, IEC 61851.",
+                    "max_marks": 2,
+                    "candidate_answer": "ISO6469\nISO26262<div>IEC6195</div>",
+                    "unanswered": false,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "5f5c9f4cdb01426cade7c356e03c91f1",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q2",
+                    "question": "Name three common hazards in HV EV systems.",
+                    "answer_key": "Electrical shock, arc flash, thermal runaway, and fire.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.2,
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "897e269608ab4812ba9b53dd625dd877",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q11",
+                    "question": "What is the role of first responders in EV emergencies?",
+                    "answer_key": "To ensure personal safety, secure the area, and provide first aid if necessary.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.2,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "b8c71968372048c183cad4f52c5f261e",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q5",
+                    "question": "How does safety differ between LV and HV systems?",
+                    "answer_key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.2,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "6e52989581294955be633879dc9d6ba2",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q8",
+                    "question": "Why is PPE important during HV maintenance?",
+                    "answer_key": "It protects against electric shock and arc flashes.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.2,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "368a168690c945ea86b40c4b527866bb",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q9",
+                    "question": "How should HV safety gear be stored?",
+                    "answer_key": "PPE should be stored in dry, temperature-controlled areas away from contaminants.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "8ea2105c9d4d429b91f55b1e14c8a723",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q13",
+                    "question": "How do you recognize HV warning labels?",
+                    "answer_key": "By identifying yellow triangular labels with high-voltage symbols.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 5,
+                        "lo": 5.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "dd305df9e1c9440a95b5900591306e53",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q6",
+                    "question": "How are HV safety zones identified in vehicles?",
+                    "answer_key": "Safety zones are color-coded, labeled, and have restricted access points.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.3,
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "41a825bc9aca47b0a89bae4e8353bc3e",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q14",
+                    "question": "Why is following manufacturer safety guidelines important?",
+                    "answer_key": "Ensures safety, compliance, and prevents electrical hazards.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 5,
+                        "lo": 5.2,
+                        "knowledge_type": "Concept",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "27d3555eb9a04686b3f4bf8b6ce8e2bd",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q12",
+                    "question": "What are basic guidelines for assisting in HV emergencies?",
+                    "answer_key": "Turn off power, avoid direct contact, and notify safety personnel.",
+                    "max_marks": 5,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 4,
+                        "lo": 4.3,
+                        "knowledge_type": "Procedure",
+                        "domain": "Affective",
+                        "rbt_level": "C-Analyse"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "3c88089bf4b949348ae53ed1ebec8294",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q4",
+                    "question": "What are basic electrical hazards in HV systems?",
+                    "answer_key": "Electric shock, arc flash, and potential ground faults.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 2,
+                        "lo": 2.1,
+                        "knowledge_type": "Procedure",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "c9de30118cb845bc98ba0a56cabe1b57",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q1",
+                    "question": "Why is safety important in High-Voltage EV systems?",
+                    "answer_key": "Safety prevents electric shock, arc flash, and ensures user protection.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 1,
+                        "lo": 1.1,
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            },
+            {
+                "pair_id": "e4fd726da1684cd7bc7d04cc682acc75",
+                "record": {
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya_Sharma_Formative_1_20260930_161619_452515_Response",
+                    "question_no": "Q7",
+                    "question": "What PPE is required for HV handling?",
+                    "answer_key": "Insulated gloves, boots, face shields.",
+                    "max_marks": 2,
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "metadata": {
+                        "co": 3,
+                        "lo": 3.1,
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Understand"
+                    },
+                    "assessment_name": "Assessment 2",
+                    "test_name": "Formative 1"
+                },
+                "status": "pending",
+                "result": null,
+                "error": ""
+            }
+        ],
+        "current_question": "Q10",
+        "created_at": "2026-09-30T11:12:45.629187+00:00",
+        "updated_at": "2026-09-30T11:13:50.280246+00:00",
+        "stop_requested": false,
+        "restarted_from_run_id": null,
+        "superseded_by_run_id": null,
+        "execution_token": "1e0f026d1f874b05a3f614f6f0869311",
+        "owner_process": "0f2816e1ee0d4b439ae20feafc8c9054",
+        "owner_pid": 31012,
+        "skipped": [],
+        "error": "",
+        "total_questions": 14,
+        "completed_questions": 0,
+        "failed_questions": 0,
+        "pending_questions": 14,
+        "percentage": 0.0
+    }
+]

@@ -24,9 +24,15 @@ class RunTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.repo=AIEvaluationRunRepository(Path(self.temp.name)/'runs.json')
         self.service=AIEvaluationRunService(self.repo)
+        from backend.services.assessment_service import AssessmentService
+        from backend.repositories.assessment_repository import AssessmentRepository
+        assessments=AssessmentService(AssessmentRepository(Path(self.temp.name)/'assessments.json'), self.service.tests)
+        assessment=assessments.create_assessment({'name':'Assessment'})
+        test=self.service.tests.create_test(assessment['assessment_id'], {'test_name':'Test','test_type':'subjective'})
+        self.ids={'assessment_id':assessment['assessment_id'],'test_id':test['test_id']}
 
     def create(self, **kwargs):
-        return self.service.create_run('Assessment','Test',records(),**kwargs)
+        return self.service.create_run('Assessment','Test',records(),**self.ids,**kwargs)
 
     def test_creation_progress_and_reload(self):
         run=self.create();self.assertEqual(run['status'],'idle')
@@ -125,7 +131,7 @@ class RunTests(unittest.TestCase):
 
     def test_batch_questionwise_checkpoint_stop_and_skip_completed(self):
         rows=[r for q in range(1,4) for c in ('C1','C2') for r in [records(c)[q-1]]]
-        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all')['run_id']
+        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',**self.ids)['run_id']
         calls=[]
         def grade(client,deployment,chunk,*args):
             calls.append([(r['candidate_id'],r['question_no']) for r in chunk])
@@ -142,7 +148,7 @@ class RunTests(unittest.TestCase):
     def test_unanswered_no_azure_client(self):
         rows=records()
         for row in rows: row.update(unanswered=True,candidate_answer=None)
-        rid=self.service.create_run('Assessment','Test',rows)['run_id']
+        rid=self.service.create_run('Assessment','Test',rows,**self.ids)['run_id']
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client') as client:
             run=self.service.execute(rid)
         client.assert_not_called()
@@ -164,7 +170,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(self.repo.file_path.read_bytes(),before)
 
     def test_snapshot_isolated_and_stale_token_rejected(self):
-        source=records();run=self.service.create_run('Assessment','Test',source)
+        source=records();run=self.service.create_run('Assessment','Test',source,**self.ids)
         source[0]['candidate_answer']='Changed'
         self.assertEqual(self.service.get_run(run['run_id'])['questions'][0]['record']['candidate_answer'],'Answer')
         run=self.service.start(run['run_id']);q=self.service._next_chunk(run['run_id'],run['execution_token'],1)[0]
@@ -179,7 +185,7 @@ class RunTests(unittest.TestCase):
                'CO':'CO1','LO':'LO1','Knowledge Type':'Conceptual','Domain':'Cognitive','RBT level':'Understand'} for i in range(1,4)]
         pd.DataFrame(rows).to_excel(paper,index=False)
         pd.DataFrame([dict(r,**{'Candidate Answer':'Answer'}) for r in rows]).to_excel(response,index=False)
-        run=self.service.prepare_single('Assessment','Test','C1','Name (C1)',paper,response)
+        run=self.service.prepare_single('Assessment','Test','C1','Name (C1)',paper,response,**self.ids)
         self.assertEqual(run['candidate_id'],'C1');self.assertEqual(run['total_questions'],3)
         response.write_bytes(b'changed file')
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
@@ -191,7 +197,7 @@ class RunTests(unittest.TestCase):
         from unittest.mock import Mock
         from test_ai_questionwise import grade
         rows=records('C1',1)+records('C2',1)
-        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all')['run_id']
+        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',**self.ids)['run_id']
         client=Mock();calls=[]
         def create(**kwargs):
             prompt=kwargs['messages'][0]['content']

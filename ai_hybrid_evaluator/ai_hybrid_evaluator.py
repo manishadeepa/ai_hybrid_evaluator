@@ -48,8 +48,18 @@ app.add_page(login_page, route="/signin", title="Sign In", on_load=AuthState.on_
 app.add_page(signup_page, route="/signup", title="Sign Up")
 app.add_page(admin_dashboard_page, route="/admin/dashboard", title="Admin Dashboard", on_load=AdminState.load_persisted_assessments)
 app.add_page(facilitators_page, route="/admin/facilitators", title="Facilitators")
-app.add_page(candidates_page, route="/admin/candidates", title="Candidates")
-app.add_page(assessments_page, route="/admin/assessments", title="Assessments", on_load=AdminState.load_persisted_assessments)
+app.add_page(
+    candidates_page,
+    route="/admin/candidates",
+    title="Candidates",
+    on_load=AdminState.load_persisted_candidates,
+)
+app.add_page(
+    assessments_page,
+    route="/admin/assessments",
+    title="Assessments",
+    on_load=AdminState.load_assessments_page_data,
+)
 app.add_page(reports_page, route="/admin/reports", title="Reports")
 app.add_page(settings_page, route="/admin/settings", title="Settings")
 app.add_page(admin_feedback_page, route="/admin/feedback", title="Feedback Management", on_load=AdminFeedbackState.on_load)

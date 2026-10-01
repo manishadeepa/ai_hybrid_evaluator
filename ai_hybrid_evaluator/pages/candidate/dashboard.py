@@ -145,7 +145,6 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                             rx.icon("play", size=13),
                             "Start Test",
                             on_click=[
-                                rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
                                 CandidateState.start_test(assessment_name, test_name),
                             ],
                             size="1",

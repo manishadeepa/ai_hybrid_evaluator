@@ -139,12 +139,22 @@ class PersistenceTests(unittest.TestCase):
         admin.set_show_edit_assessment = lambda value: None
         admin.set_show_delete_assessment = lambda value: None
         ns['AdminState'] = Admin
-        fnames = {'load_persisted_assessment_workspace', 'create_new_test', 'facilitator_remove_test', 'remove_test_question_paper'}
+        ns['AuthState'] = type('AuthHarness', (), {})
+        auth = SimpleNamespace(facilitator_emp_id='F001')
+        from backend.repositories.candidate_repository import CandidateRepository
+        from backend.services.candidate_management_service import CandidateManagementService
+        from backend.services.candidate_assignment_service import CandidateAssignmentService
+        candidates = CandidateManagementService(CandidateRepository(self.service.repository.file_path.parent/'candidates.json'), assessments=self.service)
+        for cid in ('C1', 'C2'):
+            candidates.create_candidate({'candidate_id':cid,'name':cid,'email':cid+'@example.com'})
+        ns['CandidateAssignmentService'] = lambda: CandidateAssignmentService(candidates)
+        fnames = {'_workspace_assessment', 'load_persisted_assessment_workspace', 'create_new_test', 'facilitator_remove_test', 'remove_test_question_paper'}
         Fac = extract_methods('ai_hybrid_evaluator/state/facilitator_state.py', 'FacilitatorState', fnames, ns)
         fac = Fac()
         fac.question_papers = {}
+        fac.selected_assessment_id = ''
         async def get_state(cls):
-            return admin
+            return auth if cls is ns['AuthState'] else admin
         fac.get_state = get_state
         fac._unmark_assessment_complete = lambda name: None
         async def sync_weightage(name):

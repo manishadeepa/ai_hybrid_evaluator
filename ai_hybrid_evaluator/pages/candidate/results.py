@@ -1,15 +1,65 @@
 """Candidate Results page — read-only view of candidate's own finalized results and performance analysis."""
 
+import asyncio
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.candidate_shell import candidate_shell
 from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import (
     results_vertical_dimension_bar_item,
 )
-from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
-from ai_hybrid_evaluator.state.candidate_state import CandidateState, _strip_html
+from ai_hybrid_evaluator.state.candidate_state import _strip_html
 from backend.services.evaluation_result_service import EvaluationResultService
+from backend.services.assessment_service import _PERSISTENCE_LOCK
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
+
+
+def _read_candidate_results(candidate_id: str, assessment_id: str = "") -> dict:
+    """Read one candidate's canonical lifecycle and authoritative finalized results."""
+    service = EvaluationResultService()
+    with _PERSISTENCE_LOCK:
+        assessments = [a for a in service._read(service.assessments.repository)
+                       if candidate_id in a.get('assigned_candidates', [])]
+        options = {(a['name'] if sum(x['name'] == a['name'] for x in assessments) == 1
+                    else a['name'] + ' [' + a['assessment_id'] + ']'): a['assessment_id']
+                   for a in assessments}
+        aid = assessment_id or next(iter(options.values()), '')
+        snapshot = dict(options=options, assessment_id=aid, rows=[], results={})
+        if aid not in options.values():
+            snapshot['assessment_id'] = ''
+            return snapshot
+        tests = [t for t in service._read(service.assessments.tests.repository) if t['assessment_id'] == aid]
+        results = {r['test_id']: r for r in service.list_results(candidate_id=candidate_id, assessment_id=aid)}
+        responses = {r['test_id']: r for r in service._read(service.response_repository)
+                     if r['candidate_id'] == candidate_id and r['assessment_id'] == aid}
+        assignments = {r['test_id']: r for r in service._read(service.assignment_repository)
+                       if r['candidate_id'] == candidate_id and r['assessment_id'] == aid}
+        for index, test in enumerate(sorted(tests, key=lambda t: t.get('position', 0)), 1):
+            tid = test['test_id']
+            response, assignment = responses.get(tid, {}), assignments.get(tid, {})
+            lifecycle = response or assignment
+            result = results.get(tid)
+            pending = bool(response.get('_pending_status'))
+            status, color = 'Not Submitted', 'amber'
+            if lifecycle.get('status') == 'Disqualified' or assignment.get('status') == 'Disqualified':
+                status, color, result = 'Disqualified', 'red', None
+            elif pending:
+                status, color, result = 'Submission Pending', 'amber', None
+            elif result:
+                status, color = 'Evaluated', 'green'
+            elif lifecycle.get('status') == 'Submitted':
+                status, color = 'Submitted', 'indigo'
+            elif lifecycle.get('status') == 'In Progress':
+                status, color = 'In Progress', 'amber'
+            row = dict(idx=str(index), name=test['test_name'], test_id=tid, assessment_id=aid,
+                status=status, status_color=color, is_evaluated=bool(result),
+                score=f"{result['total_marks']:g} / {result['max_marks']:g}" if result else '—',
+                submitted_on=str((lifecycle.get('submitted_at') or assignment.get('submitted_at') or '—')
+                                 if not pending else '—'),
+                evaluated_on=str(result.get('evaluated_at') or '—') if result else '—')
+            snapshot['rows'].append(row)
+            if result:
+                snapshot['results'][tid] = result
+        return snapshot
 
 
 class CandidateResultsState(rx.State):
@@ -20,74 +70,78 @@ class CandidateResultsState(rx.State):
 
     results_revision: int = 0
     selected_assessment_name: str = ""
+    selected_assessment_id: str = ""
     selected_test_name: str = ""
-    active_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
+    selected_test_id: str = ""
+    active_tab: str = "co"
+    _view_candidate_id: str = ""
+    _assessment_ids: dict[str, str] = {}
+    _test_rows: list[dict] = []
+    _finalized_results: dict[str, dict] = {}
 
-    def set_selected_assessment(self, name: str):
-        self.selected_assessment_name = name
-        self.selected_test_name = ""
+    async def _authorized_view(self) -> bool:
+        auth = await self.get_state(AuthState)
+        return bool(auth.is_candidate_authenticated and auth.candidate_emp_id
+                    and auth.candidate_emp_id == self._view_candidate_id)
 
-    def select_test(self, test_name: str):
-        self.selected_test_name = test_name
+    async def _reload_results(self, assessment_id: str = ""):
+        auth = await self.get_state(AuthState)
+        cid = auth.candidate_emp_id if auth.is_candidate_authenticated else ''
+        self._view_candidate_id = ''
+        self._test_rows = []
+        self._finalized_results = {}
+        self._assessment_ids = {}
+        self.selected_assessment_id = ''
+        self.selected_assessment_name = ''
+        self.clear_selected_test()
         self.results_revision += 1
-        self.active_tab = "co"
+        if not cid:
+            return
+        try:
+            snapshot = await asyncio.to_thread(_read_candidate_results, cid, assessment_id)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(f"Unable to load results: {exc}")
+        auth = await self.get_state(AuthState)
+        if not auth.is_candidate_authenticated or auth.candidate_emp_id != cid:
+            return
+        self._view_candidate_id = cid
+        self._assessment_ids = snapshot['options']
+        self.selected_assessment_id = snapshot['assessment_id']
+        self.selected_assessment_name = next((label for label, aid in self._assessment_ids.items()
+                                              if aid == self.selected_assessment_id), '')
+        self._test_rows = snapshot['rows']
+        self._finalized_results = snapshot['results']
+
+    async def set_selected_assessment(self, name: str):
+        if not await self._authorized_view() or name not in self._assessment_ids:
+            return
+        return await self._reload_results(self._assessment_ids[name])
+
+    async def select_test(self, test_id: str):
+        if not await self._authorized_view():
+            return
+        row = next((r for r in self._test_rows if r['test_id'] == test_id and r['is_evaluated']), None)
+        if row:
+            self.selected_test_id = test_id
+            self.selected_test_name = row['name']
+            self.results_revision += 1
+            self.active_tab = "co"
 
     def clear_selected_test(self):
+        self.selected_test_id = ""
         self.selected_test_name = ""
 
     def set_active_tab(self, tab: str):
         self.active_tab = tab
 
     async def on_load(self):
-        auth_st = await self.get_state(AuthState)
-        if not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id:
-            self.selected_assessment_name = ""
-            self.selected_test_name = ""
-            self.results_revision += 1
-            return
-        admin_st = await self.get_state(AdminState)
-        error = admin_st.load_persisted_assessments()
-        self.results_revision += 1
-        opts = await self.assessment_options
-        if self.selected_assessment_name not in opts:
-            self.selected_assessment_name = opts[0] if opts else ""
-            self.selected_test_name = ""
-        return error
-
-    async def _fetch_finalized_test_result(self, cand_id: str, assessment_name: str, test_name: str) -> dict:
-        """Resolve exact persisted names to IDs and read only this authenticated candidate's result."""
-        auth_st = await self.get_state(AuthState)
-        if (not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id
-                or cand_id != auth_st.candidate_emp_id or not assessment_name or not test_name):
-            return {}
-        service = EvaluationResultService()
-        try:
-            assessments = service.assessments.load_assessments()
-            matches = [a for a in assessments if a.get("name") == assessment_name]
-            if len(matches) != 1:
-                return {}
-            assessment = matches[0]
-
-            assigned = assessment.get("assigned_candidates", [])
-            if auth_st.candidate_emp_id not in assigned:
-                return {}
-
-            assessment_id = assessment.get("assessment_id")
-            test_id = assessment.get("test_ids", {}).get(test_name)
-            if not assessment_id or not test_id:
-                return {}
-            return service.get_result(auth_st.candidate_emp_id, assessment_id, test_id) or {}
-        except ValueError:
-            # Missing/deleted identities and invalid stored results are not finalized UI data.
-            return {}
+        aid = self.selected_assessment_id if await self._authorized_view() else ''
+        return await self._reload_results(aid)
 
     async def _submission_dates(self, assessment_name: str) -> dict:
-        auth_st = await self.get_state(AuthState)
-        cand_st = await self.get_state(CandidateState)
-        if (not auth_st.is_candidate_authenticated or not auth_st.candidate_emp_id
-                or cand_st.candidate_id != auth_st.candidate_emp_id):
+        if not await self._authorized_view() or assessment_name != self.selected_assessment_name:
             return {}
-        return dict(cand_st.submitted_tests.get(assessment_name, {}))
+        return {r['test_id']: r['submitted_on'] for r in self._test_rows}
 
     def _dimension_items(self, data: dict, field: str) -> list[dict]:
         """Use marks-weighted percentages from this result's normalized questions."""
@@ -104,126 +158,24 @@ class CandidateResultsState(rx.State):
 
     @rx.var
     async def assessment_options(self) -> list[str]:
-        """Return only assessments explicitly assigned to the logged-in candidate."""
-        auth_st = await self.get_state(AuthState)
-        admin_st = await self.get_state(AdminState)
-        cand_id = auth_st.candidate_emp_id
-
-        if not auth_st.is_candidate_authenticated or not cand_id:
-            return []
-
-        options = []
-        for assessment in admin_st.assessments:
-            assigned = assessment.get("assigned_candidates", [])
-
-            if cand_id not in assigned:
-                continue
-
-            name = assessment.get("name", "")
-            if name and name not in options:
-                options.append(name)
-
-        return options
+        return list(self._assessment_ids) if await self._authorized_view() else []
 
     @rx.var
     async def current_assessment_name(self) -> str:
-        """Return the selected assessment only when the candidate is authorized for it."""
-        options = await self.assessment_options
-
-        if self.selected_assessment_name in options:
-            return self.selected_assessment_name
-
-        return options[0] if options else ""
+        return self.selected_assessment_name if await self._authorized_view() else ''
 
     @rx.var
     async def tests_table_rows(self) -> list[dict]:
-        """Table data for 'Tests in this Assessment'."""
-        auth_st = await self.get_state(AuthState)
-        admin_st = await self.get_state(AdminState)
-        _ = self.results_revision  # Refresh persisted results when the page is revisited.
-        cand_id = auth_st.candidate_emp_id
-        if not auth_st.is_candidate_authenticated or not cand_id:
-            return []
-        asmn = await self.current_assessment_name
-
-        target_a = next(
-            (
-                a
-                for a in admin_st.assessments
-                if a.get("name") == asmn
-                and cand_id in a.get("assigned_candidates", [])
-            ),
-            None,
-        )
-
-        if not target_a:
-            return []
-
-        all_tests = list(target_a.get("tests", []))
-        final_test = target_a.get("final_test", "")
-        if final_test and final_test not in all_tests:
-            all_tests.append(final_test)
-
-        submitted_map = await self._submission_dates(asmn)
-
-        rows = []
-        for i, t_name in enumerate(all_tests, 1):
-            eval_data = await self._fetch_finalized_test_result(cand_id, asmn, t_name)
-            is_submitted = (t_name in submitted_map) or bool(eval_data)
-
-            if eval_data:
-                pct = eval_data.get("percentage", "—")
-                if pct != "—" and not str(pct).endswith("%"):
-                    pct = f"{pct}%"
-                sub_date = submitted_map.get(t_name) or "—"
-                eval_date = eval_data.get("evaluated_at") or "—"
-
-                rows.append({
-                    "idx": str(i),
-                    "name": t_name,
-                    "status": "Evaluated",
-                    "status_color": "green",
-                    "score": str(pct),
-                    "submitted_on": str(sub_date),
-                    "evaluated_on": str(eval_date),
-                    "is_evaluated": True,
-                })
-            elif is_submitted:
-                rows.append({
-                    "idx": str(i),
-                    "name": t_name,
-                    "status": "Submitted",
-                    "status_color": "indigo",
-                    "score": "—",
-                    "submitted_on": str(submitted_map.get(t_name) or "—"),
-                    "evaluated_on": "—",
-                    "is_evaluated": False,
-                })
-            else:
-                rows.append({
-                    "idx": str(i),
-                    "name": t_name,
-                    "status": "Not Submitted",
-                    "status_color": "amber",
-                    "score": "—",
-                    "submitted_on": "—",
-                    "evaluated_on": "—",
-                    "is_evaluated": False,
-                })
-        return rows
+        _ = self.results_revision
+        return self._test_rows if await self._authorized_view() else []
 
     @rx.var
     async def selected_test_eval_data(self) -> dict:
-        """Fetch finalized evaluation data for currently selected test."""
         _ = self.results_revision
-        if not self.selected_test_name:
+        if not await self._authorized_view():
             return {}
-        auth_st = await self.get_state(AuthState)
-        cand_id = auth_st.candidate_emp_id
-        if not auth_st.is_candidate_authenticated or not cand_id:
-            return {}
-        asmn = await self.current_assessment_name
-        return await self._fetch_finalized_test_result(cand_id, asmn, self.selected_test_name)
+        result = self._finalized_results.get(self.selected_test_id, {})
+        return result if result.get('assessment_id') == self.selected_assessment_id else {}
 
     @rx.var
     async def has_evaluated_selection(self) -> bool:
@@ -285,7 +237,7 @@ class CandidateResultsState(rx.State):
     @rx.var
     async def test_submitted_on_display(self) -> str:
         dates = await self._submission_dates(await self.current_assessment_name)
-        return str(dates.get(self.selected_test_name) or "—")
+        return str(dates.get(self.selected_test_id) or "—")
 
     @rx.var
     async def test_evaluated_on_display(self) -> str:
@@ -493,7 +445,7 @@ def _tests_in_assessment_card() -> rx.Component:
                                             border_radius="6px",
                                             cursor="pointer",
                                             _hover={"background": "#4F46E5"},
-                                            on_click=CandidateResultsState.select_test(row["name"]),
+                                            on_click=CandidateResultsState.select_test(row["test_id"]),
                                         ),
                                         rx.cond(
                                             row["status"] == "Submitted",

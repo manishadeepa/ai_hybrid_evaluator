@@ -17,17 +17,27 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.service=AIEvaluationRunService(AIEvaluationRunRepository(Path(self.temp.name)/'runs.json'))
+        from backend.services.assessment_service import AssessmentService
+        from backend.repositories.assessment_repository import AssessmentRepository
+        self.assessments=AssessmentService(AssessmentRepository(Path(self.temp.name)/'assessments.json'),self.service.tests)
+        assessment=self.assessments.create_assessment({'name':'Assessment'})
+        test=self.service.tests.create_test(assessment['assessment_id'],{'test_name':'Test','test_type':'subjective'})
+        self.ids={'assessment_id':assessment['assessment_id'],'test_id':test['test_id']}
         def provider(): return self.service
         provider.result_rows=AIEvaluationRunService.result_rows
         patch.object(state_module,'AIEvaluationRunService',provider).start()
         patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')).start()
         self.addCleanup(patch.stopall)
         root=rx.State(_reflex_internal_init=True)
+        from ai_hybrid_evaluator.state.auth_state import AuthState
+        auth=root.get_substate(tuple(AuthState.get_full_name().split('.')))
+        auth.facilitator_emp_id='F001'
+        auth.is_facilitator_authenticated=True
         self.fac=root.get_substate(tuple(state_module.FacilitatorState.get_full_name().split('.')))
         self.fac.selected_assessment_name='Assessment'
         self.fac.selected_test_name='Test'
         self.fac.selected_evaluation_candidate='One (C1)'
-        self.run=self.service.create_run('Assessment','Test',records(),labels={'C1':'One (C1)'})
+        self.run=self.service.create_run('Assessment','Test',records(),labels={'C1':'One (C1)'},**self.ids)
         self.fac.active_ai_run_id=self.run['run_id']
         self.fac.show_eval_progress_modal=True
 
@@ -114,7 +124,9 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
         pd.DataFrame([row]).to_excel(paper,index=False)
         pd.DataFrame([dict(row,**{'Candidate Answer':'Answer'})]).to_excel(response,index=False)
         admin=await self.fac.get_state(AdminState)
-        admin.assessments=[{'name':'New Assessment','assessment_id':'ASM1','test_ids':{'Test':'TEST1'},
+        new=self.assessments.create_assessment({'name':'New Assessment'})
+        typed=self.service.tests.create_test(new['assessment_id'],{'test_name':'Test','test_type':'subjective'})
+        admin.assessments=[{'name':'New Assessment','assessment_id':new['assessment_id'],'test_ids':{'Test':typed['test_id']},
                            'facilitator_ids':['F001'],'facilitator_names':['Ravi'],'assigned_candidates':['C1'],
                            'status':'Active','tests':['Test'],'final_test':''}]
         admin.candidates=[{'emp_id':'C1','name':'One','email':''}]
@@ -125,7 +137,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
             events=[event async for event in self.fac.run_ai_evaluation()]
         lookup.assert_called_once_with('One (C1)','Test','New Assessment',require_assessment_scope=True)
         prepared=self.service.get_run(self.fac.active_ai_run_id)
-        self.assertEqual(prepared['assessment_id'],'ASM1');self.assertEqual(prepared['test_id'],'TEST1')
+        self.assertEqual(prepared['assessment_id'],new['assessment_id']);self.assertEqual(prepared['test_id'],typed['test_id'])
         self.assertEqual(prepared['status'],'idle');self.assertEqual(prepared['completed_questions'],0)
         self.assertTrue(any(getattr(event,'handler',None) is not None and event.handler.is_background for event in events))
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):

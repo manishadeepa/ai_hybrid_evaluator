@@ -47,6 +47,7 @@ def test_header() -> rx.Component:
                         ),
                         rx.text(
                             "Fullscreen Active",
+                            class_name="browser-fullscreen-active",
                             font_family=FONT_BODY,
                             size="2",
                             weight="medium",
@@ -84,7 +85,6 @@ def test_header() -> rx.Component:
                         align_items="center",
                         cursor="pointer",
                         on_click=[
-                            CandidateState.handle_fullscreen_entered,
                             rx.call_script("if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || function(){}).call(document.documentElement).catch(function(e){console.warn(e);}); }"),
                         ],
                     ),
@@ -105,7 +105,7 @@ def test_header() -> rx.Component:
                 ),
                 rx.box(
                     rx.text(
-                        CandidateState.current_question_number.to_string() + " of " + CandidateState.total_questions.to_string(),
+                        CandidateState.current_question_display_number.to_string() + " of " + CandidateState.total_questions.to_string(),
                         font_family=FONT_BODY,
                         size="1",
                         weight="medium",
@@ -230,7 +230,7 @@ def question_card() -> rx.Component:
                 # Card Top Row: Question Number + Mark for Review
                 rx.hstack(
                     rx.text(
-                        "Question " + CandidateState.current_question_number.to_string(),
+                        "Question " + CandidateState.current_question_display_number.to_string(),
                         font_family=FONT_DISPLAY,
                         size="5",
                         weight="bold",
@@ -368,6 +368,9 @@ def question_card() -> rx.Component:
     )
 
 
+_NAVIGATION_ANSWER_SCRIPT = "(() => window.__rteTakeNavigationAnswer ? window.__rteTakeNavigationAnswer() : '')()"
+
+
 def _test_bottom_nav_buttons() -> rx.Component:
     return rx.hstack(
         # Previous
@@ -378,10 +381,7 @@ def _test_bottom_nav_buttons() -> rx.Component:
                 spacing="1",
                 align_items="center",
             ),
-            on_click=[
-                rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                CandidateState.prev_question,
-            ],
+            on_click=rx.call_script(_NAVIGATION_ANSWER_SCRIPT, callback=CandidateState.previous_with_answer),
             disabled=CandidateState.current_question_index == 0,
             variant="outline",
             color_scheme="gray",
@@ -402,10 +402,7 @@ def _test_bottom_nav_buttons() -> rx.Component:
                     spacing="1",
                     align_items="center",
                 ),
-                on_click=[
-                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                    CandidateState.next_question,
-                ],
+                on_click=rx.call_script(_NAVIGATION_ANSWER_SCRIPT, callback=CandidateState.next_with_answer),
                 size="2",
                 variant="outline",
                 color_scheme="gray",
@@ -427,11 +424,7 @@ def _test_bottom_nav_buttons() -> rx.Component:
                     spacing="1",
                     align_items="center",
                 ),
-                on_click=[
-                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                    CandidateState.save_and_next_question,
-                    CandidateState.open_submit_dialog,
-                ],
+                on_click=rx.call_script(_NAVIGATION_ANSWER_SCRIPT, callback=CandidateState.submit_with_answer),
                 size="2",
                 background="#027A48",
                 color="white",
@@ -446,10 +439,7 @@ def _test_bottom_nav_buttons() -> rx.Component:
                     spacing="1",
                     align_items="center",
                 ),
-                on_click=[
-                    rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-                    CandidateState.save_and_next_question,
-                ],
+                on_click=rx.call_script(_NAVIGATION_ANSWER_SCRIPT, callback=CandidateState.next_with_answer),
                 size="2",
                 background="#4338CA",
                 color="white",
@@ -508,7 +498,7 @@ def answer_card() -> rx.Component:
         # Uses textarea (not type="hidden" input) so React synthetic onChange fires correctly.
         rx.el.textarea(
             id="rte-relay",
-            on_change=CandidateState.set_answer_html,
+            on_change=CandidateState.set_answer_payload,
             style={
                 "position": "fixed",
                 "top": "-9999px",
@@ -674,34 +664,15 @@ def _mcq_option_card(letter: str, text_var: rx.Var) -> rx.Component:
     is_selected = CandidateState.current_mcq_answer == letter
     return rx.cond(
         text_var != "",
-        rx.box(
+        rx.el.label(
             rx.hstack(
-                # Radio button indicator matching reference UI
-                rx.cond(
-                    is_selected,
-                    rx.box(
-                        rx.box(
-                            width="8px",
-                            height="8px",
-                            border_radius="50%",
-                            background="#4F46E5",
-                        ),
-                        width="20px",
-                        height="20px",
-                        border_radius="50%",
-                        border="2px solid #4F46E5",
-                        display="flex",
-                        align_items="center",
-                        justify_content="center",
-                        flex_shrink="0",
-                    ),
-                    rx.box(
-                        width="20px",
-                        height="20px",
-                        border_radius="50%",
-                        border="2px solid #D1D5DB",
-                        flex_shrink="0",
-                    ),
+                rx.el.input(
+                    type="radio", name="candidate-mcq", value=letter,
+                    checked=is_selected,
+                    key=CandidateState.current_question_number.to_string() + "-" + letter,
+                    on_change=CandidateState.select_mcq_option(letter),
+                    disabled=CandidateState.is_test_submitted | CandidateState.is_time_expired | CandidateState.is_disqualified,
+                    style={"width": "20px", "height": "20px", "accentColor": "#4F46E5", "flexShrink": "0"},
                 ),
                 # Option letter
                 rx.text(
@@ -746,7 +717,6 @@ def _mcq_option_card(letter: str, text_var: rx.Var) -> rx.Component:
                     {"background": "#F9FAFB", "border_color": "#D1D5DB"},
                 ),
             ),
-            on_click=CandidateState.select_mcq_option(letter),
         ),
         rx.fragment(),
     )
@@ -761,7 +731,7 @@ def objective_question_card() -> rx.Component:
                 # Card Top Row: Question Number + Mark for Review
                 rx.hstack(
                     rx.text(
-                        "Question " + CandidateState.current_question_number.to_string(),
+                        "Question " + CandidateState.current_question_display_number.to_string(),
                         font_family=FONT_DISPLAY,
                         size="5",
                         weight="bold",
@@ -956,7 +926,7 @@ def _nav_question_button(item: dict) -> rx.Component:
         ),
         on_click=[
             rx.call_script("if (window.__rteSaveCurrentAnswer) window.__rteSaveCurrentAnswer();"),
-            CandidateState.jump_to_question(item["id"]),
+            CandidateState.jump_to_question(item["position"]),
         ],
     )
 
@@ -1156,10 +1126,9 @@ def bottom_status_bar() -> rx.Component:
                 rx.icon("lock", size=16, color="#4B5563"),
                 rx.vstack(
                     rx.text(
-                        rx.cond(
-                            CandidateState.is_fullscreen,
-                            "Fullscreen & Tab Lock is Active",
-                            "Fullscreen Inactive - Proctoring Flagged",
+                        rx.fragment(
+                            rx.el.span("Fullscreen & Tab Lock is Active", class_name="browser-fullscreen-active"),
+                            rx.el.span("Fullscreen Inactive", class_name="browser-fullscreen-inactive"),
                         ),
                         font_family=FONT_BODY,
                         size="2",
@@ -1191,7 +1160,7 @@ def bottom_status_bar() -> rx.Component:
                         color=rx.cond(CandidateState.is_fullscreen, "#16A34A", "#DC2626"),
                     ),
                     rx.text(
-                        rx.cond(CandidateState.is_fullscreen, "Fullscreen Active", "Fullscreen Inactive"),
+                        rx.fragment(rx.el.span("Fullscreen Active", class_name="browser-fullscreen-active"), rx.el.span("Fullscreen Inactive", class_name="browser-fullscreen-inactive")),
                         font_family=FONT_BODY,
                         size="1",
                         weight="medium",
@@ -1380,7 +1349,11 @@ def submit_confirmation_dialog() -> rx.Component:
                     rx.spacer(),
                     rx.button(
                         "Confirm & Submit Test",
-                        on_click=CandidateState.confirm_submit_test,
+                        on_click=rx.call_script(
+                            "(() => {const ed=document.getElementById('rte-editor'); const relay=document.getElementById('rte-relay'); return ed && relay ? JSON.stringify({question_id:relay.dataset.questionId, html:ed.innerHTML}) : '';})()",
+                            callback=CandidateState.confirm_submit_test,
+                        ),
+                        loading=CandidateState.is_submitting,
                         background="#027A48",
                         color="white",
                         font_family=FONT_BODY,
@@ -1738,6 +1711,8 @@ def test_submitted_screen() -> rx.Component:
 
 def candidate_test_page() -> rx.Component:
     return rx.box(
+        # Browser CSS updates labels immediately, even before the server receives the event.
+        rx.el.style("html:not(:fullscreen) .browser-fullscreen-active {display:none!important} html:fullscreen .browser-fullscreen-inactive {display:none!important}"),
         proctoring_warning_dialog(),
         candidate_feedback_modal(),
         rx.cond(
@@ -1774,107 +1749,148 @@ def candidate_test_page() -> rx.Component:
                         r"""
                         (function() {
                             // ── Fullscreen detection ──────────────────────────────────────
-                            function checkFS() {
-                                var isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
-                                if (!isFS) {
-                                    var exitBtn = document.getElementById('fs-exit-btn');
-                                    if (exitBtn) exitBtn.click();
-                                } else {
-                                    var enterBtn = document.getElementById('fs-enter-btn');
-                                    if (enterBtn) enterBtn.click();
-                                }
-                            }
-                            if (window.__candidate_fs_handler) {
-                                document.removeEventListener('fullscreenchange', window.__candidate_fs_handler);
-                                document.removeEventListener('webkitfullscreenchange', window.__candidate_fs_handler);
-                            }
-                            window.__candidate_fs_handler = checkFS;
-                            document.addEventListener('fullscreenchange', checkFS);
-                            document.addEventListener('webkitfullscreenchange', checkFS);
-    
-                            // ── Tab-switch / window-blur detection ────────────────────────
-                            // Use a 600ms debounce: both visibilitychange and window blur
-                            // can fire for the same switch event (e.g. Alt+Tab sometimes
-                            // triggers both). The debounce ensures exactly one violation per
-                            // actual switch, regardless of which events fire together.
-                            var __tabSwitchLastMs = 0;
-                            function triggerTabSwitch() {
+                            var episode = window.__candidate_away_episode || {
+                                reported: false
+                            };
+                            window.__candidate_away_episode = episode;
+
+                            function reportAwayViolation() {
                                 var btn = document.getElementById('tab-switch-btn');
-                                if (btn && btn.disabled) return; // test over
-                                var now = Date.now();
-                                if (now - __tabSwitchLastMs < 600) return; // debounce
-                                __tabSwitchLastMs = now;
+                                if (!btn || btn.disabled || episode.reported) return;
+                                episode.reported = true;
+                                if (window.__rteSaveCurrentAnswer) {
+                                    window.__rteSaveCurrentAnswer();
+                                }
                                 btn.click();
                             }
-                            // Remove any previous listeners before re-attaching
+
+                            function rearmEpisode() {
+                                if (!document.hidden && document.hasFocus()) {
+                                    episode.reported = false;
+                                }
+                            }
+
                             if (window.__candidate_vis_handler) {
-                                document.removeEventListener('visibilitychange', window.__candidate_vis_handler);
+                                document.removeEventListener(
+                                    'visibilitychange',
+                                    window.__candidate_vis_handler
+                                );
                             }
                             if (window.__candidate_blur_handler) {
-                                window.removeEventListener('blur', window.__candidate_blur_handler);
+                                window.removeEventListener(
+                                    'blur',
+                                    window.__candidate_blur_handler
+                                );
                             }
-                            // visibilitychange: fires when switching browser tabs
+                            if (window.__candidate_return_handler) {
+                                window.removeEventListener(
+                                    'focus',
+                                    window.__candidate_return_handler
+                                );
+                            }
+                            if (window.__candidate_fs_handler) {
+                                document.removeEventListener(
+                                    'fullscreenchange',
+                                    window.__candidate_fs_handler
+                                );
+                                document.removeEventListener(
+                                    'webkitfullscreenchange',
+                                    window.__candidate_fs_handler
+                                );
+                            }
+
+                            // TAB SWITCH / MINIMIZE
                             window.__candidate_vis_handler = function() {
-                                if (document.hidden) triggerTabSwitch();
-                            };
-                            // blur: fires when Alt+Tabbing to another application.
-                            // No document.hidden check — blur is the primary signal for app-switch.
-                            window.__candidate_blur_handler = function() {
-                                triggerTabSwitch();
-                            };
-                            document.addEventListener('visibilitychange', window.__candidate_vis_handler);
-                            window.addEventListener('blur', window.__candidate_blur_handler);
-    
-                            // ── Auto-refocus when candidate returns to the tab ────────────
-                            if (window.__candidate_focus_handler) {
-                                document.removeEventListener('visibilitychange', window.__candidate_focus_handler);
-                            }
-                            window.__candidate_focus_handler = function() {
-                                if (!document.hidden) { setTimeout(function(){ window.focus(); }, 50); }
-                            };
-                            document.addEventListener('visibilitychange', window.__candidate_focus_handler);
-    
-                            // ── Block keyboard tab-switch shortcuts ───────────────────────
-                            // Ctrl+W (close tab), Ctrl+T (new tab), Ctrl+N (new window),
-                            // Ctrl+Tab / Ctrl+Shift+Tab (cycle tabs), Alt+F4 (close window)
-                            if (window.__candidate_key_handler) {
-                                document.removeEventListener('keydown', window.__candidate_key_handler, true);
-                            }
-                            window.__candidate_key_handler = function(e) {
-                                var btn = document.getElementById('tab-switch-btn');
-                                if (btn && btn.disabled) return; // test already over
-                                var ctrl = e.ctrlKey || e.metaKey;
-                                var blocked = false;
-                                if (ctrl && (e.key === 'w' || e.key === 'W'))             blocked = true;
-                                if (ctrl && (e.key === 't' || e.key === 'T'))             blocked = true;
-                                if (ctrl && (e.key === 'n' || e.key === 'N'))             blocked = true;
-                                if (ctrl && e.key === 'Tab')                               blocked = true;
-                                if (ctrl && e.shiftKey && e.key === 'Tab')                blocked = true;
-                                if (e.altKey && e.key === 'F4')                           blocked = true;
-                                if (blocked) {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    triggerTabSwitch(); // count as a violation attempt
+                                if (document.hidden) {
+                                    reportAwayViolation();
+                                } else {
+                                    setTimeout(rearmEpisode, 250);
                                 }
                             };
-                            document.addEventListener('keydown', window.__candidate_key_handler, true);
-    
-                            // ── Warn on unload / navigation away ─────────────────────────
-                            if (window.__candidate_beforeunload) {
-                                window.removeEventListener('beforeunload', window.__candidate_beforeunload);
-                            }
-                            window.__candidate_beforeunload = function(e) {
-                                var btn = document.getElementById('tab-switch-btn');
-                                if (btn && btn.disabled) return; // test over, allow navigation
-                                e.preventDefault();
-                                e.returnValue = 'Leaving this page will be flagged as a proctoring violation.';
-                                return e.returnValue;
+
+                            window.__candidate_return_handler = function() {
+                                setTimeout(rearmEpisode, 250);
                             };
-                            window.addEventListener('beforeunload', window.__candidate_beforeunload);
-    
-                            // ── localStorage helpers ───────────────────────────────────────
-                            // Key: candidate_id::assessment_name::test_name::question_id
-                            // Data attributes are written on #rte-relay by _restore_rte_script.
+
+                            // SCREENSHOT ATTEMPT - Print Screen key.
+                            // Browser JS cannot reliably detect OS tools such as
+                            // Snipping Tool; this detects the PrintScreen key.
+                            if (window.__candidate_screenshot_handler) {
+                                document.removeEventListener(
+                                    'keyup',
+                                    window.__candidate_screenshot_handler,
+                                    true
+                                );
+                            }
+
+                            window.__candidate_screenshot_handler = function(e) {
+                                if (e.key === 'PrintScreen') {
+                                    reportAwayViolation();
+                                }
+                            };
+
+                            document.addEventListener(
+                                'keyup',
+                                window.__candidate_screenshot_handler,
+                                true
+                            );
+
+                            var lastFullscreen = !!(
+                                document.fullscreenElement ||
+                                document.webkitFullscreenElement
+                            );
+
+                            // FULLSCREEN EXIT
+                            window.__candidate_fs_handler = function() {
+                                var isFS = !!(
+                                    document.fullscreenElement ||
+                                    document.webkitFullscreenElement
+                                );
+
+                                if (isFS === lastFullscreen) return;
+                                lastFullscreen = isFS;
+
+                                if (isFS) {
+                                    var enterBtn =
+                                        document.getElementById('fs-enter-btn');
+                                    if (enterBtn) enterBtn.click();
+                                    return;
+                                }
+
+                                // Wait for visibility/blur generated by a
+                                // minimize/tab-switch to settle first.
+                                setTimeout(function() {
+                                    if (
+                                        document.hidden ||
+                                        !document.hasFocus() ||
+                                        episode.reported
+                                    ) return;
+
+                                    episode.reported = true;
+                                    var exitBtn =
+                                        document.getElementById('fs-exit-btn');
+                                    if (exitBtn) exitBtn.click();
+                                }, 250);
+                            };
+
+                            document.addEventListener(
+                                'visibilitychange',
+                                window.__candidate_vis_handler
+                            );
+                            window.addEventListener(
+                                'focus',
+                                window.__candidate_return_handler
+                            );
+                            document.addEventListener(
+                                'fullscreenchange',
+                                window.__candidate_fs_handler
+                            );
+                            document.addEventListener(
+                                'webkitfullscreenchange',
+                                window.__candidate_fs_handler
+                            );
+
+                            // localStorage helper
                             window.__rteGetStorageKey = function(qidOverride) {
                                 var relay = document.getElementById('rte-relay');
                                 if (!relay) return null;
@@ -1920,9 +1936,14 @@ def candidate_test_page() -> rx.Component:
                             };
     
                             // ── Relay sync helper ─────────────────────────────────────────
-                            function syncRelay(html) {
+                            var relayTimer = null, pendingRelay = null, lastRelay = null;
+                            function syncRelay(html, questionId, force) {
                                 var relay = document.getElementById('rte-relay');
                                 if (!relay) return;
+                                html = JSON.stringify({question_id: questionId || relay.dataset.questionId, html: html});
+                                var identity = [relay.dataset.candidateId, relay.dataset.assessment, relay.dataset.testName, html].join('::');
+                                if (!force && identity === lastRelay) return;
+                                lastRelay = identity;
                                 var setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
                                 if (setter) {
                                     setter.call(relay, html);
@@ -1933,14 +1954,35 @@ def candidate_test_page() -> rx.Component:
                                     relay._valueTracker.setValue(html + '_chg');
                                 }
                                 relay.dispatchEvent(new Event('input', { bubbles: true }));
-                                relay.dispatchEvent(new Event('change', { bubbles: true }));
+
                             }
     
+                            function flushRelay(force) {
+                                if (relayTimer !== null) clearTimeout(relayTimer);
+                                relayTimer = null;
+                                if (pendingRelay) {
+                                    var payload = pendingRelay;
+                                    pendingRelay = null;
+                                    syncRelay(payload.html, payload.questionId, force);
+                                }
+                            }
+                            window.__rteTakeNavigationAnswer = function() {
+                                var ed = document.getElementById('rte-editor');
+                                var relay = document.getElementById('rte-relay');
+                                if (!ed || !relay) return '';
+                                if (relayTimer !== null) clearTimeout(relayTimer);
+                                relayTimer = null;
+                                pendingRelay = null;
+                                window.__rteSaveToStorage(ed.innerHTML);
+                                return JSON.stringify({question_id: relay.dataset.questionId, html: ed.innerHTML});
+                            };
                             window.__rteSaveCurrentAnswer = function() {
+                                var hadPending = !!pendingRelay;
+                                flushRelay(true);
                                 var ed = document.getElementById('rte-editor');
                                 if (!ed) return;
                                 window.__rteSaveToStorage(ed.innerHTML);
-                                syncRelay(ed.innerHTML);
+                                syncRelay(ed.innerHTML, undefined, !hadPending);
                             };
     
                             // ── Shared input binder (attaches once per editor lifetime) ────
@@ -1950,7 +1992,11 @@ def candidate_test_page() -> rx.Component:
                                 function onInput() {
                                     window.__updateWordCount(ed.innerHTML);
                                     window.__rteSaveToStorage(ed.innerHTML);
-                                    syncRelay(ed.innerHTML);
+                                    var relay = document.getElementById('rte-relay');
+                                    if (!relay) return;
+                                    pendingRelay = {html: ed.innerHTML, questionId: relay.dataset.questionId};
+                                    if (relayTimer !== null) clearTimeout(relayTimer);
+                                    relayTimer = setTimeout(flushRelay, 500);
                                 }
                                 ed.addEventListener('input', onInput);
                                 ed.addEventListener('keyup', function() {
@@ -1979,7 +2025,7 @@ def candidate_test_page() -> rx.Component:
                             (function seedOnLoad() {
                                 var ed = document.getElementById('rte-editor');
                                 var relay = document.getElementById('rte-relay');
-                                if (!ed || !relay) { setTimeout(seedOnLoad, 100); return; }
+                                if (!ed || !relay) return;
                                 window.bindRteInput(ed);
                                 var qid = relay.dataset.questionId || '1';
                                 var localHtml = window.__rteLoadFromStorage(qid);
@@ -2038,6 +2084,7 @@ def candidate_test_page() -> rx.Component:
 
             ),
         ),
+        on_mount=rx.call_script("Boolean(document.fullscreenElement || document.webkitFullscreenElement)", callback=CandidateState.sync_fullscreen),
         width="100%",
         min_height="100vh",
         background="#F9FAFB",

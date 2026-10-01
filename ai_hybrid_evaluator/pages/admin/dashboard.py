@@ -350,57 +350,105 @@ def evaluation_progress_card() -> rx.Component:
 # 4. Recent Assessments Table
 # ─────────────────────────────────────────────────────────────
 
-def recent_assessment_row(
-    doc_color: str,
-    doc_bg: str,
-    name: str,
-    facilitator: str,
-    candidates: str,
-    tests: str,
-    status_label: str,
-    status_color: str,
-    status_bg: str,
-    last_updated: str,
-) -> rx.Component:
+def recent_assessment_row(assessment) -> rx.Component:
+    """Render one persisted assessment in the dashboard."""
+
     return rx.table.row(
         rx.table.cell(
             rx.hstack(
                 rx.box(
-                    rx.icon("file-text", size=16, color=doc_color),
-                    background=doc_bg,
+                    rx.icon(
+                        "file-text",
+                        size=16,
+                        color=COLORS["primary"],
+                    ),
+                    background=COLORS["primary_soft"],
                     padding="0.35em",
                     border_radius="6px",
                 ),
-                rx.text(name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                rx.text(
+                    assessment["name"],
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
                 spacing="2",
                 align_items="center",
             ),
         ),
-        rx.table.cell(rx.text(facilitator, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(rx.text(candidates, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
-        rx.table.cell(rx.text(tests, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
+
+        rx.table.cell(
+            rx.text(
+                assessment["facilitator_name"],
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+        ),
+
+        rx.table.cell(
+            rx.text(
+                assessment["assigned_candidates"].length().to_string()
+                + " Candidates",
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+        ),
+
+        rx.table.cell(
+            rx.text(
+                assessment["tests"].length().to_string()
+                + " Tests",
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+        ),
+
         rx.table.cell(
             rx.badge(
-                status_label,
-                color_scheme=rx.cond(status_label == "In Progress", "green", "orange"),
+                assessment["status"],
+                color_scheme=rx.cond(
+                    assessment["status"] == "Completed",
+                    "green",
+                    rx.cond(
+                        assessment["status"] == "Active",
+                        "blue",
+                        "orange",
+                    ),
+                ),
                 variant="soft",
                 size="1",
                 font_family=FONT_BODY,
             ),
         ),
-        rx.table.cell(rx.text(last_updated, font_family=FONT_BODY, size="2", color=COLORS["slate"])),
+
         rx.table.cell(
             rx.link(
                 rx.hstack(
-                    rx.icon("eye", size=14, color=COLORS["primary"]),
-                    rx.text("View Details", font_family=FONT_BODY, size="1", weight="medium", color=COLORS["primary"]),
+                    rx.icon(
+                        "eye",
+                        size=14,
+                        color=COLORS["primary"],
+                    ),
+                    rx.text(
+                        "View Details",
+                        font_family=FONT_BODY,
+                        size="1",
+                        weight="medium",
+                        color=COLORS["primary"],
+                    ),
                     spacing="1",
                     align_items="center",
                     padding="0.3em 0.7em",
                     border=f"1px solid {COLORS['primary_light']}",
                     border_radius="6px",
                     background=COLORS["surface"],
-                    _hover={"background": COLORS["primary_soft"]},
+                    _hover={
+                        "background": COLORS["primary_soft"]
+                    },
                     transition="all 0.15s ease",
                 ),
                 href="/admin/assessments",
@@ -411,13 +459,25 @@ def recent_assessment_row(
 
 
 def recent_assessments_card() -> rx.Component:
+    """Dashboard table backed by persisted assessments."""
+
     return rx.box(
         rx.vstack(
-            # Header
             rx.hstack(
                 rx.vstack(
-                    rx.text("Recent Assessments", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
-                    rx.text("Latest assessments activity", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                    rx.text(
+                        "Recent Assessments",
+                        font_family=FONT_BODY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        "Latest assessments activity",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color=COLORS["slate"],
+                    ),
                     spacing="0",
                     align_items="start",
                 ),
@@ -425,69 +485,91 @@ def recent_assessments_card() -> rx.Component:
                 padding_bottom="0.8em",
             ),
 
-            # Table
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
-                        rx.table.column_header_cell(rx.text("Assessment Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Facilitator", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Candidates", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Tests", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Status", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Last Updated", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
-                        rx.table.column_header_cell(rx.text("Action", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
+                        rx.table.column_header_cell(
+                            "Assessment Name"
+                        ),
+                        rx.table.column_header_cell(
+                            "Facilitator"
+                        ),
+                        rx.table.column_header_cell(
+                            "Candidates"
+                        ),
+                        rx.table.column_header_cell(
+                            "Tests"
+                        ),
+                        rx.table.column_header_cell(
+                            "Status"
+                        ),
+                        rx.table.column_header_cell(
+                            "Action"
+                        ),
                     ),
                 ),
+
                 rx.table.body(
-                    recent_assessment_row(
-                        "#8B5CF6", "#EDE9FE", "Quality", "Ravi Kumar", "4 Candidates", "3 + Final", "In Progress", "#059669", "#ECFDF3", "31 Aug 2026, 09:45 AM"
-                    ),
-                    recent_assessment_row(
-                        "#10B981", "#ECFDF3", "Safety", "Anitha Sharma", "6 Candidates", "3 + Final", "Awaiting Evaluation", "#D97706", "#FFFBEB", "30 Aug 2026, 04:20 PM"
-                    ),
-                    recent_assessment_row(
-                        "#F59E0B", "#FEF3C7", "EV Systems", "Karthik Rao", "5 Candidates", "3 + Final", "In Progress", "#059669", "#ECFDF3", "30 Aug 2026, 11:10 AM"
-                    ),
+                    rx.foreach(
+                        AdminState.assessments,
+                        recent_assessment_row,
+                    )
                 ),
+
                 width="100%",
             ),
 
-            # Bottom CTA button
             rx.hstack(
                 rx.link(
                     rx.hstack(
-                        rx.text("View All Assessments", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["primary"]),
-                        rx.icon("chevron-right", size=14, color=COLORS["primary"]),
+                        rx.text(
+                            "View All Assessments",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="medium",
+                            color=COLORS["primary"],
+                        ),
+                        rx.icon(
+                            "chevron-right",
+                            size=14,
+                            color=COLORS["primary"],
+                        ),
                         spacing="1",
                         align_items="center",
                         justify_content="center",
                         padding="0.5em 1.2em",
-                        border=f"1px solid {COLORS['primary_light']}",
+                        border=(
+                            f"1px solid "
+                            f"{COLORS['primary_light']}"
+                        ),
                         border_radius="8px",
                         background=COLORS["surface"],
-                        _hover={"background": COLORS["primary_soft"]},
+                        _hover={
+                            "background": COLORS["primary_soft"]
+                        },
                         transition="all 0.15s ease",
                     ),
                     href="/admin/assessments",
                     text_decoration="none",
                 ),
+                justify="center",
                 width="100%",
-                justify_content="center",
-                padding_top="1.2em",
+                padding_top="0.8em",
             ),
-            spacing="3",
+
+            spacing="0",
             width="100%",
+            align_items="stretch",
         ),
+
         background=COLORS["surface"],
         border=f"1px solid {COLORS['line']}",
         border_radius="14px",
         padding="1.4em",
         width="100%",
-        box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
     )
 
 
-# ─────────────────────────────────────────────────────────────
 # 5. Full Admin Dashboard Page Assembly
 # ─────────────────────────────────────────────────────────────
 
@@ -554,4 +636,4 @@ def admin_dashboard_page() -> rx.Component:
         title="Dashboard",
         subtitle="Overview of facilitators, candidates, and assessments.",
         content=content,
-    )
+    )

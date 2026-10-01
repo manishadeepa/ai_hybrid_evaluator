@@ -135,6 +135,9 @@ class EvaluationResultService:
                       awarded_marks=awarded, maximum_marks=maximum,
                       percentage=round(100 * awarded / maximum, 2) if maximum else 0.0,
                       justification=row.get('justification') or '', status=status)
+        for field in ('correct_option', 'answer_status', 'test_type'):
+            if field in row:
+                result[field] = row[field]
         for field, legacy in (('co', 'CO'), ('lo', 'LO'), ('knowledge_type', 'Knowledge Type'),
                               ('domain', 'Domain'), ('rbt_level', 'RBT level')):
             result[field] = row.get(field, row.get(legacy))
@@ -166,7 +169,7 @@ class EvaluationResultService:
         assessment, test = scope
         return dict(candidate_id=candidate['candidate_id'], candidate_name=candidate.get('name', ''),
                     assessment_id=assessment['assessment_id'], assessment_name=assessment['name'],
-                    test_id=test['test_id'], test_name=test['test_name'], evaluation_type=kind,
+                    test_id=test['test_id'], test_name=test['test_name'], test_type=test.get('test_type'), evaluation_type=kind,
                     evaluation_status='completed', evaluated_at=cls._timestamp(source)[1],
                     total_marks=total, max_marks=maximum,
                     percentage=round(100 * total / maximum, 2) if maximum else 0.0,
@@ -260,3 +263,28 @@ class EvaluationResultService:
                         except ValueError:
                             continue  # Invalid marks/partial candidate data are not final results.
             return deepcopy([selected[key][1] for key in sorted(selected)])
+
+
+    def export_csv(self, **filters):
+        """Download the same finalized, manual-first results; no independent report store."""
+        import csv
+        from io import StringIO
+        results = self.list_results(**filters)
+        if not results:
+            raise ValueError('No completed evaluation results are available for this selection.')
+        identity = ('candidate_id', 'candidate_name', 'assessment_id', 'assessment_name', 'test_id',
+                    'test_name', 'test_type', 'evaluation_type', 'total_marks', 'max_marks', 'percentage')
+        detail = ('question_no', 'question', 'candidate_answer', 'correct_option', 'maximum_marks',
+                  'awarded_marks', 'answer_status', 'status', 'justification', 'co', 'lo', 'rbt_level', 'domain', 'knowledge_type')
+        output = StringIO(newline='')
+        writer = csv.writer(output)
+        writer.writerow(identity + detail)
+        def safe(value):
+            # Spreadsheet exports must not execute candidate-authored formulas.
+            if isinstance(value, str) and value.lstrip().startswith(('=', '+', '-', '@')):
+                return "'" + value
+            return value
+        for result in results:
+            for question in result['questions']:
+                writer.writerow([safe(result.get(k, '')) for k in identity] + [safe(question.get(k, '')) for k in detail])
+        return output.getvalue().encode('utf-8-sig')

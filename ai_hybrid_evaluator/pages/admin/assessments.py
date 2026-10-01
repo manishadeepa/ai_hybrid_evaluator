@@ -1,4 +1,4 @@
-"""Assessments page — list + Add / Edit / Delete Assessment + Tests Management & Details (mock data)."""
+﻿"""Assessments page â€” list + Add / Edit / Delete Assessment + Tests Management & Details (mock data)."""
 
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
@@ -61,7 +61,7 @@ def facilitator_response_badge(approval_status: str) -> rx.Component:
             padding="0.3em 0.7em",
             border_radius="999px",
         )),
-        # Default — pending / awaiting
+        # Default â€” pending / awaiting
         rx.hstack(
             rx.icon("clock", size=13, color="#B45309"),
             rx.text("Awaiting", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
@@ -129,7 +129,7 @@ def assessment_status_badge(status: str) -> rx.Component:
             padding="0.3em 0.7em",
             border_radius="999px",
         )),
-        # Default — Pending
+        # Default â€” Pending
         rx.hstack(
             rx.icon("clock", size=13, color="#B45309"),
             rx.text("Pending", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
@@ -233,9 +233,9 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
 
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Searchable Facilitator Items & Dropdowns
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def add_facilitator_item(f: Facilitator) -> rx.Component:
     is_selected = AdminState.new_assessment_facilitator_ids.contains(f["emp_id"])
@@ -252,7 +252,7 @@ def add_facilitator_item(f: Facilitator) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(f["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
-                rx.text(f["emp_id"] + " · " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
+                rx.text(f["emp_id"] + " Â· " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
                 flex="1",
                 width="100%",
@@ -286,7 +286,7 @@ def edit_facilitator_item(f: Facilitator) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(f["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
-                rx.text(f["emp_id"] + " · " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
+                rx.text(f["emp_id"] + " Â· " + f["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
                 flex="1",
                 width="100%",
@@ -449,9 +449,9 @@ def edit_facilitator_select() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Candidate Checkbox Rows
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def add_candidate_checkbox_row(c: Candidate) -> rx.Component:
     is_selected = AdminState.new_assessment_candidate_ids.contains(c["emp_id"])
@@ -468,7 +468,7 @@ def add_candidate_checkbox_row(c: Candidate) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(c["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
-                rx.text(c["emp_id"] + " · " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
+                rx.text(c["emp_id"] + " Â· " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
                 flex="1",
                 width="100%",
@@ -501,7 +501,7 @@ def edit_candidate_checkbox_row(c: Candidate) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(c["name"], font_family=FONT_BODY, color=COLORS["ink"], size="2", weight="medium"),
-                rx.text(c["emp_id"] + " · " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
+                rx.text(c["emp_id"] + " Â· " + c["email"], font_family=FONT_BODY, color=COLORS["slate"], size="1"),
                 spacing="0", align_items="start",
                 flex="1",
                 width="100%",
@@ -519,9 +519,9 @@ def edit_candidate_checkbox_row(c: Candidate) -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Type of Test / Assessment Tests Dialog (Add / Remove Tests)
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_card(item: dict) -> rx.Component:
     test_name = item["name"]
@@ -585,7 +585,7 @@ def assessment_tests_dialog() -> rx.Component:
                 rx.hstack(
                     rx.icon("layers", size=20, color=COLORS["primary"]),
                     rx.text(
-                        AdminState.current_tests_assessment_name + " — Type of Test",
+                        AdminState.current_tests_assessment_name + " â€” Type of Test",
                         font_family=FONT_BODY,
                         color=COLORS["ink"],
                     ),
@@ -598,7 +598,7 @@ def assessment_tests_dialog() -> rx.Component:
                 size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
             ),
             rx.vstack(
-                # ── Formative Tests Section ───────────────────────────
+                # â”€â”€ Formative Tests Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.hstack(
                     rx.vstack(
                         rx.text("Formative Tests", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
@@ -640,10 +640,10 @@ def assessment_tests_dialog() -> rx.Component:
                     ),
                 ),
 
-                # ── Divider ───────────────────────────────────────────
+                # â”€â”€ Divider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.box(height="1px", background=COLORS["line"], width="100%", margin="0.8em 0"),
 
-                # ── Summative Test Section ────────────────────────────
+                # â”€â”€ Summative Test Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.vstack(
                     rx.text("Summative Test", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                     rx.text("The one main comprehensive summative evaluation test.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
@@ -720,9 +720,9 @@ def assessment_tests_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Test Details / Updates Dialog (When Clicking a Test Badge)
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def test_details_candidate_row(c: Candidate) -> rx.Component:
     return rx.box(
@@ -735,7 +735,7 @@ def test_details_candidate_row(c: Candidate) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(c["name"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
-                rx.text(c["emp_id"] + " · " + c["email"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                rx.text(c["emp_id"] + " Â· " + c["email"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                 spacing="0",
                 align_items="start",
             ),
@@ -768,7 +768,7 @@ def test_details_facilitator_row(f: dict) -> rx.Component:
                     color=COLORS["ink"],
                 ),
                 rx.text(
-                    f["emp_id"].to(str) + " · " + f["email"].to(str),
+                    f["emp_id"].to(str) + " Â· " + f["email"].to(str),
                     font_family=FONT_BODY,
                     size="1",
                     color=COLORS["slate"],
@@ -801,7 +801,7 @@ def test_details_dialog() -> rx.Component:
                         rx.icon("file-text", size=20, color=COLORS["primary"]),
                     ),
                     rx.text(
-                        AdminState.viewing_test_assessment_name + " — " + AdminState.viewing_test_name,
+                        AdminState.viewing_test_assessment_name + " â€” " + AdminState.viewing_test_name,
                         font_family=FONT_BODY,
                         color=COLORS["ink"],
                         weight="bold",
@@ -820,7 +820,7 @@ def test_details_dialog() -> rx.Component:
                 size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
             ),
             rx.vstack(
-                # ── Handling Facilitator Card(s) ───────────────────────
+                # â”€â”€ Handling Facilitator Card(s) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.text("Facilitator Handling", size="2", weight="bold", color=COLORS["ink"], font_family=FONT_BODY),
                 rx.vstack(
                     rx.foreach(AdminState.viewing_test_facilitators_list, test_details_facilitator_row),
@@ -828,7 +828,7 @@ def test_details_dialog() -> rx.Component:
                     width="100%",
                 ),
 
-                # ── Date & Stage Info ─────────────────────────────────
+                # â”€â”€ Date & Stage Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.hstack(
                     rx.box(
                         rx.vstack(
@@ -889,7 +889,7 @@ def test_details_dialog() -> rx.Component:
                     padding_top="0.4em",
                 ),
 
-                # ── Assigned Candidates Section ───────────────────────
+                # â”€â”€ Assigned Candidates Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.hstack(
                     rx.text("Assigned Candidates", size="2", weight="bold", color=COLORS["ink"], font_family=FONT_BODY),
                     rx.spacer(),
@@ -941,9 +941,9 @@ def test_details_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Add Assessment Dialog
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def add_assessment_dialog() -> rx.Component:
     return rx.dialog.root(
@@ -965,7 +965,7 @@ def add_assessment_dialog() -> rx.Component:
                 size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
             ),
             rx.vstack(
-                # ── 1. Assessment Name ────────────────────────────────
+                # â”€â”€ 1. Assessment Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.text("Assessment Name", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
                 rx.input(
                     placeholder="e.g. Q3 Technical Assessment",
@@ -973,13 +973,13 @@ def add_assessment_dialog() -> rx.Component:
                     on_change=AdminState.set_new_assessment_name,
                     width="100%",
                 ),
-                # ── 2. Facilitator (Searchable) ───────────────────────
+                # â”€â”€ 2. Facilitator (Searchable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.text("Facilitator", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 add_facilitator_select(),
-                # ── 4. Candidates (Searchable Multi-select) ───────────
+                # â”€â”€ 4. Candidates (Searchable Multi-select) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.text("Candidates", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.vstack(
-                    # Trigger row — click to open/close the checkbox panel
+                    # Trigger row â€” click to open/close the checkbox panel
                     rx.hstack(
                         rx.cond(
                             AdminState.new_assessment_candidate_ids.length() == 0,
@@ -1004,7 +1004,7 @@ def add_assessment_dialog() -> rx.Component:
                         on_click=AdminState.toggle_add_candidate_dropdown,
                         _hover={"border_color": COLORS["primary"]},
                     ),
-                    # Checkbox panel with Search bar — only visible when open
+                    # Checkbox panel with Search bar â€” only visible when open
                     rx.cond(
                         AdminState.show_add_candidate_dropdown,
                         rx.box(
@@ -1051,7 +1051,7 @@ def add_assessment_dialog() -> rx.Component:
                     width="100%",
                     align_items="stretch",
                 ),
-                # ── Validation error ──────────────────────────────────
+                # â”€â”€ Validation error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 rx.cond(
                     AdminState.assessment_form_error != "",
                     rx.text(AdminState.assessment_form_error, color=COLORS["danger"], size="2", font_family=FONT_BODY, padding_top="0.7em"),
@@ -1074,9 +1074,9 @@ def add_assessment_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Edit Assessment Dialog
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def edit_assessment_dialog() -> rx.Component:
     return rx.dialog.root(
@@ -1165,9 +1165,9 @@ def edit_assessment_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
-# Feedback Type Dialog  (Step 1 — choose form type)
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Feedback Type Dialog  (Step 1 â€” choose form type)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def feedback_type_dialog() -> rx.Component:
     """Choose between Facilitator or Candidate feedback form."""
@@ -1334,7 +1334,7 @@ def _facilitator_question_row(item: dict) -> rx.Component:
         rx.input(
             placeholder="Enter your question here...",
             value=item["text"],
-            on_change=AdminState.set_facilitator_question_text(item["id"], rx.Var.create("")),
+           on_change=lambda value: AdminState.set_facilitator_question_text(item["id"], value),
             size="2",
             variant="surface",
             font_family=FONT_BODY,
@@ -1377,7 +1377,7 @@ def _candidate_question_row(item: dict) -> rx.Component:
         rx.input(
             placeholder="Enter your question here...",
             value=item["text"],
-            on_change=AdminState.set_candidate_question_text(item["id"], rx.Var.create("")),
+            on_change=lambda value: AdminState.set_candidate_question_text(item["id"], value),
             size="2",
             variant="surface",
             font_family=FONT_BODY,
@@ -1714,9 +1714,9 @@ def candidate_feedback_builder_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Delete Assessment Dialog
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def delete_assessment_dialog() -> rx.Component:
     return rx.alert_dialog.root(
@@ -1745,9 +1745,9 @@ def delete_assessment_dialog() -> rx.Component:
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Assessments Page
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def assessments_page() -> rx.Component:
     content = rx.vstack(

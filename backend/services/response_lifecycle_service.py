@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from uuid import uuid4
+import random
 from backend.repositories.response_repository import ResponseRepository
 from backend.services.assessment_service import _PERSISTENCE_LOCK
 from backend.services.candidate_assignment_service import CandidateAssignmentService
@@ -26,9 +27,13 @@ class ResponseLifecycleService:
         from backend.services.question_paper_service import QuestionPaperService
         papers = QuestionPaperService(self.assignments.assessments.tests, self.assignments.candidates.dependencies.upload_dir)
         rows = papers.get_questions(assessment_id, test_id)
+        kind = self.assignments.assessments.tests.get_test(test_id, assessment_id).get("test_type")
         return [{"id": int(float(str(r["Question No"]).strip().removeprefix("Q"))), "title": str(r["Question No"]),
                  "text": r["Question"], "marks": r["Marks"], "co": r["CO"], "lo": r["LO"],
-                 "knowledge_type": r["Knowledge Type"], "category": r["Domain"], "rbt_level": r["RBT level"]} for r in rows]
+                 "knowledge_type": r["Knowledge Type"], "category": r["Domain"], "rbt_level": r["RBT level"],
+                 "question_type": "Objective" if kind == "objective" else "Subjective",
+                 "question_stem": r.get("question_stem", r["Question"]),
+                 "options": deepcopy(r.get("options", {})) if kind == "objective" else {}} for r in rows]
 
     def _identity(self, candidate_id, assessment_id, test_id):
         assignment = self.assignments.get_test_assignment(candidate_id, test_id)
@@ -94,6 +99,11 @@ class ResponseLifecycleService:
             if record:
                 return record
             questions = deepcopy(self.question_loader(assessment_id, test_id))
+
+            # Preserve the original question-paper order for every candidate.
+            # No question shuffling is performed for Objective or Subjective
+            # questions. Stable question IDs continue to map answers correctly.
+
             fields = {"id", "title", "text", "marks", "co", "lo", "knowledge_type", "category", "rbt_level"}
             if not questions or any(not isinstance(q, dict) or fields - q.keys() or type(q["id"]) is not int or q["id"] < 1 for q in questions):
                 raise ValueError("A valid question paper is required before starting the test.")
@@ -108,7 +118,9 @@ class ResponseLifecycleService:
                       "test_name": test["test_name"], "status": "In Progress", "answers": {}, "marked_for_review": [],
                       "violation_count": 0, "submission_receipt": "", "started_at": assignment["started_at"] or stamp,
                       "submitted_at": None, "created_at": stamp, "updated_at": stamp, "response_file": "",
-                      "questions": [{k: q[k] for k in fields} for q in questions]}
+                      "test_type": test.get("test_type"),
+                      "questions": [{**{k: q[k] for k in fields},
+                                     **{k: deepcopy(q[k]) for k in ("options", "question_type", "question_stem") if k in q}} for q in questions]}
             return self._transition(record, "In Progress")
 
     def resume_test(self, candidate_id, assessment_id, test_id):

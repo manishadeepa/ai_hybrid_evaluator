@@ -53,3 +53,22 @@ class ResponseRepository:
         self._validate(rows)
         JSONRepository(self.file_path).save_all(rows)
         return deepcopy(record)
+
+    def delete_by_test(self, assessment_id, test_id):
+        """Delete response sessions belonging only to one assessment/test."""
+        rows = self.get_all()
+
+        remaining = [
+            row
+            for row in rows
+            if not (
+                row["assessment_id"] == assessment_id
+                and row["test_id"] == test_id
+            )
+        ]
+
+        self._validate(remaining)
+        JSONRepository(self.file_path).save_all(remaining)
+
+        return len(rows) - len(remaining)
+

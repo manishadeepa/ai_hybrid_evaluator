@@ -12,9 +12,14 @@ from uuid import uuid4
 from backend.repositories.question_paper_repository import QuestionPaperRepository
 from backend.services.test_service import TestService
 from backend.services.test_dependency_service import TestDependencyService
+from backend.services.question_type_schema import validate_test_type, validate_question_type, detect_paper_type
 
 
 COLUMNS = ("Question No", "Question", "Marks", "CO", "LO", "Knowledge Type", "Domain", "RBT level", "Answer Key")
+
+
+class QuestionPaperDependencyError(ValueError):
+    """A valid upload is blocked by existing activity, not its workbook format."""
 
 
 class QuestionPaperService:
@@ -43,7 +48,9 @@ class QuestionPaperService:
         return path
 
     @classmethod
-    def validate_workbook(cls, data, filename):
+    def validate_workbook(cls, data, filename, test_type=None):
+        if test_type is not None:
+            validate_test_type(test_type)
         cls._filename(filename)
         if not isinstance(data, bytes) or not data:
             raise ValueError("Question paper is empty or unreadable.")
@@ -130,11 +137,18 @@ class QuestionPaperService:
             answer = row["Answer Key"]
             if not scalar(answer) or not str(answer).strip():
                 raise ValueError(f"{label} has a missing or invalid answer key.")
+            if test_type is not None:
+                try:
+                    row.update(validate_question_type(row, test_type))
+                except ValueError as exc:
+                    raise ValueError(f"{label}: {exc}") from exc
             questions.append(row)
+        detected = detect_paper_type(questions)
         total = sum(q["Marks"] for q in questions)
         if not math.isfinite(total):
             raise ValueError("Question-paper total marks are not finite.")
-        return {"questions": questions, "question_count": len(questions), "total_marks": total}
+        return {"questions": questions, "question_count": len(questions), "total_marks": total,
+                "test_type": detected, "schema_version": 1}
 
     def import_file(self, assessment_id, test_id, source):
         source = Path(source)
@@ -145,16 +159,23 @@ class QuestionPaperService:
             raise ValueError("Question-paper file is missing or unreadable.") from exc
         return self.import_upload(assessment_id, test_id, source.name, data)
 
-    def _check_dependencies(self, test):
-        # Reuse Test Management protection, excluding the paper being replaced/detached.
-        TestDependencyService(self.tests.repository.file_path.parent, self.upload_dir).ensure_mutable(
-            {**test, "question_paper": ""}, self.tests.get_assessment(test["test_id"]))
+    def _check_dependencies(self, test, *, first_upload=False):
+        # A filename-only Formative 1 response cannot identify this assessment.
+        # Initial association changes no existing paper; replacement/detach and
+        # delete/rename remain conservative about ambiguous historical responses.
+        try:
+            TestDependencyService(self.tests.repository.file_path.parent, self.upload_dir).ensure_mutable(
+                {**test, "question_paper": ""}, self.tests.get_assessment(test["test_id"]),
+                include_unscoped_legacy_responses=not first_upload)
+        except ValueError as exc:
+            detail = str(exc).removeprefix("Cannot delete or rename test because ")
+            raise QuestionPaperDependencyError("Cannot change question paper: " + detail) from exc
 
     def import_upload(self, assessment_id, test_id, filename, data):
-        validated = self.validate_workbook(data, filename)
         with self.tests._lock():
             test = self.tests.get_test(test_id, assessment_id)
-            self._check_dependencies(test)
+            validated = self.validate_workbook(data, filename)
+            self._check_dependencies(test, first_upload=not bool(test.get("question_paper")))
             self.repository.get_by_test(test_id)  # Do not overwrite corrupt existing metadata.
             self.upload_dir.mkdir(parents=True, exist_ok=True)
             destination = self._path(filename)
@@ -191,10 +212,12 @@ class QuestionPaperService:
             if stored:
                 if stored.get("sha256") != sha256(data).hexdigest():
                     raise ValueError("Question-paper file changed outside the application; import it again.")
+                if stored.get("test_type") != test.get("test_type"):
+                    raise ValueError("Question-paper type differs from the test; import the paper again.")
                 return stored
             # Read legacy associations without migrating or changing them.
             return {"assessment_id": assessment_id, "test_id": test_id, "filename": filename,
-                    **self.validate_workbook(data, filename)}
+                    **self.validate_workbook(data, filename, test.get("test_type"))}
 
     def get_questions(self, assessment_id, test_id):
         paper = self.get_paper(assessment_id, test_id)

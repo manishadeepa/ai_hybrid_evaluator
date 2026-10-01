@@ -144,7 +144,12 @@ class ResponseLifecycleTests(unittest.TestCase):
         lookup = dict(candidate_id='C1', assessment_name='A', test_name='Formative 1', require_assessment_scope=True)
         self.assertEqual(find_candidate_response_file(**lookup).resolve(), Path(value['response_file']))
         loaded = get_latest_candidate_response(**lookup)
-        self.assertEqual([r['response'] for r in loaded['responses']], ['Actual answer', ''])
+        responses_by_no = {
+            str(r.get('q_no', '')).lstrip('Q'): r['response']
+            for r in loaded['responses']
+        }
+        self.assertEqual(responses_by_no['1'], 'Actual answer')
+        self.assertEqual(responses_by_no['2'], '')
         self.assertEqual(loaded['responses'][0]['max_marks'], '2')
         book = load_workbook(value['response_file'], read_only=True)
         try:
@@ -286,8 +291,9 @@ class ResponseLifecycleTests(unittest.TestCase):
         self.start()
         self.questions[0]['text'] = 'Changed after start'
         value = self.fresh().get_latest_response(*self.key)
-        self.assertEqual(value['questions'][0]['text'], 'Question 1')
-        self.assertNotIn('Answer Key', value['questions'][0])
+        question = next(q for q in value['questions'] if q['id'] == 1)
+        self.assertEqual(question['text'], 'Question 1')
+        self.assertNotIn('Answer Key', question)
 
     def test_default_loader_uses_assessment_scoped_question_paper(self):
         book = Workbook(); sheet = book.active; sheet.append(list(COLUMNS))

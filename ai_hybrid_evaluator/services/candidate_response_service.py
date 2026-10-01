@@ -155,10 +155,124 @@ def get_latest_candidate_response(
     test_name: str = "",
     require_assessment_scope: bool = False,
 ) -> dict:
-    """Load the latest candidate response file from candidate_response_service
-    and return structured response data for Facilitator UI.
-    Returns empty dict if no matching response file is found.
     """
+    Load a submitted candidate response for Facilitator evaluation.
+
+    Canonical response lifecycle data is the primary source of truth.
+    Existing Excel response files remain as a compatibility fallback.
+    """
+
+    # ------------------------------------------------------------
+    # 1. CANONICAL BACKEND RESPONSE
+    # ------------------------------------------------------------
+    try:
+        from backend.repositories.response_repository import ResponseRepository
+
+        repository = ResponseRepository()
+        records = repository.get_all()
+
+        matches = []
+
+        for record in records:
+            # Evaluation must never expose an unfinished/disqualified attempt.
+            if record.get("status") != "Submitted":
+                continue
+
+            # Candidate identity.
+            if candidate_id:
+                if str(record.get("candidate_id", "")).casefold() != str(candidate_id).casefold():
+                    continue
+            elif candidate_name:
+                if str(record.get("candidate_name", "")).casefold() != str(candidate_name).casefold():
+                    continue
+            else:
+                continue
+
+            # Assessment identity.
+            if assessment_name:
+                if str(record.get("assessment_name", "")).casefold() != str(assessment_name).casefold():
+                    continue
+
+            # Test identity.
+            if test_name:
+                if str(record.get("test_name", "")).casefold() != str(test_name).casefold():
+                    continue
+
+            matches.append(record)
+
+        if matches:
+            # There should normally be one canonical session for this
+            # candidate/assessment/test. If legacy data contains more than
+            # one matching record, prefer the latest submitted one.
+            record = max(
+                matches,
+                key=lambda r: str(r.get("submitted_at", "") or ""),
+            )
+
+            answers = record.get("answers", {})
+            questions = record.get("questions", [])
+
+            responses = []
+
+            for question in questions:
+                question_id = question.get("id")
+
+                responses.append({
+                    "q_no": str(
+                        question.get("title")
+                        or question_id
+                        or ""
+                    ),
+                    "question": str(question.get("text", "") or ""),
+                    "response": str(
+                        answers.get(str(question_id), "") or ""
+                    ),
+                    "ai_score": "",
+                    "max_marks": str(question.get("marks", "") or ""),
+                    "justification": "",
+                    "CO": str(question.get("co", "") or ""),
+                    "LO": str(question.get("lo", "") or ""),
+                    "Knowledge Type": str(
+                        question.get("knowledge_type", "") or ""
+                    ),
+                    "Domain": str(question.get("category", "") or ""),
+                    "RBT level": str(question.get("rbt_level", "") or ""),
+                })
+
+            response_file = str(record.get("response_file", "") or "")
+            submitted_at = str(record.get("submitted_at", "") or "")
+
+            submitted_on = submitted_at
+
+            if submitted_at:
+                try:
+                    submitted_on = datetime.fromisoformat(
+                        submitted_at.replace("Z", "+00:00")
+                    ).strftime("%d %b %Y, %I:%M %p")
+                except (ValueError, TypeError):
+                    pass
+
+            return {
+                "submitted_on": submitted_on,
+                "excel_file": (
+                    Path(response_file).name
+                    if response_file
+                    else ""
+                ),
+                "responses": responses,
+                "ai_score": "—",
+                "percentage": "—",
+                "file_path": response_file,
+            }
+
+    except (ValueError, OSError, KeyError, TypeError):
+        # Preserve compatibility with the existing Excel-based response
+        # mechanism if canonical data cannot be read.
+        pass
+
+    # ------------------------------------------------------------
+    # 2. EXISTING EXCEL FALLBACK
+    # ------------------------------------------------------------
     path = find_candidate_response_file(
         candidate_id=candidate_id,
         candidate_name=candidate_name,
@@ -166,12 +280,15 @@ def get_latest_candidate_response(
         test_name=test_name,
         require_assessment_scope=require_assessment_scope,
     )
+
     if path is None:
         return {}
 
     try:
         df = pd.read_excel(path).fillna("")
+
         responses = []
+
         for _, row in df.iterrows():
             responses.append({
                 "q_no": str(row.get("Question No", "") or ""),
@@ -186,7 +303,11 @@ def get_latest_candidate_response(
                 "Domain": str(row.get("Domain", "") or ""),
                 "RBT level": str(row.get("RBT level", "") or ""),
             })
-        mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y, %I:%M %p")
+
+        mtime = datetime.fromtimestamp(
+            path.stat().st_mtime
+        ).strftime("%d %b %Y, %I:%M %p")
+
         return {
             "submitted_on": mtime,
             "excel_file": path.name,
@@ -195,5 +316,6 @@ def get_latest_candidate_response(
             "percentage": "—",
             "file_path": str(path),
         }
+
     except Exception:
         return {}

@@ -1,3 +1,7 @@
 {
-  "Quality": {}
+  "Quality": {},
+  "Leadership": {
+    "Formative 1": 30,
+    "Summative Test": 30
+  }
 }

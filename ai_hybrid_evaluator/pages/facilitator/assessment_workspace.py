@@ -6355,7 +6355,7 @@ def _results_download_pdf_modal() -> rx.Component:
                             color="#1E293B",
                         ),
                         rx.select(
-                            FacilitatorState.results_candidate_options,
+                            FacilitatorState.report_candidate_options,
                             value=FacilitatorState.download_pdf_candidate,
                             on_change=FacilitatorState.set_download_pdf_candidate,
                             size="2",
@@ -6378,7 +6378,7 @@ def _results_download_pdf_modal() -> rx.Component:
                         color="#1E293B",
                     ),
                     rx.text(
-                        "Choose one or more tests to include in the report.",
+                        "Choose one test to include in the report.",
                         font_family=FONT_BODY,
                         size="1",
                         color="#64748B",

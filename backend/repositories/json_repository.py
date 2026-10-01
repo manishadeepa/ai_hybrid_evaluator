@@ -1,6 +1,7 @@
 ﻿import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,16 @@ class JSONRepository:
                 file.write(payload)
                 file.flush()
                 os.fsync(file.fileno())
-            os.replace(temporary, self.file_path)
+            # Windows scanners/sync clients can briefly hold the destination.
+            # Keep replacement atomic; never truncate or delete the existing file.
+            for attempt in range(4):
+                try:
+                    os.replace(temporary, self.file_path)
+                    break
+                except PermissionError as exc:
+                    if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 3:
+                        raise
+                    time.sleep((0.02, 0.05, 0.1)[attempt])
         finally:
             if temporary is not None and temporary.exists():
                 temporary.unlink()

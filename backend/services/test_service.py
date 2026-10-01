@@ -5,6 +5,8 @@ from pathlib import Path
 from backend.repositories.assessment_repository import AssessmentRepository
 from backend.services.test_dependency_service import TestDependencyService
 from backend.repositories.test_repository import TestRepository
+from backend.repositories.response_repository import ResponseRepository
+from backend.services.question_type_schema import validate_test_type
 
 
 class TestService:
@@ -46,13 +48,29 @@ class TestService:
         return {"status": "Draft", "is_final": False, "position": 0, **record}
 
     def list_tests(self, assessment_id=None):
-        if assessment_id is not None:
-            self._assessment(assessment_id)
-        return [self.get_test(r["test_id"]) for r in self.repository.get_all()
-                if assessment_id is None or r["assessment_id"] == assessment_id]
+        # One fresh snapshot per call; never cache authorization across requests.
+        with self._lock():
+            assessments = {r["assessment_id"] for r in self.assessments.get_all()}
+            if assessment_id is not None:
+                if not isinstance(assessment_id, str) or not assessment_id.strip():
+                    raise ValueError("Assessment ID is required.")
+                if assessment_id not in assessments:
+                    raise ValueError("Assessment not found.")
+            results = []
+            for record in self.repository.get_all():
+                if assessment_id is not None and record["assessment_id"] != assessment_id:
+                    continue
+                if not isinstance(record.get("test_id"), str) or not record["test_id"].strip():
+                    raise ValueError("Test ID is required.")
+                if record["assessment_id"] not in assessments:
+                    raise ValueError("Assessment not found.")
+                results.append({"status": "Draft", "is_final": False, "position": 0, **record})
+            return results
 
     @staticmethod
     def _validate_fields(value):
+        if "test_type" in value:
+            validate_test_type(value["test_type"])
         name = value.get("test_name")
         if not isinstance(name, str) or not name.strip():
             raise ValueError("Test name is required.")
@@ -105,12 +123,26 @@ class TestService:
                      "position": max((r.get("position", 0) for r in self.get_tests(assessment_id)), default=-1) + 1,
                      "created_at": stamp, "updated_at": stamp}
             self._validate_fields(value)
+            self._check_type_change({}, value)
             self._unique(value)
-            return self.repository.save(value)
+            from backend.repositories.test_candidate_repository import TestCandidateRepository
+            from backend.services.candidate_assignment_service import CandidateAssignmentService
+            assignments = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json")
+            planned = CandidateAssignmentService.plan_assessment_assignments(
+                self._assessment(assessment_id), self.get_tests(assessment_id) + [value], assignments)
+            previous_tests = self.repository.get_all()
+            self.repository.save(value)
+            try:
+                if planned != assignments.get_all():
+                    assignments.save_all(planned)
+            except (ValueError, OSError):
+                self.repository.save_all(previous_tests)
+                raise
+            return deepcopy(value)
 
     @staticmethod
     def _allowed(details):
-        if set(details) - {"test_id", "assessment_id", "test_name", "description", "date", "status", "is_final", "question_paper"}:
+        if set(details) - {"test_id", "assessment_id", "test_name", "description", "date", "status", "is_final", "question_paper", "test_type"}:
             raise ValueError("Unsupported test settings; availability is derived from the question paper and duration is fixed.")
 
     def update_test(self, test_id, changes):
@@ -127,6 +159,7 @@ class TestService:
             if "date" not in changes:
                 checked["date"] = ""
             self._validate_fields(checked)
+            self._check_type_change(previous, value)
             value["test_name"] = checked["test_name"]
             self._unique(value)
             if value["test_name"] != previous["test_name"]:
@@ -138,6 +171,24 @@ class TestService:
         test = self.get_test(test_id)
         # The existing candidate UI uses the presence of a question-paper association.
         return bool(test.get("question_paper"))
+
+    def _check_type_change(self, previous, value):
+        """Legacy omission stays unknown; an explicit selection must fit its paper."""
+        kind = value.get("test_type")
+        if kind is None:
+            return
+        validate_test_type(kind)
+        changed = previous.get("test_type") != kind
+        if previous and changed:
+            self.dependencies.ensure_mutable(previous, self._assessment(value["assessment_id"]))
+        if value.get("question_paper") and (changed or previous.get("question_paper") != value["question_paper"]):
+            from backend.services.question_paper_service import QuestionPaperService
+            papers = QuestionPaperService(self)
+            try:
+                data = papers._path(value["question_paper"]).read_bytes()
+            except OSError as exc:
+                raise ValueError("Question-paper file is missing or unreadable; cannot verify test type.") from exc
+            papers.validate_workbook(data, value["question_paper"], kind)
 
 
     def get_tests(self, assessment_id):
@@ -172,6 +223,13 @@ class TestService:
                            "description": assessment.get("test_descriptions", {}).get(name, ""),
                            "question_paper": assessment.get("question_papers", {}).get(name, "")})
             record.setdefault("status", "Draft")
+            types = assessment.get("test_types", {})
+            if not isinstance(types, dict):
+                raise ValueError("test_types must be an object.")
+            if name in types:
+                validate_test_type(types[name])
+                record["test_type"] = types[name]
+            self._check_type_change(previous or {}, record)
             if previous is None:
                 record["created_at"] = datetime.now(timezone.utc).isoformat()
                 record["updated_at"] = record["created_at"]
@@ -195,32 +253,71 @@ class TestService:
 
     def delete_test(self, assessment_id, test_id, renumber=False):
         with self._lock():
+            # Confirm that this exact test belongs to this exact assessment.
             target = self.get_test(test_id, assessment_id)
             assessment = self._assessment(assessment_id)
+
+            # Never delete a test that already has candidate activity,
+            # responses, or evaluation data.
             self.dependencies.ensure_mutable(target, assessment)
-            records = [r for r in self.get_tests(assessment_id) if r["test_id"] != test_id]
+
+            # Deletion is explicitly allowed for the selected test.
+            # Other assessments/tests are not affected because all cleanup
+            # uses the immutable assessment_id + test_id ownership.
+            records = [
+                r
+                for r in self.get_tests(assessment_id)
+                if r["test_id"] != test_id
+            ]
+
             number = 0
             for position, record in enumerate(records):
                 record["position"] = position
+
                 if renumber and not record.get("is_final", False):
                     number += 1
                     name = f"Formative {number}"
+
                     if name != record["test_name"]:
                         self.dependencies.ensure_mutable(record, assessment)
                         record["test_name"] = name
+
+            # Remove the selected test from the assessment.
             self.replace_tests(assessment_id, records)
+
+            # Remove candidate assignment rows belonging to the deleted test.
+            from backend.repositories.test_candidate_repository import (
+                TestCandidateRepository,
+            )
+
+            candidate_repository = TestCandidateRepository(
+                self.repository.file_path.parent / "test_candidates.json"
+            )
+            candidate_repository.delete_by_test(test_id)
+
+            # Remove response/attempt records belonging ONLY to this exact
+            # assessment + test.
+            response_repository = ResponseRepository(
+                self.repository.file_path.parent / "responses.json"
+            )
+            response_repository.delete_by_test(assessment_id, test_id)
+
             return target
 
     def delete_assessment_tests(self, assessment_id):
         self.replace_tests(assessment_id, [])
 
-    def populate_assessment(self, assessment):
+    def populate_assessment(self, assessment, records=None):
         result = deepcopy(assessment)
-        records = self.get_tests(result["assessment_id"])
+        records = (self.get_tests(result["assessment_id"]) if records is None else
+                   sorted(records, key=lambda r: r.get("position", 0)))
         result.update({"tests": [r["test_name"] for r in records if not r.get("is_final", False)],
                        "final_test": next((r["test_name"] for r in records if r.get("is_final", False)), ""),
                        "test_ids": {r["test_name"]: r["test_id"] for r in records},
+                       "test_types": {r["test_name"]: r["test_type"] for r in records if "test_type" in r},
                        "test_dates": {r["test_name"]: r.get("date", "") for r in records},
                        "test_descriptions": {r["test_name"]: r.get("description", "") for r in records},
                        "question_papers": {r["test_name"]: r["question_paper"] for r in records if r.get("question_paper")}})
         return result
+
+

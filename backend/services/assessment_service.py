@@ -8,7 +8,7 @@ from backend.services.test_service import TestService
 
 # Serialize assessment/test read-modify-write operations within the Reflex process.
 _PERSISTENCE_LOCK = RLock()
-_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers"}
+_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers", "test_types"}
 
 
 class AssessmentService:
@@ -23,7 +23,15 @@ class AssessmentService:
 
     def load_assessments(self):
         with _PERSISTENCE_LOCK:
-            return [self.tests.populate_assessment(r) for r in self.repository.get_all()]
+            assessments = self.repository.get_all()
+            if not assessments:
+                return []
+            tests_by_assessment = {}
+            for record in self.tests.repository.get_all():
+                tests_by_assessment.setdefault(record["assessment_id"], []).append(record)
+            return [self.tests.populate_assessment(
+                record, tests_by_assessment.get(record["assessment_id"], [])
+            ) for record in assessments]
 
     def load_or_bootstrap(self, initial_assessments):
         with _PERSISTENCE_LOCK:
@@ -57,9 +65,8 @@ class AssessmentService:
             if any(r["name"].strip().casefold() == name.casefold() and r["assessment_id"] != identity for r in existing):
                 raise ValueError("An assessment with this name already exists.")
             value["assessment_id"] = identity
-            self._protect_test_assignments(identity, value.get("assigned_candidates", []))
             self._validate_lifecycle(value)
-            for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals"):
+            for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals", "test_types"):
                 if field in value and not isinstance(value[field], dict):
                     raise ValueError(f"{field} must be an object.")
             for field in ("tests", "facilitator_ids", "assigned_candidates"):
@@ -74,12 +81,21 @@ class AssessmentService:
                 json.dumps([record, *tests], allow_nan=False)
             except (TypeError, ValueError) as exc:
                 raise ValueError("Assessment details must contain valid JSON values.") from exc
+            from backend.repositories.test_candidate_repository import TestCandidateRepository
+            from backend.services.candidate_assignment_service import CandidateAssignmentService
+            assignments = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json")
+            previous_assignments = assignments.get_all()
+            planned = CandidateAssignmentService.plan_assessment_assignments(record, tests, assignments)
             previous_tests = self.tests.repository.get_all()
             self.tests.replace_tests(identity, tests)
             try:
+                if planned != previous_assignments:
+                    assignments.save_all(planned)
                 self.repository.save(record)
             except (ValueError, OSError):
                 self.tests.repository.save_all(previous_tests)
+                if assignments.get_all() != previous_assignments:
+                    assignments.save_all(previous_assignments)
                 raise
             return self.tests.populate_assessment(record)
 
@@ -88,13 +104,24 @@ class AssessmentService:
             self._require_id(assessment_id)
             if self.repository.get_by_id(assessment_id) is None:
                 return False
-            self._protect_test_assignments(assessment_id, [])
+            from backend.repositories.test_candidate_repository import TestCandidateRepository
+            from backend.services.candidate_assignment_service import CandidateAssignmentService
+            assignments = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json")
+            previous_assignments = assignments.get_all()
+            planned = CandidateAssignmentService.plan_assessment_assignments(
+                {"assessment_id": assessment_id, "assigned_candidates": []}, [], assignments)
+            for test in self.tests.get_tests(assessment_id):
+                self.tests.dependencies.ensure_mutable(test, self.repository.get_by_id(assessment_id))
             previous_tests = self.tests.repository.get_all()
             self.tests.delete_assessment_tests(assessment_id)
             try:
+                if planned != previous_assignments:
+                    assignments.save_all(planned)
                 self.repository.delete(assessment_id)
             except (ValueError, OSError):
                 self.tests.repository.save_all(previous_tests)
+                if assignments.get_all() != previous_assignments:
+                    assignments.save_all(previous_assignments)
                 raise
             return True
 
@@ -133,7 +160,7 @@ class AssessmentService:
         with _PERSISTENCE_LOCK:
             previous = self.get_assessment(assessment_id)
             changes = deepcopy(changes)
-            for field in ("test_dates", "test_descriptions", "question_papers"):
+            for field in ("test_dates", "test_descriptions", "question_papers", "test_types"):
                 if field in changes:
                     if not isinstance(changes[field], dict):
                         raise ValueError(f"{field} must be an object.")
@@ -271,7 +298,7 @@ class AssessmentService:
                 return test
         raise ValueError("Test does not belong to this assessment or does not exist.")
 
-    def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False):
+    def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False, test_type=None):
         """Existing workflow creates owned tests; it never moves another assessment's test."""
         with _PERSISTENCE_LOCK:
             self.tests._validate_fields({"test_name": test_name, "date": date,
@@ -292,6 +319,8 @@ class AssessmentService:
                 record["tests"].append(test_name)
             record["test_dates"][test_name] = date
             record["test_descriptions"][test_name] = description
+            if test_type is not None:
+                record.setdefault("test_types", {})[test_name] = test_type
             return self.save_assessment(record)
 
     def update_test(self, assessment_id, test_id, changes):
@@ -299,9 +328,3 @@ class AssessmentService:
             self.get_test(assessment_id, test_id)
             self.tests.update_test(test_id, changes)
             return self.get_assessment(assessment_id)
-
-    def _protect_test_assignments(self, assessment_id, candidate_ids):
-        from backend.repositories.test_candidate_repository import TestCandidateRepository
-        records = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json").get_all()
-        if any(r["assessment_id"] == assessment_id and r["candidate_id"] not in candidate_ids for r in records):
-            raise ValueError("Cannot remove assessment assignment because candidate test assignments exist.")

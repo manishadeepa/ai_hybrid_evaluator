@@ -184,7 +184,7 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                     rx.button(
                         "Open Assessment",
                         rx.icon("arrow-right", size=14),
-                        on_click=FacilitatorState.open_assessment(idx),
+                        on_click=FacilitatorState.open_assessment_by_id(a["assessment_id"]),
                         size="2",
                         background=COLORS["primary"],
                         color="white",

@@ -1,4 +1,4 @@
-"""Test business rules with temporary stores; no Azure or production data writes."""
+﻿"""Test business rules with temporary stores; no Azure or production data writes."""
 import json
 import tempfile
 import unittest
@@ -124,15 +124,23 @@ class TestManagementTests(unittest.TestCase):
             with self.assertRaises(OSError): self.service.update_test(first["test_id"], {"description": "change"})
         self.assertEqual(self.repo.file_path.read_bytes(), before)
 
-    def test_question_paper_blocks_delete_and_rename(self):
+    def test_question_paper_alone_does_not_block_delete_or_rename(self):
         first = self.create(question_paper="paper.xlsx")
         uploads = self.root / "uploaded_files"
-        uploads.mkdir(); (uploads / "paper.xlsx").write_bytes(b"paper")
-        with self.assertRaisesRegex(ValueError, "dependent data"):
-            self.service.delete_test(self.a, first["test_id"])
-        with self.assertRaisesRegex(ValueError, "dependent data"):
-            self.service.update_test(first["test_id"], {"test_name": "Renamed"})
-        self.assertEqual(self.service.get_test(first["test_id"])["test_name"], first["test_name"])
+        uploads.mkdir()
+        (uploads / "paper.xlsx").write_bytes(b"paper")
+
+        # A question paper alone must not prevent renaming.
+        updated = self.service.update_test(
+            first["test_id"],
+            {"test_name": "Renamed"},
+        )
+        self.assertEqual(updated["test_name"], "Renamed")
+
+        # A question paper alone must not prevent deletion.
+        self.service.delete_test(self.a, first["test_id"])
+        with self.assertRaisesRegex(ValueError, "Test not found"):
+            self.service.get_test(first["test_id"])
 
     def test_saved_evaluations_block_removal_and_bulk_bypass(self):
         first = self.create()
@@ -246,3 +254,4 @@ class TestManagementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -1,5 +1,1073 @@
 [
     {
+        "test_id": "bfb817542d9b45e8abcecb0426ae735e",
+        "assessment_id": "7f89ba11f89c4cb0bffe816ae514522d",
+        "test_name": "Formative 2",
+        "position": 0,
+        "is_final": false,
+        "date": "29 Sep 2026",
+        "description": "",
+        "question_paper": "HoQ_Objective_Questions_9fdc8924ba994cd4a416ad75ab24939d.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-29T16:33:10.373734+00:00",
+        "updated_at": "2026-09-29T16:34:37.528717+00:00",
+        "test_type": "objective",
+        "question_paper_details": {
+            "question_paper_id": "6808b4d1d49e4eaabea8379a2e06155e",
+            "assessment_id": "7f89ba11f89c4cb0bffe816ae514522d",
+            "test_id": "bfb817542d9b45e8abcecb0426ae735e",
+            "filename": "HoQ_Objective_Questions_9fdc8924ba994cd4a416ad75ab24939d.xlsx",
+            "original_filename": "HoQ_Objective_Questions.xlsx",
+            "uploaded_at": "2026-09-29T16:34:37.524678+00:00",
+            "sha256": "4ed949b91a4ac61fe32790dbcf860dfcfa22ad42ee2c57ddc6c1637d922b749d",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) To translate customer requirements into technical requirements",
+                    "question_stem": "In a House of Quality (HoQ), what is the main purpose of the matrix?",
+                    "options": {
+                        "A": "To translate customer requirements into technical requirements",
+                        "B": "To calculate product cost only",
+                        "C": "To schedule production activities",
+                        "D": "To select suppliers only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) Customer Requirements (WHATs)",
+                    "question_stem": "Which section of the HoQ contains the customer's needs?",
+                    "options": {
+                        "A": "Technical Correlation",
+                        "B": "Customer Requirements (WHATs)",
+                        "C": "Technical Requirements (HOWs)",
+                        "D": "Roof"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_stem": "What do the technical requirements in an HoQ represent?",
+                    "options": {
+                        "A": "Customer complaints only",
+                        "B": "Measurable engineering characteristics that address customer needs",
+                        "C": "Marketing slogans",
+                        "D": "Production employee details"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) WHATs",
+                    "question_stem": "In HoQ terminology, what are the customer requirements commonly called?",
+                    "options": {
+                        "A": "HOWs",
+                        "B": "WHATs",
+                        "C": "ROIs",
+                        "D": "KPIs"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) Relationship Matrix",
+                    "question_stem": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?",
+                    "options": {
+                        "A": "Relationship Matrix",
+                        "B": "Roof Matrix",
+                        "C": "Competitive Analysis",
+                        "D": "Target Value Table"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) To show correlations among technical requirements",
+                    "question_stem": "What is the primary purpose of the roof of the House of Quality?",
+                    "options": {
+                        "A": "To list customer complaints",
+                        "B": "To show correlations among technical requirements",
+                        "C": "To calculate employee performance",
+                        "D": "To display product advertisements"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "A) Importance rating",
+                    "question_stem": "Which of the following is typically used to rate the importance of customer requirements?",
+                    "options": {
+                        "A": "Importance rating",
+                        "B": "Machine utilization",
+                        "C": "Inventory turnover",
+                        "D": "Cycle time only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) The technical requirement deserves greater attention",
+                    "question_stem": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?",
+                    "options": {
+                        "A": "The technical requirement deserves greater attention",
+                        "B": "The requirement should be removed",
+                        "C": "The customer requirement is irrelevant",
+                        "D": "The product should be discontinued"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "C) 9",
+                    "question_stem": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?",
+                    "options": {
+                        "A": "0",
+                        "B": "1",
+                        "C": "9",
+                        "D": "100"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) To compare how the product performs against competitors from the customer's perspective",
+                    "question_stem": "What is the purpose of competitive assessment in an HoQ?",
+                    "options": {
+                        "A": "To compare how the product performs against competitors from the customer's perspective",
+                        "B": "To calculate employee salaries",
+                        "C": "To determine factory rent",
+                        "D": "To select software tools"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "C) Braking distance in meters",
+                    "question_stem": "Which of the following is an example of a technical requirement for a vehicle?",
+                    "options": {
+                        "A": "Comfortable ride",
+                        "B": "High customer satisfaction",
+                        "C": "Braking distance in meters",
+                        "D": "Attractive appearance"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "A) Improving one may adversely affect the other",
+                    "question_stem": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?",
+                    "options": {
+                        "A": "Improving one may adversely affect the other",
+                        "B": "Both requirements are identical",
+                        "C": "Neither requirement is important",
+                        "D": "Both requirements must always increase together"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) It connects customer needs with engineering decisions",
+                    "question_stem": "What is the main benefit of using an HoQ during product development?",
+                    "options": {
+                        "A": "It connects customer needs with engineering decisions",
+                        "B": "It eliminates all product testing",
+                        "C": "It replaces every engineering drawing",
+                        "D": "It guarantees zero production defects"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) Quality Function Deployment (QFD)",
+                    "question_stem": "Which methodology is the House of Quality most closely associated with?",
+                    "options": {
+                        "A": "Quality Function Deployment (QFD)",
+                        "B": "Six Sigma DMAIC only",
+                        "C": "Just-in-Time inventory only",
+                        "D": "Statistical Process Control only"
+                    },
+                    "correct_option": "A"
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "objective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "f62cab4e5347431892f3ec88370277fe",
+        "assessment_id": "7f89ba11f89c4cb0bffe816ae514522d",
+        "test_name": "Formative 3",
+        "position": 1,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "HoQ_Objective_Questions_de986e5a240d4c5b8b26a0ec4da39ace.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-29T18:54:44.694598+00:00",
+        "updated_at": "2026-09-30T03:25:10.174816+00:00",
+        "test_type": "objective",
+        "question_paper_details": {
+            "question_paper_id": "b6811320155442a8a6422ea8b369d392",
+            "assessment_id": "7f89ba11f89c4cb0bffe816ae514522d",
+            "test_id": "f62cab4e5347431892f3ec88370277fe",
+            "filename": "HoQ_Objective_Questions_de986e5a240d4c5b8b26a0ec4da39ace.xlsx",
+            "original_filename": "HoQ_Objective_Questions.xlsx",
+            "uploaded_at": "2026-09-30T03:25:10.170231+00:00",
+            "sha256": "4ed949b91a4ac61fe32790dbcf860dfcfa22ad42ee2c57ddc6c1637d922b749d",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) To translate customer requirements into technical requirements",
+                    "question_stem": "In a House of Quality (HoQ), what is the main purpose of the matrix?",
+                    "options": {
+                        "A": "To translate customer requirements into technical requirements",
+                        "B": "To calculate product cost only",
+                        "C": "To schedule production activities",
+                        "D": "To select suppliers only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) Customer Requirements (WHATs)",
+                    "question_stem": "Which section of the HoQ contains the customer's needs?",
+                    "options": {
+                        "A": "Technical Correlation",
+                        "B": "Customer Requirements (WHATs)",
+                        "C": "Technical Requirements (HOWs)",
+                        "D": "Roof"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_stem": "What do the technical requirements in an HoQ represent?",
+                    "options": {
+                        "A": "Customer complaints only",
+                        "B": "Measurable engineering characteristics that address customer needs",
+                        "C": "Marketing slogans",
+                        "D": "Production employee details"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) WHATs",
+                    "question_stem": "In HoQ terminology, what are the customer requirements commonly called?",
+                    "options": {
+                        "A": "HOWs",
+                        "B": "WHATs",
+                        "C": "ROIs",
+                        "D": "KPIs"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) Relationship Matrix",
+                    "question_stem": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?",
+                    "options": {
+                        "A": "Relationship Matrix",
+                        "B": "Roof Matrix",
+                        "C": "Competitive Analysis",
+                        "D": "Target Value Table"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) To show correlations among technical requirements",
+                    "question_stem": "What is the primary purpose of the roof of the House of Quality?",
+                    "options": {
+                        "A": "To list customer complaints",
+                        "B": "To show correlations among technical requirements",
+                        "C": "To calculate employee performance",
+                        "D": "To display product advertisements"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "A) Importance rating",
+                    "question_stem": "Which of the following is typically used to rate the importance of customer requirements?",
+                    "options": {
+                        "A": "Importance rating",
+                        "B": "Machine utilization",
+                        "C": "Inventory turnover",
+                        "D": "Cycle time only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) The technical requirement deserves greater attention",
+                    "question_stem": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?",
+                    "options": {
+                        "A": "The technical requirement deserves greater attention",
+                        "B": "The requirement should be removed",
+                        "C": "The customer requirement is irrelevant",
+                        "D": "The product should be discontinued"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "C) 9",
+                    "question_stem": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?",
+                    "options": {
+                        "A": "0",
+                        "B": "1",
+                        "C": "9",
+                        "D": "100"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) To compare how the product performs against competitors from the customer's perspective",
+                    "question_stem": "What is the purpose of competitive assessment in an HoQ?",
+                    "options": {
+                        "A": "To compare how the product performs against competitors from the customer's perspective",
+                        "B": "To calculate employee salaries",
+                        "C": "To determine factory rent",
+                        "D": "To select software tools"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "C) Braking distance in meters",
+                    "question_stem": "Which of the following is an example of a technical requirement for a vehicle?",
+                    "options": {
+                        "A": "Comfortable ride",
+                        "B": "High customer satisfaction",
+                        "C": "Braking distance in meters",
+                        "D": "Attractive appearance"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "A) Improving one may adversely affect the other",
+                    "question_stem": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?",
+                    "options": {
+                        "A": "Improving one may adversely affect the other",
+                        "B": "Both requirements are identical",
+                        "C": "Neither requirement is important",
+                        "D": "Both requirements must always increase together"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) It connects customer needs with engineering decisions",
+                    "question_stem": "What is the main benefit of using an HoQ during product development?",
+                    "options": {
+                        "A": "It connects customer needs with engineering decisions",
+                        "B": "It eliminates all product testing",
+                        "C": "It replaces every engineering drawing",
+                        "D": "It guarantees zero production defects"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) Quality Function Deployment (QFD)",
+                    "question_stem": "Which methodology is the House of Quality most closely associated with?",
+                    "options": {
+                        "A": "Quality Function Deployment (QFD)",
+                        "B": "Six Sigma DMAIC only",
+                        "C": "Just-in-Time inventory only",
+                        "D": "Statistical Process Control only"
+                    },
+                    "correct_option": "A"
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "objective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "1741dd2764de4d6c99af933a66e7bd08",
+        "assessment_id": "232d6c7b03d04007961650a304f68d56",
+        "test_name": "Formative 1",
+        "position": 0,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "HoQ_Objective_Questions_fc855ccec7784d9c900db38c8412f738.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T05:48:58.609324+00:00",
+        "updated_at": "2026-09-30T05:49:44.039332+00:00",
+        "test_type": "objective",
+        "question_paper_details": {
+            "question_paper_id": "40fbf1032fea4e39bf968476ee55f847",
+            "assessment_id": "232d6c7b03d04007961650a304f68d56",
+            "test_id": "1741dd2764de4d6c99af933a66e7bd08",
+            "filename": "HoQ_Objective_Questions_fc855ccec7784d9c900db38c8412f738.xlsx",
+            "original_filename": "HoQ_Objective_Questions.xlsx",
+            "uploaded_at": "2026-09-30T05:49:44.034863+00:00",
+            "sha256": "4ed949b91a4ac61fe32790dbcf860dfcfa22ad42ee2c57ddc6c1637d922b749d",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) To translate customer requirements into technical requirements",
+                    "question_stem": "In a House of Quality (HoQ), what is the main purpose of the matrix?",
+                    "options": {
+                        "A": "To translate customer requirements into technical requirements",
+                        "B": "To calculate product cost only",
+                        "C": "To schedule production activities",
+                        "D": "To select suppliers only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) Customer Requirements (WHATs)",
+                    "question_stem": "Which section of the HoQ contains the customer's needs?",
+                    "options": {
+                        "A": "Technical Correlation",
+                        "B": "Customer Requirements (WHATs)",
+                        "C": "Technical Requirements (HOWs)",
+                        "D": "Roof"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_stem": "What do the technical requirements in an HoQ represent?",
+                    "options": {
+                        "A": "Customer complaints only",
+                        "B": "Measurable engineering characteristics that address customer needs",
+                        "C": "Marketing slogans",
+                        "D": "Production employee details"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "B) WHATs",
+                    "question_stem": "In HoQ terminology, what are the customer requirements commonly called?",
+                    "options": {
+                        "A": "HOWs",
+                        "B": "WHATs",
+                        "C": "ROIs",
+                        "D": "KPIs"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) Relationship Matrix",
+                    "question_stem": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?",
+                    "options": {
+                        "A": "Relationship Matrix",
+                        "B": "Roof Matrix",
+                        "C": "Competitive Analysis",
+                        "D": "Target Value Table"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "B) To show correlations among technical requirements",
+                    "question_stem": "What is the primary purpose of the roof of the House of Quality?",
+                    "options": {
+                        "A": "To list customer complaints",
+                        "B": "To show correlations among technical requirements",
+                        "C": "To calculate employee performance",
+                        "D": "To display product advertisements"
+                    },
+                    "correct_option": "B"
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "A) Importance rating",
+                    "question_stem": "Which of the following is typically used to rate the importance of customer requirements?",
+                    "options": {
+                        "A": "Importance rating",
+                        "B": "Machine utilization",
+                        "C": "Inventory turnover",
+                        "D": "Cycle time only"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) The technical requirement deserves greater attention",
+                    "question_stem": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?",
+                    "options": {
+                        "A": "The technical requirement deserves greater attention",
+                        "B": "The requirement should be removed",
+                        "C": "The customer requirement is irrelevant",
+                        "D": "The product should be discontinued"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "C) 9",
+                    "question_stem": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?",
+                    "options": {
+                        "A": "0",
+                        "B": "1",
+                        "C": "9",
+                        "D": "100"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) To compare how the product performs against competitors from the customer's perspective",
+                    "question_stem": "What is the purpose of competitive assessment in an HoQ?",
+                    "options": {
+                        "A": "To compare how the product performs against competitors from the customer's perspective",
+                        "B": "To calculate employee salaries",
+                        "C": "To determine factory rent",
+                        "D": "To select software tools"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "C) Braking distance in meters",
+                    "question_stem": "Which of the following is an example of a technical requirement for a vehicle?",
+                    "options": {
+                        "A": "Comfortable ride",
+                        "B": "High customer satisfaction",
+                        "C": "Braking distance in meters",
+                        "D": "Attractive appearance"
+                    },
+                    "correct_option": "C"
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "A) Improving one may adversely affect the other",
+                    "question_stem": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?",
+                    "options": {
+                        "A": "Improving one may adversely affect the other",
+                        "B": "Both requirements are identical",
+                        "C": "Neither requirement is important",
+                        "D": "Both requirements must always increase together"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "A) It connects customer needs with engineering decisions",
+                    "question_stem": "What is the main benefit of using an HoQ during product development?",
+                    "options": {
+                        "A": "It connects customer needs with engineering decisions",
+                        "B": "It eliminates all product testing",
+                        "C": "It replaces every engineering drawing",
+                        "D": "It guarantees zero production defects"
+                    },
+                    "correct_option": "A"
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "A) Quality Function Deployment (QFD)",
+                    "question_stem": "Which methodology is the House of Quality most closely associated with?",
+                    "options": {
+                        "A": "Quality Function Deployment (QFD)",
+                        "B": "Six Sigma DMAIC only",
+                        "C": "Just-in-Time inventory only",
+                        "D": "Statistical Process Control only"
+                    },
+                    "correct_option": "A"
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "objective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "0e65b56c81ad42da851b3ebeb7695333",
+        "assessment_id": "232d6c7b03d04007961650a304f68d56",
+        "test_name": "Summative Test",
+        "position": 1,
+        "is_final": true,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "Question sheet_a796bf342712486fadd40f1a9a8445d6.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T05:50:39.323526+00:00",
+        "updated_at": "2026-09-30T05:57:00.106453+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "e479760d85204e7db08c11cb0195a966",
+            "assessment_id": "232d6c7b03d04007961650a304f68d56",
+            "test_id": "0e65b56c81ad42da851b3ebeb7695333",
+            "filename": "Question sheet_a796bf342712486fadd40f1a9a8445d6.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T05:52:10.398160+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
+    },
+    {
         "test_id": "67b54fc42d304f89b00914d95a3bdcde",
         "assessment_id": "5aa721c2229b4bd5b6409bc8a8f889d8",
         "test_name": "Formative 1",
@@ -7,7 +1075,9 @@
         "is_final": false,
         "date": "18 Sep 2026",
         "description": "",
-        "question_paper": "Question sheet.xlsx"
+        "question_paper": "Question sheet.xlsx",
+        "status": "Draft",
+        "updated_at": "2026-09-22T11:26:20.463945+00:00"
     },
     {
         "test_id": "d8edbfd6c67a46769c3abd7cc0840121",
@@ -17,16 +1087,923 @@
         "is_final": false,
         "date": "18 Sep 2026",
         "description": "",
-        "question_paper": "Question sheet.xlsx"
+        "question_paper": "Question sheet.xlsx",
+        "status": "Draft",
+        "updated_at": "2026-09-22T11:26:20.463977+00:00"
     },
     {
-        "test_id": "8220049b81df4b5585a1db5f7f6b8de2",
-        "assessment_id": "232d6c7b03d04007961650a304f68d56",
+        "test_id": "cc7f0364b475417c80f763612b3c21a3",
+        "assessment_id": "ac262089e9044cf38ce0916d2c04b648",
         "test_name": "Formative 1",
         "position": 0,
         "is_final": false,
-        "date": "18 Sep 2026",
+        "date": "30 Sep 2026",
         "description": "",
-        "question_paper": "Question sheet.xlsx"
+        "question_paper": "Question sheet_5cd7446da0da45deaf5743dd67abc465.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T07:12:22.085677+00:00",
+        "updated_at": "2026-09-30T07:15:03.557592+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "47325576b3d34240a4c9d6608e0d8119",
+            "assessment_id": "ac262089e9044cf38ce0916d2c04b648",
+            "test_id": "cc7f0364b475417c80f763612b3c21a3",
+            "filename": "Question sheet_5cd7446da0da45deaf5743dd67abc465.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T07:15:03.545504+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "de57e767484341d9b4dfb2708a43cc28",
+        "assessment_id": "db6700c63f824348849cb13475a5fc1e",
+        "test_name": "Formative 1",
+        "position": 0,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "Question sheet_5737e77fbc384127a85c2e31dd8a2247.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T08:43:49.409377+00:00",
+        "updated_at": "2026-09-30T08:44:44.948379+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "6eba325de0cf4e418c8a6b07cf8b4075",
+            "assessment_id": "db6700c63f824348849cb13475a5fc1e",
+            "test_id": "de57e767484341d9b4dfb2708a43cc28",
+            "filename": "Question sheet_5737e77fbc384127a85c2e31dd8a2247.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T08:44:44.937841+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "6ff39fa84b8a472ab3e1fd7322ad1dc2",
+        "assessment_id": "f2258824f4bc487ea814aebd309a5652",
+        "test_name": "Formative 1",
+        "position": 0,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "Question sheet_b4ab0538707a457fb2b12a47ab21d899.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T09:14:48.445409+00:00",
+        "updated_at": "2026-09-30T09:16:10.891727+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "3a9c9256f3e74e8aba0c3201bfce8534",
+            "assessment_id": "f2258824f4bc487ea814aebd309a5652",
+            "test_id": "6ff39fa84b8a472ab3e1fd7322ad1dc2",
+            "filename": "Question sheet_b4ab0538707a457fb2b12a47ab21d899.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T09:16:10.887127+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "c76ef7fe340e48b0af21cb1246c77e39",
+        "assessment_id": "cb4b548fe74b48ddbded542ac2fab4c7",
+        "test_name": "Formative 1",
+        "position": 0,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "Question sheet_fb2a7a4973b4493f841c62b0565d9855.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T10:05:42.055871+00:00",
+        "updated_at": "2026-09-30T10:09:44.229043+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "151f0d5133604467945d7203136a3b42",
+            "assessment_id": "cb4b548fe74b48ddbded542ac2fab4c7",
+            "test_id": "c76ef7fe340e48b0af21cb1246c77e39",
+            "filename": "Question sheet_fb2a7a4973b4493f841c62b0565d9855.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T10:09:44.225378+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
+    },
+    {
+        "test_id": "212005cf96924f0fb8b3f95a6ed6bc6b",
+        "assessment_id": "74c1935883a04ae4a567b8337f8b70d1",
+        "test_name": "Formative 1",
+        "position": 0,
+        "is_final": false,
+        "date": "30 Sep 2026",
+        "description": "",
+        "question_paper": "Question sheet_c71ea720595445179c317119b1eeb3a0.xlsx",
+        "status": "Draft",
+        "created_at": "2026-09-30T10:23:08.546122+00:00",
+        "updated_at": "2026-09-30T10:42:59.495319+00:00",
+        "test_type": "subjective",
+        "question_paper_details": {
+            "question_paper_id": "919ee45a9f6747499aaf9e314945c5a3",
+            "assessment_id": "74c1935883a04ae4a567b8337f8b70d1",
+            "test_id": "212005cf96924f0fb8b3f95a6ed6bc6b",
+            "filename": "Question sheet_c71ea720595445179c317119b1eeb3a0.xlsx",
+            "original_filename": "Question sheet.xlsx",
+            "uploaded_at": "2026-09-30T10:42:59.465441+00:00",
+            "sha256": "5dc7ca3e7a8ab6629c6479baa9ee3be005fdf8f4e9afc9753ec28ea3ea11b784",
+            "questions": [
+                {
+                    "Question No": "Q1",
+                    "Question": "Why is safety important in High-Voltage EV systems?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.1,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Safety prevents electric shock, arc flash, and ensures user protection."
+                },
+                {
+                    "Question No": "Q2",
+                    "Question": "Name three common hazards in HV EV systems.",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electrical shock, arc flash, thermal runaway, and fire."
+                },
+                {
+                    "Question No": "Q3",
+                    "Question": "What standards regulate HV safety in EVs?",
+                    "Marks": 2.0,
+                    "CO": 1,
+                    "LO": 1.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "ISO 6469, ISO 26262, IEC 61851."
+                },
+                {
+                    "Question No": "Q4",
+                    "Question": "What are basic electrical hazards in HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Electric shock, arc flash, and potential ground faults."
+                },
+                {
+                    "Question No": "Q5",
+                    "Question": "How does safety differ between LV and HV systems?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV."
+                },
+                {
+                    "Question No": "Q6",
+                    "Question": "How are HV safety zones identified in vehicles?",
+                    "Marks": 2.0,
+                    "CO": 2,
+                    "LO": 2.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "Safety zones are color-coded, labeled, and have restricted access points."
+                },
+                {
+                    "Question No": "Q7",
+                    "Question": "What PPE is required for HV handling?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.1,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Affective",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Insulated gloves, boots, face shields."
+                },
+                {
+                    "Question No": "Q8",
+                    "Question": "Why is PPE important during HV maintenance?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.2,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "It protects against electric shock and arc flashes."
+                },
+                {
+                    "Question No": "Q9",
+                    "Question": "How should HV safety gear be stored?",
+                    "Marks": 2.0,
+                    "CO": 3,
+                    "LO": 3.3,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Affective",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "PPE should be stored in dry, temperature-controlled areas away from contaminants."
+                },
+                {
+                    "Question No": "Q10",
+                    "Question": "How should HV incidents be reported?",
+                    "Marks": 2.0,
+                    "CO": 4,
+                    "LO": 4.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Understand",
+                    "Answer Key": "Report immediately following established safety protocols."
+                },
+                {
+                    "Question No": "Q11",
+                    "Question": "What is the role of first responders in EV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.2,
+                    "Knowledge Type": "Fact",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "To ensure personal safety, secure the area, and provide first aid if necessary."
+                },
+                {
+                    "Question No": "Q12",
+                    "Question": "What are basic guidelines for assisting in HV emergencies?",
+                    "Marks": 5.0,
+                    "CO": 4,
+                    "LO": 4.3,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Affective",
+                    "RBT level": "C-Analyse",
+                    "Answer Key": "Turn off power, avoid direct contact, and notify safety personnel."
+                },
+                {
+                    "Question No": "Q13",
+                    "Question": "How do you recognize HV warning labels?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.1,
+                    "Knowledge Type": "Procedure",
+                    "Domain": "Cognitive",
+                    "RBT level": "C-Apply",
+                    "Answer Key": "By identifying yellow triangular labels with high-voltage symbols."
+                },
+                {
+                    "Question No": "Q14",
+                    "Question": "Why is following manufacturer safety guidelines important?",
+                    "Marks": 5.0,
+                    "CO": 5,
+                    "LO": 5.2,
+                    "Knowledge Type": "Concept",
+                    "Domain": "Psychomotor",
+                    "RBT level": "C-Remember",
+                    "Answer Key": "Ensures safety, compliance, and prevents electrical hazards."
+                }
+            ],
+            "question_count": 14,
+            "total_marks": 40.0,
+            "test_type": "subjective",
+            "schema_version": 1
+        }
     }
 ]

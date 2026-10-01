@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import reflex as rx
 from backend.services.assessment_service import AssessmentService
+from backend.services.candidate_management_service import CandidateManagementService
+from backend.services.feedback_service import FeedbackService
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
@@ -34,6 +36,38 @@ class AdminState(rx.State):
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
     active_assessments: int = 3
     pending_evaluations: int = 12
+
+    def load_persisted_candidates(self):
+        """Load candidate identities from the backend into the existing UI shape."""
+        try:
+            service = CandidateManagementService()
+            backend_candidates = service.list_candidates()
+        except (ValueError, OSError):
+            return
+
+        existing_passwords = {
+            str(candidate.get("emp_id", "")).casefold(): str(candidate.get("password", ""))
+            for candidate in SHARED_CANDIDATES
+        }
+
+        loaded_candidates = []
+
+        for candidate in backend_candidates:
+            candidate_id = str(candidate["candidate_id"])
+
+            loaded_candidates.append({
+                "emp_id": candidate_id,
+                "name": str(candidate["name"]),
+                "email": str(candidate["email"]),
+                "password": existing_passwords.get(candidate_id.casefold(), ""),
+            })
+
+        self.candidates = loaded_candidates
+
+    def load_assessments_page_data(self):
+        """Load persisted assessments and candidates required by the Assessments page."""
+        self.load_persisted_assessments()
+        self.load_persisted_candidates()
 
     # =========================================================
     # VIEW FACILITATOR PROFILE (dialog)
@@ -299,31 +333,58 @@ class AdminState(rx.State):
 
     def add_candidate(self):
         if not all([
-            self.new_candidate_id, self.new_candidate_name,
-            self.new_candidate_email, self.new_candidate_password,
+            self.new_candidate_id,
+            self.new_candidate_name,
+            self.new_candidate_email,
+            self.new_candidate_password,
         ]):
             self.candidate_form_error = "Please fill in all fields."
             return
+
+        print("DEBUG candidate email:", repr(self.new_candidate_email))
+
         if not re.match(EMAIL_REGEX, self.new_candidate_email):
             self.candidate_form_error = "Enter a valid email address."
             return
+
         if len(self.new_candidate_password) < 6:
             self.candidate_form_error = "Password must be at least 6 characters."
             return
-        if any(c["emp_id"] == self.new_candidate_id for c in self.candidates):
-            self.candidate_form_error = "This Candidate ID already exists."
+
+        candidate_id = self.new_candidate_id.strip()
+        candidate_name = self.new_candidate_name.strip()
+        candidate_email = self.new_candidate_email.strip().lower()
+
+        try:
+            service = CandidateManagementService()
+
+            saved = service.create_candidate({
+                "candidate_id": candidate_id,
+                "name": candidate_name,
+                "email": candidate_email,
+            })
+
+        except (ValueError, OSError) as exc:
+            self.candidate_form_error = str(exc)
             return
 
         new_c: Candidate = {
-            "emp_id": self.new_candidate_id,
-            "name": self.new_candidate_name,
-            "email": self.new_candidate_email,
+            "emp_id": saved["candidate_id"],
+            "name": saved["name"],
+            "email": saved["email"],
             "password": self.new_candidate_password,
         }
+
         self.candidates.append(new_c)
-        if not any(c["emp_id"] == new_c["emp_id"] for c in SHARED_CANDIDATES):
+
+        if not any(
+            c["emp_id"].casefold() == new_c["emp_id"].casefold()
+            for c in SHARED_CANDIDATES
+        ):
             SHARED_CANDIDATES.append(new_c)
+
         self.set_show_add_candidate(False)
+
     # =========================================================
     # EDIT CANDIDATE (dialog/form)
     # =========================================================
@@ -365,29 +426,75 @@ class AdminState(rx.State):
 
     def save_edit_candidate(self):
         if not all([
-            self.edit_candidate_id, self.edit_candidate_name,
-            self.edit_candidate_email, self.edit_candidate_password,
+            self.edit_candidate_id,
+            self.edit_candidate_name,
+            self.edit_candidate_email,
+            self.edit_candidate_password,
         ]):
             self.edit_candidate_error = "Please fill in all fields."
             return
+
         if not re.match(EMAIL_REGEX, self.edit_candidate_email):
             self.edit_candidate_error = "Enter a valid email address."
             return
+
         if len(self.edit_candidate_password) < 6:
             self.edit_candidate_error = "Password must be at least 6 characters."
             return
-        for i, c in enumerate(self.candidates):
-            if i != self.edit_candidate_index and c["emp_id"] == self.edit_candidate_id:
-                self.edit_candidate_error = "This Candidate ID already exists."
-                return
 
-        self.candidates[self.edit_candidate_index] = {
-            "emp_id": self.edit_candidate_id,
-            "name": self.edit_candidate_name,
-            "email": self.edit_candidate_email,
+        if not (0 <= self.edit_candidate_index < len(self.candidates)):
+            self.edit_candidate_error = "Candidate not found."
+            return
+
+        original_id = self.candidates[self.edit_candidate_index]["emp_id"]
+
+        # Candidate IDs are stable backend identities and cannot be changed.
+        if self.edit_candidate_id.strip() != original_id:
+            self.edit_candidate_error = "Candidate ID cannot be changed."
+            return
+
+        try:
+            service = CandidateManagementService()
+
+            saved = service.update_candidate(
+                original_id,
+                {
+                    "candidate_id": original_id,
+                    "name": self.edit_candidate_name.strip(),
+                    "email": self.edit_candidate_email.strip().lower(),
+                },
+            )
+
+        except (ValueError, OSError) as exc:
+            self.edit_candidate_error = str(exc)
+            return
+
+        updated_candidate: Candidate = {
+            "emp_id": saved["candidate_id"],
+            "name": saved["name"],
+            "email": saved["email"],
             "password": self.edit_candidate_password,
         }
+
+        self.candidates[self.edit_candidate_index] = updated_candidate
+
+        # Keep the candidate password only in the shared in-memory mock list.
+        # If the candidate was loaded from the backend and is not yet present
+        # in SHARED_CANDIDATES, add it now so Candidate Login can authenticate
+        # against the password entered by the Admin.
+        shared_candidate_found = False
+
+        for i, candidate in enumerate(SHARED_CANDIDATES):
+            if candidate["emp_id"].casefold() == original_id.casefold():
+                SHARED_CANDIDATES[i] = updated_candidate
+                shared_candidate_found = True
+                break
+
+        if not shared_candidate_found:
+            SHARED_CANDIDATES.append(updated_candidate)
+
         self.set_show_edit_candidate(False)
+
     # =========================================================
     # DELETE CANDIDATE (confirm dialog)
     # =========================================================
@@ -407,20 +514,33 @@ class AdminState(rx.State):
             self.delete_candidate_name = ""
 
     def confirm_delete_candidate(self):
-        if 0 <= self.delete_candidate_index < len(self.candidates):
-            deleted_id = self.candidates[self.delete_candidate_index]["emp_id"]
-            del self.candidates[self.delete_candidate_index]
+        if not (0 <= self.delete_candidate_index < len(self.candidates)):
+            self.set_show_delete_candidate(False)
+            return
 
-            # Remove the deleted candidate from every assessment's
-            # assigned_candidates list too (Assessment->Candidate is the
-            # only remaining place candidates get assigned).
-            for i, a in enumerate(self.assessments):
-                if deleted_id in a["assigned_candidates"]:
-                    updated_a = dict(a)
-                    updated_a["assigned_candidates"] = [
-                        cid for cid in a["assigned_candidates"] if cid != deleted_id
-                    ]
-                    self.assessments[i] = updated_a
+        candidate = self.candidates[self.delete_candidate_index]
+        candidate_id = candidate["emp_id"]
+
+        try:
+            service = CandidateManagementService()
+            service.delete_candidate(candidate_id)
+
+        except (ValueError, OSError) as exc:
+            # Keep the candidate because backend deletion did not succeed.
+            self.candidate_form_error = str(exc)
+            self.set_show_delete_candidate(False)
+            return
+
+        # Backend deletion succeeded, so now update the UI/session copy.
+        self.candidates = [
+            c for c in self.candidates
+            if c["emp_id"].casefold() != candidate_id.casefold()
+        ]
+
+        SHARED_CANDIDATES[:] = [
+            c for c in SHARED_CANDIDATES
+            if c["emp_id"].casefold() != candidate_id.casefold()
+        ]
 
         self.set_show_delete_candidate(False)
 
@@ -890,37 +1010,110 @@ class AdminState(rx.State):
     candidate_form_title: str = ""
     candidate_form_questions: list[dict] = []
     _candidate_q_counter: int = 0
+    candidate_saved_forms: dict[str, dict] = {}
+
 
     def open_feedback_dialog(self, index: int):
+        if not (0 <= index < len(self.assessments)):
+            return rx.toast.error("Assessment not found.")
+
         self.feedback_assessment_index = index
         self.feedback_assessment_name = self.assessments[index]["name"]
         self.show_feedback_type_dialog = True
 
+
     def set_show_feedback_type_dialog(self, value: bool):
         self.show_feedback_type_dialog = value
-        if not value:
-            self.feedback_assessment_index = -1
-            self.feedback_assessment_name = ""
+
+        # Do NOT clear the assessment here.
+        # The facilitator/candidate builder is opened immediately after
+        # this dialog closes and still needs the selected assessment.
+
 
     def close_feedback_type_dialog(self):
         self.show_feedback_type_dialog = False
+        self.feedback_assessment_index = -1
+        self.feedback_assessment_name = ""
 
-    # ── Facilitator form ──────────────────────────────────────
+
+    # =========================================================
+    # FACILITATOR FEEDBACK FORM
+    # =========================================================
+
     def open_facilitator_feedback_builder(self):
-        self.show_feedback_type_dialog = False
-        saved = self.facilitator_saved_forms.get(self.feedback_assessment_name)
-        if saved:
-            self.facilitator_form_title = saved.get("title", f"Facilitator Feedback Form - {self.feedback_assessment_name}")
-            self.facilitator_form_questions = [dict(q) for q in saved.get("questions", [])]
-            self._facilitator_q_counter = len(self.facilitator_form_questions)
-        else:
-            self.facilitator_form_title = f"Facilitator Feedback Form - {self.feedback_assessment_name}"
-            self.facilitator_form_questions = []
-            self._facilitator_q_counter = 0
-        self.show_facilitator_feedback_builder = True
+        """Open the facilitator feedback builder and load its persisted form."""
+
+        try:
+            self.show_feedback_type_dialog = False
+
+            if not (0 <= self.feedback_assessment_index < len(self.assessments)):
+                raise ValueError("Please select a valid assessment.")
+
+            assessment = dict(self.assessments[self.feedback_assessment_index])
+
+            # Make sure the assessment exists in backend persistence.
+            if not assessment.get("assessment_id"):
+                assessment = self._persist_assessment_record(assessment)
+
+            assessment_id = assessment["assessment_id"]
+            assessment_name = assessment.get(
+                "name",
+                self.feedback_assessment_name,
+            )
+
+            self.feedback_assessment_name = assessment_name
+
+            service = FeedbackService()
+            existing = service.resolve_form(
+                assessment_id,
+                "facilitator",
+            )
+
+            if existing:
+                self.facilitator_form_title = existing.get(
+                    "title",
+                    f"Facilitator Feedback Form - {assessment_name}",
+                )
+
+                self.facilitator_form_questions = [
+                    dict(question)
+                    for question in existing.get("questions", [])
+                ]
+
+                self._facilitator_q_counter = len(
+                    self.facilitator_form_questions
+                )
+
+                saved = dict(self.facilitator_saved_forms)
+                saved[assessment_name] = {
+                    "feedback_form_id": existing.get(
+                        "feedback_form_id",
+                        "",
+                    ),
+                    "title": self.facilitator_form_title,
+                    "questions": [
+                        dict(question)
+                        for question in self.facilitator_form_questions
+                    ],
+                }
+                self.facilitator_saved_forms = saved
+
+            else:
+                self.facilitator_form_title = (
+                    f"Facilitator Feedback Form - {assessment_name}"
+                )
+                self.facilitator_form_questions = []
+                self._facilitator_q_counter = 0
+
+            self.show_facilitator_feedback_builder = True
+
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
 
     def set_show_facilitator_feedback_builder(self, value: bool):
         self.show_facilitator_feedback_builder = value
+
 
     def close_facilitator_feedback_builder(self):
         self.show_facilitator_feedback_builder = False
@@ -928,63 +1121,272 @@ class AdminState(rx.State):
         self.facilitator_form_questions = []
         self._facilitator_q_counter = 0
 
+
     def set_facilitator_form_title(self, value: str):
         self.facilitator_form_title = value
 
+
     def add_facilitator_question(self):
         self._facilitator_q_counter += 1
+
         new_q = {
             "id": f"fq_{self._facilitator_q_counter}",
             "text": "",
             "required": True,
         }
-        self.facilitator_form_questions = self.facilitator_form_questions + [new_q]
 
-    def set_facilitator_question_text(self, qid: str, value: str):
-        qs = [dict(q) for q in self.facilitator_form_questions]
-        for q in qs:
-            if q["id"] == qid:
-                q["text"] = value
+        self.facilitator_form_questions = (
+            self.facilitator_form_questions + [new_q]
+        )
+
+
+    def set_facilitator_question_text(
+        self,
+        qid: str,
+        value: str,
+    ):
+        questions = [
+            dict(question)
+            for question in self.facilitator_form_questions
+        ]
+
+        for question in questions:
+            if question.get("id") == qid:
+                question["text"] = value
                 break
-        self.facilitator_form_questions = qs
+
+        self.facilitator_form_questions = questions
+
 
     def toggle_facilitator_question_required(self, qid: str):
-        qs = [dict(q) for q in self.facilitator_form_questions]
-        for q in qs:
-            if q["id"] == qid:
-                q["required"] = not q["required"]
+        questions = [
+            dict(question)
+            for question in self.facilitator_form_questions
+        ]
+
+        for question in questions:
+            if question.get("id") == qid:
+                question["required"] = not bool(
+                    question.get("required", True)
+                )
                 break
-        self.facilitator_form_questions = qs
+
+        self.facilitator_form_questions = questions
+
 
     def delete_facilitator_question(self, qid: str):
         self.facilitator_form_questions = [
-            q for q in self.facilitator_form_questions if q["id"] != qid
+            question
+            for question in self.facilitator_form_questions
+            if question.get("id") != qid
         ]
 
-    def submit_facilitator_feedback_form(self):
-        """Save facilitator feedback questions per assessment and close builder."""
-        asmn = self.feedback_assessment_name
-        title = self.facilitator_form_title or f"Facilitator Feedback Form - {asmn}"
-        qs = [dict(q) for q in self.facilitator_form_questions]
-        saved = dict(self.facilitator_saved_forms)
-        saved[asmn] = {
-            "title": title,
-            "questions": qs,
-        }
-        self.facilitator_saved_forms = saved
-        self.show_facilitator_feedback_builder = False
-        return rx.toast.success("Facilitator Feedback Form created successfully.")
 
-    # ── Candidate form ────────────────────────────────────────
+    def submit_facilitator_feedback_form(self):
+        """Persist the Admin-created facilitator feedback form."""
+
+        try:
+            if not (
+                0 <= self.feedback_assessment_index
+                < len(self.assessments)
+            ):
+                raise ValueError("Please select a valid assessment.")
+
+            assessment = dict(
+                self.assessments[self.feedback_assessment_index]
+            )
+
+            # Ensure this assessment has a backend assessment_id.
+            if not assessment.get("assessment_id"):
+                assessment = self._persist_assessment_record(
+                    assessment
+                )
+
+            assessment_id = assessment["assessment_id"]
+            assessment_name = assessment.get(
+                "name",
+                self.feedback_assessment_name,
+            )
+
+            title = (
+                self.facilitator_form_title.strip()
+                if self.facilitator_form_title.strip()
+                else f"Facilitator Feedback Form - {assessment_name}"
+            )
+
+            questions = []
+
+            for index, question in enumerate(
+                self.facilitator_form_questions,
+                start=1,
+            ):
+                text = str(
+                    question.get("text", "")
+                ).strip()
+
+                if not text:
+                    raise ValueError(
+                        "Feedback questions cannot be empty."
+                    )
+
+                question_id = str(
+                    question.get("id", "")
+                ).strip()
+
+                if not question_id:
+                    question_id = f"fq_{index}"
+
+                questions.append({
+                    "id": question_id,
+                    "text": text,
+                    "type": "textarea",
+                    "required": bool(
+                        question.get("required", True)
+                    ),
+                })
+
+            if not questions:
+                raise ValueError(
+                    "Add at least one feedback question."
+                )
+
+            service = FeedbackService()
+
+            existing = service.resolve_form(
+                assessment_id,
+                "facilitator",
+            )
+
+            details = {
+                "title": title,
+                "description": "",
+                "assessment_id": assessment_id,
+                "target_role": "facilitator",
+                "questions": questions,
+                "active": True,
+            }
+
+            if existing:
+                saved_form = service.save_form(
+                    details,
+                    form_id=existing["feedback_form_id"],
+                )
+            else:
+                saved_form = service.save_form(details)
+
+            # Keep the existing Reflex UI cache synchronized.
+            saved = dict(self.facilitator_saved_forms)
+
+            saved[assessment_name] = {
+                "feedback_form_id": saved_form[
+                    "feedback_form_id"
+                ],
+                "title": saved_form["title"],
+                "questions": [
+                    dict(question)
+                    for question in saved_form["questions"]
+                ],
+            }
+
+            self.facilitator_saved_forms = saved
+
+            self.show_facilitator_feedback_builder = False
+
+            return rx.toast.success(
+                "Facilitator Feedback Form created successfully."
+            )
+
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+
+    # =========================================================
+    # CANDIDATE FEEDBACK FORM
+    # =========================================================
+
     def open_candidate_feedback_builder(self):
-        self.show_feedback_type_dialog = False
-        self.candidate_form_title = f"Candidate Feedback Form - {self.feedback_assessment_name}"
-        self.candidate_form_questions = []
-        self._candidate_q_counter = 0
-        self.show_candidate_feedback_builder = True
+        """Open candidate feedback builder and load persisted form."""
+
+        try:
+            self.show_feedback_type_dialog = False
+
+            if not (
+                0 <= self.feedback_assessment_index
+                < len(self.assessments)
+            ):
+                raise ValueError("Please select a valid assessment.")
+
+            assessment = dict(
+                self.assessments[self.feedback_assessment_index]
+            )
+
+            if not assessment.get("assessment_id"):
+                assessment = self._persist_assessment_record(
+                    assessment
+                )
+
+            assessment_id = assessment["assessment_id"]
+            assessment_name = assessment.get(
+                "name",
+                self.feedback_assessment_name,
+            )
+
+            self.feedback_assessment_name = assessment_name
+
+            service = FeedbackService()
+
+            existing = service.resolve_form(
+                assessment_id,
+                "candidate",
+            )
+
+            if existing:
+                self.candidate_form_title = existing.get(
+                    "title",
+                    f"Candidate Feedback Form - {assessment_name}",
+                )
+
+                self.candidate_form_questions = [
+                    dict(question)
+                    for question in existing.get("questions", [])
+                ]
+
+                self._candidate_q_counter = len(
+                    self.candidate_form_questions
+                )
+
+                saved = dict(self.candidate_saved_forms)
+
+                saved[assessment_name] = {
+                    "feedback_form_id": existing.get(
+                        "feedback_form_id",
+                        "",
+                    ),
+                    "title": self.candidate_form_title,
+                    "questions": [
+                        dict(question)
+                        for question in self.candidate_form_questions
+                    ],
+                }
+
+                self.candidate_saved_forms = saved
+
+            else:
+                self.candidate_form_title = (
+                    f"Candidate Feedback Form - {assessment_name}"
+                )
+                self.candidate_form_questions = []
+                self._candidate_q_counter = 0
+
+            self.show_candidate_feedback_builder = True
+
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
 
     def set_show_candidate_feedback_builder(self, value: bool):
         self.show_candidate_feedback_builder = value
+
 
     def close_candidate_feedback_builder(self):
         self.show_candidate_feedback_builder = False
@@ -992,44 +1394,183 @@ class AdminState(rx.State):
         self.candidate_form_questions = []
         self._candidate_q_counter = 0
 
+
     def set_candidate_form_title(self, value: str):
         self.candidate_form_title = value
 
+
     def add_candidate_question(self):
         self._candidate_q_counter += 1
+
         new_q = {
             "id": f"cq_{self._candidate_q_counter}",
             "text": "",
             "required": True,
         }
-        self.candidate_form_questions = self.candidate_form_questions + [new_q]
 
-    def set_candidate_question_text(self, qid: str, value: str):
-        qs = [dict(q) for q in self.candidate_form_questions]
-        for q in qs:
-            if q["id"] == qid:
-                q["text"] = value
+        self.candidate_form_questions = (
+            self.candidate_form_questions + [new_q]
+        )
+
+
+    def set_candidate_question_text(
+        self,
+        qid: str,
+        value: str,
+    ):
+        questions = [
+            dict(question)
+            for question in self.candidate_form_questions
+        ]
+
+        for question in questions:
+            if question.get("id") == qid:
+                question["text"] = value
                 break
-        self.candidate_form_questions = qs
+
+        self.candidate_form_questions = questions
+
 
     def toggle_candidate_question_required(self, qid: str):
-        qs = [dict(q) for q in self.candidate_form_questions]
-        for q in qs:
-            if q["id"] == qid:
-                q["required"] = not q["required"]
+        questions = [
+            dict(question)
+            for question in self.candidate_form_questions
+        ]
+
+        for question in questions:
+            if question.get("id") == qid:
+                question["required"] = not bool(
+                    question.get("required", True)
+                )
                 break
-        self.candidate_form_questions = qs
+
+        self.candidate_form_questions = questions
+
 
     def delete_candidate_question(self, qid: str):
         self.candidate_form_questions = [
-            q for q in self.candidate_form_questions if q["id"] != qid
+            question
+            for question in self.candidate_form_questions
+            if question.get("id") != qid
         ]
 
-    def submit_candidate_feedback_form(self):
-        """UI-only: just close the builder."""
-        self.close_candidate_feedback_builder()
 
-    # =========================================================
+    def submit_candidate_feedback_form(self):
+        """Persist the Admin-created candidate feedback form."""
+
+        try:
+            if not (
+                0 <= self.feedback_assessment_index
+                < len(self.assessments)
+            ):
+                raise ValueError("Please select a valid assessment.")
+
+            assessment = dict(
+                self.assessments[self.feedback_assessment_index]
+            )
+
+            if not assessment.get("assessment_id"):
+                assessment = self._persist_assessment_record(
+                    assessment
+                )
+
+            assessment_id = assessment["assessment_id"]
+            assessment_name = assessment.get(
+                "name",
+                self.feedback_assessment_name,
+            )
+
+            title = (
+                self.candidate_form_title.strip()
+                if self.candidate_form_title.strip()
+                else f"Candidate Feedback Form - {assessment_name}"
+            )
+
+            questions = []
+
+            for index, question in enumerate(
+                self.candidate_form_questions,
+                start=1,
+            ):
+                text = str(
+                    question.get("text", "")
+                ).strip()
+
+                if not text:
+                    raise ValueError(
+                        "Feedback questions cannot be empty."
+                    )
+
+                question_id = str(
+                    question.get("id", "")
+                ).strip()
+
+                if not question_id:
+                    question_id = f"cq_{index}"
+
+                questions.append({
+                    "id": question_id,
+                    "text": text,
+                    "type": "textarea",
+                    "required": bool(
+                        question.get("required", True)
+                    ),
+                })
+
+            if not questions:
+                raise ValueError(
+                    "Add at least one feedback question."
+                )
+
+            service = FeedbackService()
+
+            existing = service.resolve_form(
+                assessment_id,
+                "candidate",
+            )
+
+            details = {
+                "title": title,
+                "description": "",
+                "assessment_id": assessment_id,
+                "target_role": "candidate",
+                "questions": questions,
+                "active": True,
+            }
+
+            if existing:
+                saved_form = service.save_form(
+                    details,
+                    form_id=existing["feedback_form_id"],
+                )
+            else:
+                saved_form = service.save_form(details)
+
+            saved = dict(self.candidate_saved_forms)
+
+            saved[assessment_name] = {
+                "feedback_form_id": saved_form[
+                    "feedback_form_id"
+                ],
+                "title": saved_form["title"],
+                "questions": [
+                    dict(question)
+                    for question in saved_form["questions"]
+                ],
+            }
+
+            self.candidate_saved_forms = saved
+
+            self.show_candidate_feedback_builder = False
+
+            return rx.toast.success(
+                "Candidate Feedback Form created successfully."
+            )
+
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+        # =========================================================
     # ASSESSMENT TESTS (Type of Test Dialog)
     # =========================================================
     show_assessment_tests_dialog: bool = False
@@ -2068,22 +2609,73 @@ class AdminFeedbackState(rx.State):
 
     @rx.var
     def assessment_options(self) -> list[str]:
-        opts = {"All Assessments"}
-        for e in self.candidate_entries + self.facilitator_entries:
-            if e.get("assessment"):
-                opts.add(e["assessment"])
-        sorted_opts = sorted(list(opts - {"All Assessments"}))
-        return ["All Assessments"] + sorted_opts
+        """Return all persisted assessments, including assessments with no feedback yet."""
+        opts = set()
+
+        try:
+            assessments = AssessmentService().load_assessments()
+            for assessment in assessments:
+                name = str(assessment.get("name", "")).strip()
+                if name:
+                    opts.add(name)
+        except (ValueError, OSError):
+            pass
+
+        # Also preserve assessments referenced by existing/historical feedback.
+        for entry in self.candidate_entries + self.facilitator_entries:
+            name = str(entry.get("assessment", "")).strip()
+            if name:
+                opts.add(name)
+
+        return ["All Assessments"] + sorted(opts, key=str.casefold)
+
 
     @rx.var
     def test_options(self) -> list[str]:
-        opts = {"All Tests"}
-        for e in self.candidate_entries + self.facilitator_entries:
-            if self.filter_assessment == "All Assessments" or e.get("assessment", "").lower() == self.filter_assessment.lower():
-                if e.get("test"):
-                    opts.add(e["test"])
-        sorted_opts = sorted(list(opts - {"All Tests"}))
-        return ["All Tests"] + sorted_opts
+        """Return persisted tests for the selected assessment plus historical feedback tests."""
+        opts = set()
+
+        try:
+            assessments = AssessmentService().load_assessments()
+
+            for assessment in assessments:
+                assessment_name = str(assessment.get("name", "")).strip()
+
+                if (
+                    self.filter_assessment != "All Assessments"
+                    and assessment_name.casefold() != self.filter_assessment.casefold()
+                ):
+                    continue
+
+                # Formative tests
+                for test_name in assessment.get("tests", []):
+                    test_name = str(test_name).strip()
+                    if test_name:
+                        opts.add(test_name)
+
+                # Summative/final test
+                final_test = str(assessment.get("final_test", "")).strip()
+                if final_test:
+                    opts.add(final_test)
+
+        except (ValueError, OSError):
+            pass
+
+        # Preserve tests referenced by existing/historical feedback.
+        for entry in self.candidate_entries + self.facilitator_entries:
+            assessment_name = str(entry.get("assessment", "")).strip()
+
+            if (
+                self.filter_assessment != "All Assessments"
+                and assessment_name.casefold() != self.filter_assessment.casefold()
+            ):
+                continue
+
+            test_name = str(entry.get("test", "")).strip()
+            if test_name:
+                opts.add(test_name)
+
+        return ["All Tests"] + sorted(opts, key=str.casefold)
 
     def set_active_tab(self, tab: str):
         self.active_tab = tab

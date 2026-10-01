@@ -263,6 +263,7 @@ class CandidateSummary(TypedDict):
 
 class AssessmentDetail(TypedDict):
     """Assessment enriched with resolved candidate objects (for Facilitator views)."""
+    assessment_id: str
     name: str
     # Multi-facilitator fields
     facilitator_ids: list[str]

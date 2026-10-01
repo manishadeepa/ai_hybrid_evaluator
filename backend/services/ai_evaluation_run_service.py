@@ -1,4 +1,4 @@
-"""Persisted AI lifecycle. All grading remains in the existing AI engine."""
+"""Persisted evaluation lifecycle: local objective grading or the existing AI engine."""
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -24,8 +24,53 @@ def _now():
 
 
 class AIEvaluationRunService:
-    def __init__(self, repository=None):
+    def __init__(self, repository=None, tests=None):
         self.repository = repository or AIEvaluationRunRepository()
+        from backend.services.test_service import TestService
+        from backend.repositories.test_repository import TestRepository
+        self.tests = tests or (TestService(TestRepository(self.repository.file_path.parent / 'tests.json'))
+                               if repository is not None else TestService())
+
+    def _canonical_test(self, run):
+        if not run.get('test_id') or not run.get('assessment_id'):
+            raise ValueError('Canonical assessment/test IDs are required; start a new evaluation from the assigned test.')
+        test = self.tests.get_test(run['test_id'], run['assessment_id'])
+        if test.get('test_type') not in ('objective', 'subjective'):
+            raise ValueError('Test type is missing or unknown; upload the question paper again before evaluation.')
+        return test
+
+    def _objective_questions(self, run, test):
+        from backend.services.question_paper_service import QuestionPaperService
+        from backend.repositories.response_repository import ResponseRepository
+        paper = QuestionPaperService(self.tests).get_paper(test['assessment_id'], test['test_id'])
+        if not paper or paper.get('test_type') != 'objective':
+            raise ValueError('A validated objective question paper is required; upload it again.')
+        def number(value):
+            return str(int(float(str(value).strip().removeprefix('Q'))))
+        questions = {number(q['Question No']): q for q in paper['questions']}
+        if any(q.get('correct_option') not in ('A', 'B', 'C', 'D') or set(q.get('options', {})) != set('ABCD')
+               for q in questions.values()):
+            raise ValueError('Objective answer keys/options are missing; upload the question paper again.')
+        responses = ResponseRepository(self.tests.repository.file_path.parent / 'responses.json')
+        keyed = {}
+        for cid in run['candidate_ids']:
+            response = responses.get(cid, test['assessment_id'], test['test_id'])
+            if not response or response['status'] != 'Submitted' or response.get('_pending_status'):
+                raise ValueError(f'{cid}: a finalized submission for this assessment/test is required.')
+            rows = [q['record'] for q in run['questions'] if q['record']['candidate_id'] == cid]
+            if len(rows) != len(questions) or {number(r['question_no']) for r in rows} != set(questions):
+                raise ValueError(f'{cid}: response must contain every question from this test exactly once.')
+            for row in rows:
+                n = number(row['question_no'])
+                question = questions[n]
+                answer = response['answers'].get(n, '').strip()
+                if (row['question'].strip() != question['Question'].strip()
+                        or row['max_marks'] != question['Marks']
+                        or str(row['candidate_answer'] or '').strip() != answer
+                        or row['unanswered'] != (not answer)):
+                    raise ValueError(f'{cid} Q{n}: evaluation input differs from the canonical paper/submission.')
+                keyed[str(row['question_no'])] = question
+        return keyed
 
     def _save(self, run, persist=True):
         states = [q['status'] for q in run['questions']]
@@ -243,6 +288,15 @@ class AIEvaluationRunService:
 
     def prepare_single(self, assessment, test, candidate_id, label, paper, response, answer_key=None, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+        test_record = self._canonical_test(ids)
+        if test_record['test_type'] == 'objective':
+            from pathlib import Path
+            from backend.repositories.response_repository import ResponseRepository
+            stored = ResponseRepository(self.tests.repository.file_path.parent / 'responses.json').get(
+                candidate_id, ids['assessment_id'], ids['test_id'])
+            if not stored or Path(stored.get('response_file') or '').resolve() != Path(response).resolve():
+                raise ValueError('Response workbook does not belong to this candidate/assessment/test.')
+            answer_key = None  # Objective keys belong to the validated canonical paper.
         rows = engine.prepare_candidate_records(paper, response, answer_key)
         for row in rows:
             row['candidate_id'] = candidate_id
@@ -250,6 +304,9 @@ class AIEvaluationRunService:
 
     def prepare_batch(self, assessment, test, rows, labels, paper, answer_key=None, skipped=None, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+        test_record = self._canonical_test(ids)
+        if test_record['test_type'] == 'objective':
+            answer_key = None
         groups = engine.prepare_questionwise_records(paper, rows, answer_key)
         return self.create_run(assessment, test, self._json_records([r for group in groups.values() for r in group]),
                                candidate_scope='all', labels=labels, skipped=skipped, **ids)
@@ -271,7 +328,6 @@ class AIEvaluationRunService:
 
     def execute(self, run_id, *, max_retries=3, batch_size=5, delay_seconds=2):
         """One worker per run. No Azure request is forcibly cancelled."""
-        from ai_hybrid_evaluator.services import ai_evaluation_service as engine
         worker_key = (str(self.repository.file_path.resolve()), run_id)
         with _LOCK:
             if worker_key in _ACTIVE:
@@ -282,15 +338,24 @@ class AIEvaluationRunService:
         client = deployment = None
         fatal = ''
         try:
+            test = self._canonical_test(run)
+            objective = test['test_type'] == 'objective'
+            if objective:
+                from backend.services.question_type_schema import evaluate_objective
+                questions = self._objective_questions(run, test)
+            else:
+                from ai_hybrid_evaluator.services import ai_evaluation_service as engine
             while True:
                 chunk = self._next_chunk(run_id, token, batch_size if run['candidate_scope'] == 'all' else 1)
                 if not chunk:
                     break
                 rows = [dict(q['record'], response_id=q['pair_id']) for q in chunk]
                 try:
-                    if client is None and any(not r['unanswered'] for r in rows):
+                    if not objective and client is None and any(not r['unanswered'] for r in rows):
                         client, deployment = engine._load_client()
-                    if run['candidate_scope'] == 'all':
+                    if objective:
+                        outcomes = [evaluate_objective(r, questions[str(r['question_no'])]) for r in rows]
+                    elif run['candidate_scope'] == 'all':
                         outcomes = engine._evaluate_question_batch(client, deployment, rows, max_retries, delay_seconds,
                             lambda pair_id, outcome: self.checkpoint(run_id, token, pair_id, result=outcome))
                     else:

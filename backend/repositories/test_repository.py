@@ -1,6 +1,7 @@
 from pathlib import Path
 from copy import deepcopy
 from backend.repositories.json_repository import JSONRepository
+from backend.services.question_type_schema import validate_test_type
 
 
 class TestRepository:
@@ -21,6 +22,9 @@ class TestRepository:
     def _validate(records):
         if not isinstance(records, list) or any(not isinstance(r, dict) for r in records):
             raise ValueError("Tests must be a list of objects.")
+        for record in records:
+            if "test_type" in record:
+                validate_test_type(record["test_type"])
         ids = [r.get("test_id") for r in records]
         if any(not isinstance(i, str) or not i.strip() for i in ids) or len(ids) != len(set(ids)):
             raise ValueError("Invalid or duplicate test_id in tests.json")

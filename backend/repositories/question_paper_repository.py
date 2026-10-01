@@ -38,6 +38,9 @@ class QuestionPaperRepository:
         else:
             if paper["test_id"] != test_id or paper["assessment_id"] != test["assessment_id"]:
                 raise ValueError("Invalid question-paper relationship.")
+            from backend.services.question_type_schema import validate_test_type
+            validate_test_type(paper.get("test_type"))
+            test["test_type"] = paper["test_type"]
             test["question_paper"] = paper["filename"]
             test["question_paper_details"] = deepcopy(paper)
         test["updated_at"] = datetime.now(timezone.utc).isoformat()

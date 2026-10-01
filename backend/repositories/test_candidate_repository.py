@@ -11,6 +11,11 @@ class TestCandidateRepository:
         if not self.file_path.exists():
             return []
         rows = JSONRepository(self.file_path).get_all()
+        self._validate(rows)
+        return rows
+
+    @staticmethod
+    def _validate(rows):
         pairs = []
         for r in rows:
             if any(not isinstance(r.get(k), str) or not r[k].strip() for k in ("candidate_id", "assessment_id", "test_id")):
@@ -20,7 +25,10 @@ class TestCandidateRepository:
             pairs.append((r["candidate_id"], r["test_id"]))
         if len(pairs) != len(set(pairs)):
             raise ValueError("Duplicate candidate/test assignment.")
-        return rows
+
+    def save_all(self, records):
+        self._validate(records)
+        JSONRepository(self.file_path).save_all(deepcopy(records))
 
     def get(self, candidate_id, test_id):
         return next((r for r in self.get_all() if r["candidate_id"] == candidate_id and r["test_id"] == test_id), None)
@@ -30,3 +38,9 @@ class TestCandidateRepository:
         rows = [r for r in rows if (r["candidate_id"], r["test_id"]) != (record["candidate_id"], record["test_id"])]
         JSONRepository(self.file_path).save_all(rows + [deepcopy(record)])
         return deepcopy(record)
+
+    def delete_by_test(self, test_id):
+        """Delete candidate assignments belonging to one test."""
+        rows = self.get_all()
+        remaining = [r for r in rows if r["test_id"] != test_id]
+        JSONRepository(self.file_path).save_all(remaining)

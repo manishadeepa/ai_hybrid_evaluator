@@ -35,6 +35,7 @@ class AdminReportsPageState(rx.State):
             if a.get("name") == name:
                 fac_state.selected_assessment_index = i
                 fac_state.selected_assessment_name = name
+                fac_state.selected_assessment_id = a.get("assessment_id", "")
                 tests = a.get("tests", [])
                 final_test = a.get("final_test", "")
                 fac_state.selected_assessment_final_test = final_test
