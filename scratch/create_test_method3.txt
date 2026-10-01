@@ -1,0 +1,13 @@
+ dict(updated.get("test_descriptions", {}))
+                    descs[test_name] = self.new_test_description.strip()
+                    updated["test_descriptions"] = descs
+
+                admin_state.assessments[i] = updated
+                self.selected_test_name = test_name
+                break
+
+        if not found:
+            return rx.toast.error(f"Assessment '{name}' not found.")
+
+        # Reset Overall Report lock — facilitator must re-mark assessment Complete after adding tests
+   

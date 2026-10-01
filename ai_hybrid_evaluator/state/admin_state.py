@@ -524,9 +524,9 @@ class AdminState(rx.State):
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
             "status": "In Progress",
-            # Tests start empty — Facilitators add them via their workspace
-            "tests": ["Quality Standard Test", "Safety Protocol Test", "Defect Analysis"],
-            "final_test": "Final Comprehensive Quality Evaluation",
+            # Tests are empty by default — Facilitators add them via their workspace
+            "tests": [],
+            "final_test": "",
             "approval_status": "approved",
             "facilitator_approvals": {
                 "F001": "approved",

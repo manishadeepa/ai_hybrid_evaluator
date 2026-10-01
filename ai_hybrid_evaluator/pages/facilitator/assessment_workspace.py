@@ -7305,6 +7305,34 @@ def add_new_test_dialog() -> rx.Component:
                     align_items="start",
                 ),
 
+                # ── Question Type ────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Question Type", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.select(
+                        ["Objective", "Subjective", "Hybrid"],
+                        placeholder="Select Question Type",
+                        value=FacilitatorState.new_question_type,
+                        on_change=FacilitatorState.set_new_question_type,
+                        width="100%",
+                        size="2",
+                        font_family=FONT_BODY,
+                    ),
+                    rx.text(
+                        "Objective = MCQ only · Subjective = written only · Hybrid = both",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
                 # ── Test Date ───────────────────────────────────────────
                 rx.vstack(
                     rx.hstack(

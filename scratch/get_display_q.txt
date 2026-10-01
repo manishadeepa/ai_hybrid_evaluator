@@ -1,0 +1,77 @@
+def _get_display_questions(q_key: str, cand_key: str) -> list[dict]:
+    """Return questions in the candidate's shuffled display order.
+    Retains original 'id'/'title' fields on every question dict."""
+    original = LOADED_TEST_QUESTIONS.get(q_key, [])
+    if not original:
+        return []
+    order = CANDIDATE_SHUFFLE_ORDERS.get(cand_key)
+    if not order or len(order) != len(original):
+        persisted = PERSISTED_CANDIDATE_TEST_DATA.get(cand_key, {})
+        p_order = persisted.get("shuffle_order")
+        if p_order and len(p_order) == len(original):
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = p_order
+            order = p_order
+        else:
+            order = _generate_shuffle_order(len(original))
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = order
+    return [original[i] for i in order]
+
+
+def _generate_shuffle_order(n: int) -> list[int]:
+    """Return a shuffled list of indices 0..n-1. n<=1 → identity."""
+    if n <= 1:
+        return list(range(n))
+    order = list(range(n))
+    random.shuffle(order)
+    if n > 1 and order == list(range(n)):
+        order[0], order[-1] = order[-1], order[0]
+    return order
+
+def _load_questions_from_file(filepath: Path) -> list[dict]:
+    """Parse an uploaded question-paper Excel file and return a list of question dicts.
+    Detects Objective questions by the presence of Option_A / Option A columns.
+    Detects Subjective questions otherwise.
+    Preserves the row order of the uploaded file exactly."""
+    if not filepath.exists():
+        print(f"[QP] File not found: {filepath}")
+        return []
+    try:
+        df = pd.read_excel(filepath)
+    except Exception as e:
+        print(f"[QP] Failed to read {filepath}: {e}")
+        return []
+
+    cols = [str(c).strip() for c in df.columns]
+    # Detect format by looking for option columns
+    has_option_cols = any(c in cols for c in [
+        "Option_A", "Option A", "Option_B", "Option B",
+        "Option_C", "Option C", "Option_D", "Option D",
+    ])
+    # Also detect inline A) / B) format (single Question column with embedded options)
+    has_inline_options = (
+        not has_option_cols
+        and "Question" in cols
+        and df["Question"].astype(str).str.contains(r"\n[A-D]\)", regex=True).any()
+    )
+
+    questions: list[dict] = []
+
+    def _safe(row, *keys, default=""):
+        for k in keys:
+            v = row.get(k)
+            if v is not None and pd.notna(v) and str(v).strip():
+                return str(v).strip()
+        return default
+
+    for _, row in df.iterrows():
+        idx = len(questions) + 1
+
+        if has_option_cols:
+            # â”€â”€ Structured Objective (separate option columns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            questions.append({
+                "id": idx,
+                "title": f"Q{idx}",
+                "marks": int(float(_safe(row, "Marks", default="1"))),
+                "co": _safe(row, "CO", default=""),
+                "lo": _safe(row, "LO", default=""),
+                "knowle

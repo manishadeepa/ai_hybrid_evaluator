@@ -833,6 +833,65 @@ def objective_question_card() -> rx.Component:
                     padding_top="1.5em",
                 ),
 
+                # "Your Answer" Confirmation Box (shows when an option is selected)
+                rx.cond(
+                    CandidateState.current_mcq_answer != "",
+                    rx.box(
+                        rx.hstack(
+                            # Purple/indigo circle with checkmark icon
+                            rx.box(
+                                rx.icon("check", size=18, color="white", stroke_width=2.5),
+                                width="36px",
+                                height="36px",
+                                border_radius="50%",
+                                background="#4F46E5",
+                                display="flex",
+                                align_items="center",
+                                justify_content="center",
+                                flex_shrink="0",
+                            ),
+                            # Vertical divider line
+                            rx.box(
+                                width="1px",
+                                height="36px",
+                                background="#C7D2FE",
+                                margin_x="1.2em",
+                                flex_shrink="0",
+                            ),
+                            # Selected Answer display
+                            rx.vstack(
+                                rx.text(
+                                    "Your Answer:",
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    weight="bold",
+                                    color="#4F46E5",
+                                ),
+                                rx.text(
+                                    CandidateState.current_mcq_selected_display,
+                                    font_family=FONT_BODY,
+                                    size="3",
+                                    weight="medium",
+                                    color="#1F2937",
+                                    line_height="1.5",
+                                ),
+                                spacing="1",
+                                align_items="start",
+                                width="100%",
+                            ),
+                            align_items="center",
+                            width="100%",
+                        ),
+                        width="100%",
+                        padding="1.1em 1.4em",
+                        margin_top="1.2em",
+                        background="#F5F3FF",
+                        border="1px solid #C7D2FE",
+                        border_radius="10px",
+                    ),
+                    rx.fragment(),
+                ),
+
                 # Clear Answer Button (Right-aligned matching UI)
                 rx.hstack(
                     rx.spacer(),

@@ -219,8 +219,6 @@ def candidate_assessment_card(a: dict) -> rx.Component:
                     spacing="2",
                     align_items="start",
                 ),
-                rx.spacer(),
-                _status_badge(a["status"]),
                 width="100%",
                 align_items="start",
             ),

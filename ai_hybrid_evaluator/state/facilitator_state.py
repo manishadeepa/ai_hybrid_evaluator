@@ -2300,6 +2300,7 @@ class FacilitatorState(rx.State):
     new_test_name: str = ""
     new_test_date: str = ""
     new_test_description: str = ""
+    new_question_type: str = ""  # "" (unset) | "Objective" | "Subjective" | "Hybrid"
     suggested_formative_name: str = ""
 
     def set_show_add_test_modal(self, value: bool):
@@ -2322,6 +2323,9 @@ class FacilitatorState(rx.State):
 
     def set_new_test_date(self, value: str):
         self.new_test_date = value
+
+    def set_new_question_type(self, value: str):
+        self.new_question_type = value
 
     def set_new_test_description(self, value: str):
         if len(value) <= 200:
@@ -2358,6 +2362,7 @@ class FacilitatorState(rx.State):
         self.new_test_name = formative_name
         self.new_test_date = ""
         self.new_test_description = ""
+        self.new_question_type = ""
         self.show_add_test_modal = True
 
     async def facilitator_add_test(self):
@@ -2371,6 +2376,8 @@ class FacilitatorState(rx.State):
 
         if not test_name:
             return rx.toast.error("Please enter a Test Name.")
+        if not self.new_question_type:
+            return rx.toast.error("Please select a Question Type.")
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
 
@@ -2404,6 +2411,11 @@ class FacilitatorState(rx.State):
                     descs = dict(updated.get("test_descriptions", {}))
                     descs[test_name] = self.new_test_description.strip()
                     updated["test_descriptions"] = descs
+
+                # Save question type (Objective / Subjective / Hybrid) per test
+                qtypes = dict(updated.get("test_question_types", {}))
+                qtypes[test_name] = self.new_question_type
+                updated["test_question_types"] = qtypes
 
                 admin_state.assessments[i] = updated
                 self.selected_test_name = test_name

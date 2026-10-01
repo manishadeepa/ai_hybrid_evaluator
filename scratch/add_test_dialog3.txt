@@ -1,0 +1,71 @@
+                 ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Test Date ───────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Date", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.input(
+                        rx.input.slot(
+                            rx.icon("calendar", size=16, color=COLORS["slate"]),
+                        ),
+                        type="date",
+                        value=FacilitatorState.new_test_date,
+                        on_change=FacilitatorState.set_new_test_date,
+                        width="100%",
+                        size="2",
+                        font_family=FONT_BODY,
+                    ),
+                    spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+
+                # ── Info Callout ────────────────────────────────────────
+                rx.box(
+                    rx.hstack(
+                        rx.icon("info", size=18, color=COLORS["primary"], flex_shrink=0),
+                        rx.text(
+                            "After creating the test, you can upload the Question Paper and Answer Key from the test management page.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["primary"],
+                            weight="medium",
+                            line_height="1.4",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    background="#F5F3FF",
+                    border="1px solid #E9D5FF",
+                    border_radius="10px",
+                    padding="0.8em 1em",
+                    width="100%",
+                ),
+
+                # ── Actions ─────────────────────────────────────────────
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        variant="outline",
+                        color_scheme="gray",
+                        on_click=FacilitatorState.close_add_test_modal,
+                        font_family=FONT_BODY,
+                        size="2",
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        cursor="pointer",
+                    ),
+                    rx.button(
+                        "Create Test",
+                        on_click=FacilitatorState.create_new_test,
+                        background=COLORS["pr

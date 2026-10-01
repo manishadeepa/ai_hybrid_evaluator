@@ -6,6 +6,7 @@ proctoring alerts, and submission flow.
 
 import asyncio
 import base64
+import random
 import re
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,42 @@ from ai_hybrid_evaluator.services.candidate_response_service import save_candida
 # Populated in start_test / on_test_page_load from FacilitatorState.question_papers.
 LOADED_TEST_QUESTIONS: dict[str, list[dict]] = {}
 
+# ── Per-candidate shuffle mapping ──────────────────────────────────────────────
+# Key: "{candidate_id}::{assessment_name}::{test_name}"
+# Value: list[int] — shuffled indices into LOADED_TEST_QUESTIONS[q_key].
+# e.g. [3, 0, 4, 1, 2] means display position 1 → original question at index 3.
+# Generated ONCE when the candidate first starts the test; never regenerated.
+CANDIDATE_SHUFFLE_ORDERS: dict[str, list[int]] = {}
+
+
+def _get_display_questions(q_key: str, cand_key: str) -> list[dict]:
+    """Return questions in the candidate's shuffled display order.
+    Retains original 'id'/'title' fields on every question dict."""
+    original = LOADED_TEST_QUESTIONS.get(q_key, [])
+    if not original:
+        return []
+    order = CANDIDATE_SHUFFLE_ORDERS.get(cand_key)
+    if not order or len(order) != len(original):
+        persisted = PERSISTED_CANDIDATE_TEST_DATA.get(cand_key, {})
+        p_order = persisted.get("shuffle_order")
+        if p_order and len(p_order) == len(original):
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = p_order
+            order = p_order
+        else:
+            order = _generate_shuffle_order(len(original))
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = order
+    return [original[i] for i in order]
+
+
+def _generate_shuffle_order(n: int) -> list[int]:
+    """Return a shuffled list of indices 0..n-1. n<=1 → identity."""
+    if n <= 1:
+        return list(range(n))
+    order = list(range(n))
+    random.shuffle(order)
+    if n > 1 and order == list(range(n)):
+        order[0], order[-1] = order[-1], order[0]
+    return order
 
 def _load_questions_from_file(filepath: Path) -> list[dict]:
     """Parse an uploaded question-paper Excel file and return a list of question dicts.
@@ -247,6 +284,17 @@ class CandidateState(rx.State):
             pass
         return self.candidate_id or "CAND-2031"
 
+    def _get_current_original_qid_str(self) -> str:
+        """Returns the str(id) of the question currently on screen, based on shuffled order."""
+        cand_id = self.candidate_id or "CAND-2031"
+        q_key = f"{self.active_assessment_name}::{self.active_test_name}"
+        cand_key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        qs = _get_display_questions(q_key, cand_key)
+        idx = self.current_question_index
+        if qs and 0 <= idx < len(qs):
+            return str(qs[idx].get("id", idx + 1))
+        return str(self.current_question_number)
+
     def _save_current_test_record(self, status: str = ""):
         cand_id = self.candidate_id or "CAND-2031"
         key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
@@ -255,6 +303,9 @@ class CandidateState(rx.State):
         curr_status = status or existing.get("status", "In Progress")
         if existing.get("status") in ("Submitted", "Disqualified") and not status:
             curr_status = existing.get("status")
+
+        # Persist the current shuffle order so it survives refreshes
+        shuffle_order = CANDIDATE_SHUFFLE_ORDERS.get(key, existing.get("shuffle_order", []))
 
         PERSISTED_CANDIDATE_TEST_DATA[key] = {
             "candidate_id": cand_id,
@@ -267,12 +318,18 @@ class CandidateState(rx.State):
             "answers": dict(self.answers),
             "mcq_answers": dict(self.mcq_answers),
             "marked_for_review": list(self.marked_for_review),
+            "shuffle_order": shuffle_order,
         }
 
-    # â”€â”€ Computed Variables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Computed Variables ─────────────────────────────────────────────────────────
     @rx.var
     def current_question(self) -> dict:
-        qs = LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])
+        """Returns the question at the current display position in shuffled order.
+        The returned dict retains the ORIGINAL question id/title for answer keying."""
+        cand_id = self.candidate_id or "CAND-2031"
+        q_key = f"{self.active_assessment_name}::{self.active_test_name}"
+        cand_key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        qs = _get_display_questions(q_key, cand_key)
         if not qs:
             return {}
         idx = self.current_question_index
@@ -289,8 +346,23 @@ class CandidateState(rx.State):
         return len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []))
 
     @rx.var
+    def current_original_question_id(self) -> str:
+        """The ORIGINAL question id (str) for the currently displayed question.
+        Used to key answers/mcq_answers correctly against original question identity."""
+        cand_id = self.candidate_id or "CAND-2031"
+        q_key = f"{self.active_assessment_name}::{self.active_test_name}"
+        cand_key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        qs = _get_display_questions(q_key, cand_key)
+        if qs:
+            idx = self.current_question_index
+            if 0 <= idx < len(qs):
+                return str(qs[idx].get("id", idx + 1))
+        return str(self.current_question_number)
+
+    @rx.var
     def current_answer_text(self) -> str:
-        qid_str = str(self.current_question_number)
+        # Key by ORIGINAL question id (survives shuffle)
+        qid_str = self.current_original_question_id
         return self.answers.get(qid_str, "")
 
     @rx.var
@@ -302,10 +374,16 @@ class CandidateState(rx.State):
 
     @rx.var
     def is_current_marked(self) -> bool:
-        return self.current_question_number in self.marked_for_review
+        # marked_for_review stores original question ids
+        try:
+            orig_id = int(self.current_original_question_id)
+        except (ValueError, TypeError):
+            orig_id = self.current_question_number
+        return (orig_id in self.marked_for_review) or (self.current_original_question_id in self.marked_for_review)
 
     @rx.var
     def answered_count(self) -> int:
+        # Iterate original questions (answers are keyed by original id)
         count = 0
         for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []):
             qid_str = str(q["id"])
@@ -335,62 +413,69 @@ class CandidateState(rx.State):
             "Write in your own words.",
         ])
 
-    @rx.var
-    def current_question_type(self) -> str:
-        """Returns 'Objective' or 'Subjective' for the current question."""
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("question_type", "Subjective"))
-        return "Subjective"
+    # current_question_type is defined after nav_questions to use current_question var
 
     @rx.var
     def current_mcq_answer(self) -> str:
-        """Returns the selected option letter (e.g. 'A') for the current MCQ question."""
-        qid_str = str(self.current_question_number)
+        """Returns the selected option letter (e.g. 'A') for the current MCQ question.
+        Keyed by ORIGINAL question id."""
+        qid_str = self.current_original_question_id
         return self.mcq_answers.get(qid_str, "")
 
     @rx.var
     def current_option_a(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("A", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("A", "")) if q else ""
 
     @rx.var
     def current_option_b(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("B", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("B", "")) if q else ""
 
     @rx.var
     def current_option_c(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("C", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("C", "")) if q else ""
 
     @rx.var
     def current_option_d(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("options", {}).get("D", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("D", "")) if q else ""
+
+    @rx.var
+    def current_mcq_selected_display(self) -> str:
+        """Returns formatted string like 'A. Quality Function Deployment (QFD)' for selected option."""
+        letter = self.current_mcq_answer
+        if not letter:
+            return ""
+        q = self.current_question
+        raw_text = str(q.get("options", {}).get(letter, "")) if q else ""
+        raw_text = raw_text.strip()
+        clean_text = re.sub(r"^[A-Za-z][\.\)]\s*", "", raw_text)
+        return f"{letter}.  {clean_text}" if clean_text else (f"{letter}.  {raw_text}" if raw_text else letter)
 
     # â”€â”€ Question Navigation Computed Vars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @rx.var
     def nav_questions(self) -> list[dict]:
-        """All uploaded questions for the navigation panel â€” no type filtering."""
+        """All uploaded questions in candidate's display order for the navigation panel."""
         items = []
-        curr = self.current_question_number
+        cand_id = self.candidate_id or "CAND-2031"
+        q_key = f"{self.active_assessment_name}::{self.active_test_name}"
+        cand_key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        display_qs = _get_display_questions(q_key, cand_key)
         marked_set = set(self.marked_for_review)
 
-        for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []):
-            q_id = q["id"]
+        for disp_idx, q in enumerate(display_qs):
+            disp_num = disp_idx + 1
+            orig_id = q.get("id", disp_num)
+            qid_str = str(orig_id)
             q_type = q.get("question_type", "Subjective")
-            qid_str = str(q_id)
-            is_curr = (q_id == curr)
-            is_marked = (q_id in marked_set)
+            is_curr = (disp_idx == self.current_question_index)
+            try:
+                orig_id_int = int(orig_id)
+            except (ValueError, TypeError):
+                orig_id_int = orig_id
+            is_marked = (orig_id_int in marked_set) or (orig_id in marked_set) or (qid_str in marked_set)
 
             if q_type == "Objective":
                 is_answered = bool(self.mcq_answers.get(qid_str, "").strip())
@@ -407,8 +492,9 @@ class CandidateState(rx.State):
                 status = "unanswered"
 
             items.append({
-                "id": q_id,
-                "number": str(q_id),
+                "id": disp_num,
+                "number": str(disp_num),
+                "orig_id": orig_id,
                 "type": q_type,
                 "status": status,
                 "is_current": is_curr,
@@ -428,6 +514,12 @@ class CandidateState(rx.State):
     @rx.var
     def subjective_nav_count(self) -> int:
         return sum(1 for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []) if q.get("question_type") == "Subjective")
+
+    @rx.var
+    def current_question_type(self) -> str:
+        """Returns 'Objective' or 'Subjective' for the currently displayed (shuffled) question."""
+        q = self.current_question
+        return str(q.get("question_type", "Subjective")) if q else "Subjective"
 
     @rx.var
     def active_test_key(self) -> str:
@@ -462,36 +554,27 @@ class CandidateState(rx.State):
         """True when the candidate is on the final question."""
         return self.current_question_index >= len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])) - 1
 
-    # â”€â”€ Question metadata computed vars (CO / LO / RBT / Marks) â”€â”€â”€â”€â”€â”€â”€
-    # Access LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []) directly (cannot chain .get() on an rx.var result)
+    # ── Question metadata computed vars (CO / LO / RBT / Marks) ───────────────
     @rx.var
     def current_question_marks(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            v = LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("marks", "")
-            return str(v) if v != "" else ""
-        return ""
+        q = self.current_question
+        v = q.get("marks", "") if q else ""
+        return str(v) if v != "" else ""
 
     @rx.var
     def current_question_co(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("co", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("co", "")) if q else ""
 
     @rx.var
     def current_question_lo(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("lo", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("lo", "")) if q else ""
 
     @rx.var
     def current_question_rbt(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])):
-            return str(LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", [])[idx].get("rbt_level", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("rbt_level", "")) if q else ""
 
     # â”€â”€ Timer & Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -619,9 +702,28 @@ class CandidateState(rx.State):
 
         cand_id = await self._get_current_candidate_id()
         key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
+        q_key = f"{self.active_assessment_name}::{self.active_test_name}"
+
+        # Ensure questions are loaded if page reloaded
+        if q_key not in LOADED_TEST_QUESTIONS or not LOADED_TEST_QUESTIONS[q_key]:
+            try:
+                from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState as FS
+                fac = await self.get_state(FS)
+                filename = fac.question_papers.get(self.active_assessment_name, {}).get(self.active_test_name, "")
+                if filename:
+                    upload_dir = _get_upload_dir()
+                    filepath = upload_dir / filename
+                    qs = _load_questions_from_file(filepath)
+                    if qs:
+                        LOADED_TEST_QUESTIONS[q_key] = qs
+            except Exception as e:
+                print(f"[QP] ERROR in on_test_page_load loading questions for {q_key}: {e}")
+
         record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
 
         if record:
+            if record.get("shuffle_order"):
+                CANDIDATE_SHUFFLE_ORDERS[key] = record["shuffle_order"]
             status = record.get("status")
             if status == "Submitted":
                 self.is_test_submitted = True
@@ -647,8 +749,12 @@ class CandidateState(rx.State):
                     self.mcq_answers = dict(record.get("mcq_answers"))
                 if record.get("marked_for_review"):
                     self.marked_for_review = list(record.get("marked_for_review"))
+        elif key not in CANDIDATE_SHUFFLE_ORDERS:
+            original_qs = LOADED_TEST_QUESTIONS.get(q_key, [])
+            if original_qs:
+                CANDIDATE_SHUFFLE_ORDERS[key] = _generate_shuffle_order(len(original_qs))
 
-        # Always start at Question 1 (index 0) â€” even for In Progress tests
+        # Always start at Question 1 (index 0) — even for In Progress tests
         self.current_question_index = 0
 
         if not self.is_test_submitted and not self.is_time_expired:
@@ -671,6 +777,23 @@ class CandidateState(rx.State):
         subs[self.active_assessment_name][self.active_test_name] = now.isoformat()
         self.submitted_tests = subs
 
+        cand_id = self.candidate_id or "CAND-2031"
+        try:
+            combined_answers = dict(self.answers)
+            for qid_k, opt_v in self.mcq_answers.items():
+                if qid_k not in combined_answers or not combined_answers[qid_k].strip():
+                    combined_answers[qid_k] = opt_v
+            save_candidate_response(
+                candidate_id=cand_id,
+                candidate_name=cand_id,
+                assessment_name=self.active_assessment_name,
+                test_name=self.active_test_name,
+                questions=LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []),
+                answers=combined_answers,
+            )
+        except Exception as e:
+            print(f"Error saving candidate response on time expired: {e}")
+
         self._save_current_test_record(status="Submitted")
 
     async def start_test(self, assessment_name: str, test_name: str):
@@ -691,7 +814,7 @@ class CandidateState(rx.State):
         # ── Load questions from the Facilitator-uploaded file ────────────
         # Import here to avoid circular imports; FacilitatorState lives in the same process.
         q_key = f"{assessment_name}::{test_name}"
-        if q_key not in LOADED_TEST_QUESTIONS:
+        if q_key not in LOADED_TEST_QUESTIONS or not LOADED_TEST_QUESTIONS[q_key]:
             try:
                 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState as FS
                 fac = await self.get_state(FS)
@@ -712,6 +835,36 @@ class CandidateState(rx.State):
             except Exception as e:
                 print(f"[QP] ERROR loading questions for {q_key}: {e}")
                 LOADED_TEST_QUESTIONS[q_key] = []
+
+        # ── Filter questions by the configured Question Type ─────────────
+        # Read the test's question_type from the assessment config (default Hybrid = no filter).
+        try:
+            admin_st = await self.get_state(AdminState)
+            configured_q_type = "Hybrid"
+            for a in admin_st.assessments:
+                if a["name"] == assessment_name:
+                    configured_q_type = a.get("test_question_types", {}).get(test_name, "") or "Hybrid"
+                    break
+        except Exception:
+            configured_q_type = "Hybrid"
+
+        if configured_q_type != "Hybrid" and LOADED_TEST_QUESTIONS.get(q_key):
+            all_qs = LOADED_TEST_QUESTIONS[q_key]
+            if configured_q_type == "Objective":
+                filtered = [q for q in all_qs if q.get("question_type") == "Objective"]
+            elif configured_q_type == "Subjective":
+                filtered = [q for q in all_qs if q.get("question_type") != "Objective"]
+            else:
+                filtered = all_qs
+            LOADED_TEST_QUESTIONS[q_key] = filtered
+            print(f"[QP] Filtered to {len(filtered)} {configured_q_type} questions for {q_key}")
+
+        cand_key = f"{cand_id}::{assessment_name}::{test_name}"
+        if record and record.get("shuffle_order"):
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = record["shuffle_order"]
+        elif cand_key not in CANDIDATE_SHUFFLE_ORDERS:
+            original_qs = LOADED_TEST_QUESTIONS.get(q_key, [])
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = _generate_shuffle_order(len(original_qs))
 
         # Always start at Question 1 (index 0)
         self.current_question_index = 0
@@ -747,7 +900,7 @@ class CandidateState(rx.State):
         relay input so the localStorage helpers know the current
         candidate/assessment/test/question context.
         Called after every question-navigation action."""
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         saved_html = self.answers.get(qid_str, "")
         # Escape for safe JS string embedding
         safe_html = (
@@ -806,7 +959,7 @@ class CandidateState(rx.State):
     def update_answer(self, text: str):
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         new_answers = dict(self.answers)
         new_answers[qid_str] = text
         self.answers = new_answers
@@ -817,7 +970,7 @@ class CandidateState(rx.State):
         """Save the selected MCQ option for the current Objective question."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         new_mcq = dict(self.mcq_answers)
         new_mcq[qid_str] = option
         self.mcq_answers = new_mcq
@@ -828,7 +981,7 @@ class CandidateState(rx.State):
         """Clear the MCQ answer for the current Objective question."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         new_mcq = dict(self.mcq_answers)
         new_mcq.pop(qid_str, None)
         self.mcq_answers = new_mcq
@@ -842,7 +995,7 @@ class CandidateState(rx.State):
         (prevents navigation/rerender clearing existing answers)."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         # Guard: do not overwrite a non-empty saved answer with empty HTML
         existing = self.answers.get(qid_str, "")
         if not html.strip() and _strip_html(existing).strip():
@@ -860,15 +1013,18 @@ class CandidateState(rx.State):
     def toggle_mark_for_review(self):
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid = self.current_question_number
+        orig_str = self._get_current_original_qid_str()
+        try:
+            qid = int(orig_str)
+        except (ValueError, TypeError):
+            qid = self.current_question_number
         current_list = list(self.marked_for_review)
-        if qid in current_list:
-            # Unmark: remove only this question
-            self.marked_for_review = [q for q in current_list if q != qid]
+        if qid in current_list or orig_str in current_list:
+            # Unmark: remove this question
+            self.marked_for_review = [q for q in current_list if q != qid and q != orig_str]
         else:
             # Mark: add only if not already present
-            if qid not in current_list:
-                self.marked_for_review = current_list + [qid]
+            self.marked_for_review = current_list + [qid]
         self._save_current_test_record()
 
     def save_and_next_question(self):
@@ -976,13 +1132,17 @@ class CandidateState(rx.State):
 
         cand_id = self.candidate_id or "CAND-2031"
         try:
+            combined_answers = dict(self.answers)
+            for qid_k, opt_v in self.mcq_answers.items():
+                if qid_k not in combined_answers or not combined_answers[qid_k].strip():
+                    combined_answers[qid_k] = opt_v
             save_candidate_response(
                 candidate_id=cand_id,
                 candidate_name=cand_id,
                 assessment_name=self.active_assessment_name,
                 test_name=self.active_test_name,
                 questions=LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []),
-                answers=self.answers,
+                answers=combined_answers,
             )
         except Exception as e:
             print(f"Error saving candidate response: {e}")
