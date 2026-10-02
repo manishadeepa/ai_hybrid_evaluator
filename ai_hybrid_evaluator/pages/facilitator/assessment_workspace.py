@@ -323,25 +323,40 @@ def active_test_dropzone_card() -> rx.Component:
                 rx.selected_files("test_qp_file_upload").length() > 0,
                 rx.box(
                     rx.hstack(
+                        # File icon — fixed, never shrinks
                         rx.box(
                             rx.icon("file-check-2", size=18, color="#027A48"),
                             background="#ECFDF3",
                             padding="0.4em",
                             border_radius="6px",
+                            flex_shrink="0",
                         ),
-                        rx.vstack(
-                            rx.text("Selected file ready to upload:", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                        # Middle info — flexible, shrinks, truncates long filenames on one line
+                        rx.box(
+                            rx.text(
+                                "Selected file ready to upload:",
+                                font_family=FONT_BODY,
+                                size="1",
+                                color=COLORS["slate"],
+                                white_space="nowrap",
+                                overflow="hidden",
+                                text_overflow="ellipsis",
+                            ),
                             rx.text(
                                 rx.selected_files("test_qp_file_upload")[0],
                                 font_family=FONT_BODY,
                                 size="2",
                                 weight="bold",
                                 color=COLORS["ink"],
+                                white_space="nowrap",
+                                overflow="hidden",
+                                text_overflow="ellipsis",
                             ),
-                            spacing="0",
-                            align_items="start",
+                            flex="1",
+                            min_width="0",
+                            overflow="hidden",
                         ),
-                        rx.spacer(),
+                        # Upload button — fixed, never shrinks or overflows
                         rx.button(
                             rx.icon("upload", size=14),
                             "Upload to ", FacilitatorState.selected_test_name,
@@ -350,6 +365,8 @@ def active_test_dropzone_card() -> rx.Component:
                             background="#027A48",
                             color="white",
                             font_family=FONT_BODY,
+                            flex_shrink="0",
+                            white_space="nowrap",
                             _hover={"background": "#05603A"},
                         ),
                         spacing="3",
