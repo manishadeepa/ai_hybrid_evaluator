@@ -144,4 +144,6 @@ def sidebar(active: str) -> rx.Component:
         padding="1.5em 1em",
         display="flex",
         flex_direction="column",
+        overflow_y="auto",
+        overflow_x="hidden",
     )
