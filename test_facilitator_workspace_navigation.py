@@ -43,6 +43,7 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         await self.fac.open_add_test_modal()
         self.assertTrue(self.fac.show_add_test_modal)
         self.fac.new_test_name='New test';self.fac.new_test_date='2026-10-01'
+        self.fac.new_question_type='Subjective'
         result=await self.fac.create_new_test()
         saved=self.service.get_assessment(expected['assessment_id'])
         self.assertIn('New test',saved['test_ids'],str(result))

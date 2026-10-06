@@ -8,6 +8,7 @@ import reflex as rx
 from ai_hybrid_evaluator.services.mock_api import mock_login, mock_signup, change_admin_password, EMAIL_REGEX
 from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES, SHARED_FACILITATORS
 from ai_hybrid_evaluator.state.admin_state import AdminState
+from backend.repositories.facilitator_repository import FacilitatorRepository
 
 
 class AuthState(rx.State):
@@ -267,7 +268,7 @@ class AuthState(rx.State):
             self.chpwd_error = result["error"]
 
     async def facilitator_sign_in(self):
-        """Facilitator sign in using Facilitator ID and password created by Admin."""
+        """Facilitator sign in using the latest persisted facilitator account."""
         self.facilitator_signin_error = ""
         self.facilitator_access_denied = False
 
@@ -277,38 +278,49 @@ class AuthState(rx.State):
         if not fid:
             self.facilitator_signin_error = "Please enter your Facilitator ID."
             return
+
         if not pwd:
             self.facilitator_signin_error = "Please enter your password."
             return
 
-        # Cross-state read: AdminState + shared list holds all facilitators
-        admin_state = await self.get_state(AdminState)
-        all_facilitators = list(SHARED_FACILITATORS)
-        for f in admin_state.facilitators:
-            if not any(sf["emp_id"].lower() == f["emp_id"].lower() for sf in all_facilitators):
-                all_facilitators.append(f)
+        # JSON repository is the current source of truth for facilitator accounts.
+        try:
+            facilitators = FacilitatorRepository().get_all()
+        except (ValueError, OSError):
+            self.facilitator_signin_error = (
+                "Unable to load facilitator accounts. Please contact your administrator."
+            )
+            return
+
+        fid_lower = fid.lower()
 
         match = next(
             (
-                f for f in all_facilitators
-                if f["emp_id"].lower() == fid.lower() or f["email"].lower() == fid.lower()
+                facilitator
+                for facilitator in facilitators
+                if str(facilitator.get("emp_id", "")).strip().lower() == fid_lower
+                or str(facilitator.get("email", "")).strip().lower() == fid_lower
             ),
             None,
         )
 
         if match is None:
-            self.facilitator_signin_error = "Facilitator ID not found. Please contact your administrator."
+            self.facilitator_signin_error = (
+                "Facilitator ID not found. Please contact your administrator."
+            )
             return
 
-        # Verify password against the password set by admin
-        if match.get("password") and match["password"] != pwd:
+        stored_password = str(match.get("password", ""))
+
+        if not stored_password or stored_password != pwd:
             self.facilitator_signin_error = "Invalid password. Please try again."
             return
 
         self.is_facilitator_authenticated = True
-        self.facilitator_name = match["name"]
-        self.facilitator_email = match["email"]
-        self.facilitator_emp_id = match["emp_id"]
+        self.facilitator_name = str(match.get("name", ""))
+        self.facilitator_email = str(match.get("email", ""))
+        self.facilitator_emp_id = str(match.get("emp_id", ""))
+
         return rx.redirect("/facilitator/dashboard")
 
     def set_candidate_signin_id(self, value: str):

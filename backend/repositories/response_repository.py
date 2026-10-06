@@ -44,12 +44,43 @@ class ResponseRepository:
         return rows
 
     def get(self, candidate_id, assessment_id, test_id):
-        return next((r for r in self.get_all() if (r["candidate_id"], r["assessment_id"], r["test_id"]) == (candidate_id, assessment_id, test_id)), None)
+        rows = self.get_all()
+
+        return next(
+            (
+                r for r in rows
+                if (
+                    r["candidate_id"],
+                    r["assessment_id"],
+                    r["test_id"],
+                ) == (
+                    candidate_id,
+                    assessment_id,
+                    test_id,
+                )
+            ),
+            None,
+        )
 
     def save(self, record):
+        # Never retain a snapshot between service operations: another candidate
+        # may have saved in the meantime. The operation-scoped JSON read cache
+        # removes duplicate parsing without retaining a stale read for save().
         rows = self.get_all()
-        key = tuple(record.get(k) for k in ("candidate_id", "assessment_id", "test_id"))
-        rows = [r for r in rows if tuple(r[k] for k in ("candidate_id", "assessment_id", "test_id")) != key] + [deepcopy(record)]
+
+        key = tuple(
+            record.get(k)
+            for k in ("candidate_id", "assessment_id", "test_id")
+        )
+
+        rows = [
+            r for r in rows
+            if tuple(
+                r[k]
+                for k in ("candidate_id", "assessment_id", "test_id")
+            ) != key
+        ] + [deepcopy(record)]
+
         self._validate(rows)
         JSONRepository(self.file_path).save_all(rows)
         return deepcopy(record)

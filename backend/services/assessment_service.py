@@ -260,9 +260,9 @@ class AssessmentService:
 
     @staticmethod
     def _validate_lifecycle(value):
-        statuses = {"Draft", "Scheduled", "Active", "Completed"}
+        statuses = {"Draft", "Scheduled", "In Progress", "Pending", "Active", "Completed"}
         if not isinstance(value.get("status", "Draft"), str) or value.get("status", "Draft") not in statuses:
-            raise ValueError("Status must be Draft, Scheduled, Active or Completed.")
+            raise ValueError("Status must be Draft, Scheduled, In Progress, Pending, Active or Completed.")
         value.setdefault("status", "Draft")
         for field in ("start_date", "end_date"):
             raw = value.get(field, "")

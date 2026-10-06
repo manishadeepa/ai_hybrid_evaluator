@@ -185,7 +185,26 @@ class RunTests(unittest.TestCase):
                'CO':'CO1','LO':'LO1','Knowledge Type':'Conceptual','Domain':'Cognitive','RBT level':'Understand'} for i in range(1,4)]
         pd.DataFrame(rows).to_excel(paper,index=False)
         pd.DataFrame([dict(r,**{'Candidate Answer':'Answer'}) for r in rows]).to_excel(response,index=False)
-        run=self.service.prepare_single('Assessment','Test','C1','Name (C1)',paper,response,**self.ids)
+
+        # Register the workbook through the canonical question-paper service.
+        from backend.services.question_paper_service import QuestionPaperService
+        papers = QuestionPaperService(self.service.tests)
+        canonical_paper = papers.import_upload(
+            self.ids['assessment_id'],
+            self.ids['test_id'],
+            'paper.xlsx',
+            paper.read_bytes(),
+        )
+
+        run=self.service.prepare_single(
+            'Assessment',
+            'Test',
+            'C1',
+            'Name (C1)',
+            papers.upload_dir / canonical_paper['filename'],
+            response,
+            **self.ids,
+        )
         self.assertEqual(run['candidate_id'],'C1');self.assertEqual(run['total_questions'],3)
         response.write_bytes(b'changed file')
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):

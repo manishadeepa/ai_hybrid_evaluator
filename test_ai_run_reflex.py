@@ -26,6 +26,15 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
         def provider(): return self.service
         provider.result_rows=AIEvaluationRunService.result_rows
         patch.object(state_module,'AIEvaluationRunService',provider).start()
+
+        # Keep FacilitatorState on the same isolated assessment repository
+        # used by this test.
+        patch.object(
+            state_module,
+            'AssessmentService',
+            return_value=self.assessments,
+        ).start()
+
         patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')).start()
         self.addCleanup(patch.stopall)
         root=rx.State(_reflex_internal_init=True)
@@ -126,17 +135,43 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
         admin=await self.fac.get_state(AdminState)
         new=self.assessments.create_assessment({'name':'New Assessment'})
         typed=self.service.tests.create_test(new['assessment_id'],{'test_name':'Test','test_type':'subjective'})
+
+        # Register the workbook as the validated canonical question paper
+        # for this exact assessment/test before AI evaluation starts.
+        from backend.services.question_paper_service import QuestionPaperService
+
+        papers = QuestionPaperService(self.service.tests)
+        canonical_paper = papers.import_upload(
+            new['assessment_id'],
+            typed['test_id'],
+            'paper.xlsx',
+            paper.read_bytes(),
+        )
+
+        paper = papers.upload_dir / canonical_paper['filename']
+
         admin.assessments=[{'name':'New Assessment','assessment_id':new['assessment_id'],'test_ids':{'Test':typed['test_id']},
                            'facilitator_ids':['F001'],'facilitator_names':['Ravi'],'assigned_candidates':['C1'],
                            'status':'Active','tests':['Test'],'final_test':''}]
         admin.candidates=[{'emp_id':'C1','name':'One','email':''}]
         self.fac.selected_assessment_name='New Assessment'
+        self.fac.selected_assessment_id=new['assessment_id']
+        self.fac.selected_test_name='Test'
+
+        # This test starts a genuinely fresh evaluation selection.
+        # Do not allow the run created by setUp() to be reused.
+        self.fac.active_ai_run_id=''
+
         self.fac.question_papers={'New Assessment':{'Test':'paper.xlsx'}}
         self.fac.saved_assessment_weightages={'New Assessment':{}}
+
         with patch.object(state_module.rx,'get_upload_dir',return_value=folder), patch.object(state_module,'_find_response_file_path',return_value=response) as lookup:
             events=[event async for event in self.fac.run_ai_evaluation()]
+
+
         lookup.assert_called_once_with('One (C1)','Test','New Assessment',require_assessment_scope=True)
         prepared=self.service.get_run(self.fac.active_ai_run_id)
+
         self.assertEqual(prepared['assessment_id'],new['assessment_id']);self.assertEqual(prepared['test_id'],typed['test_id'])
         self.assertEqual(prepared['status'],'idle');self.assertEqual(prepared['completed_questions'],0)
         self.assertTrue(any(getattr(event,'handler',None) is not None and event.handler.is_background for event in events))

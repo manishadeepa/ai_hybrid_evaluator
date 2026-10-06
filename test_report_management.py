@@ -7,6 +7,30 @@ from backend.services.report_service import ReportService
 from backend.services.report_pdf import render_report_pdf
 
 
+def complete_report_candidate(fixture, candidate_id):
+    aid = fixture.a["assessment_id"]
+
+    # ReportService requires canonical assessment membership.
+    assessment = fixture.candidates.assessments.repository.get_by_id(aid)
+    assigned = list(assessment.get("assigned_candidates", []))
+    if candidate_id not in assigned:
+        assigned.append(candidate_id)
+    assessment["assigned_candidates"] = assigned
+    fixture.candidates.assessments.repository.save(assessment)
+
+    # EvaluationResultService treats an existing assignment as authoritative.
+    # A finalized report fixture therefore needs a Submitted assignment.
+    for tid in fixture.a["test_ids"].values():
+        fixture.service.assignment_repository.save(
+            {
+                "candidate_id": candidate_id,
+                "assessment_id": aid,
+                "test_id": tid,
+                "status": "Submitted",
+            }
+        )
+
+
 class ReportTests(unittest.TestCase):
     def setUp(self):
         self.fixture = fixtures.EvaluationResultTests()
@@ -15,6 +39,9 @@ class ReportTests(unittest.TestCase):
         self.f = self.fixture
         self.service = ReportService(self.f.service)
         self.aid, self.tid = self.f.key[1:]
+
+        complete_report_candidate(self.f, "C1")
+        complete_report_candidate(self.f, "C2")
 
     def build(self, tid=None, cid=None, aid=None):
         return self.service.build(aid or self.aid, tid or self.tid, cid, admin=True)
@@ -29,9 +56,26 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(report['test_category'], 'Formative')
 
     def test_summative_is_separate(self):
-        a = self.f.candidates.assessments.update_assessment(self.aid, {'final_test': 'Summative 1'})
-        self.f.manual_result(); self.f.manual_result(test='Summative 1')
-        report = self.build(a['test_ids']['Summative 1'])
+        a = self.f.candidates.assessments.update_assessment(
+            self.aid,
+            {'final_test': 'Summative 1'},
+        )
+
+        # Summative 1 is created after setUp(), so update_assessment()
+        # creates its candidate assignments in the normal Assigned state.
+        # This report fixture represents an already-completed test.
+        summative_tid = a['test_ids']['Summative 1']
+        for candidate_id in ('C1', 'C2'):
+            row = self.f.service.assignment_repository.get(
+                candidate_id,
+                summative_tid,
+            )
+            row['status'] = 'Submitted'
+            self.f.service.assignment_repository.save(row)
+
+        self.f.manual_result()
+        self.f.manual_result(test='Summative 1')
+        report = self.build(summative_tid)
         self.assertEqual(report['test_category'], 'Summative')
         self.assertEqual(len(report['candidates']), 1)
         self.assertEqual(report['candidates'][0]['test_name'], 'Summative 1')
@@ -114,6 +158,7 @@ class ReportStateTests(unittest.IsolatedAsyncioTestCase):
         self.module = module
         self.fixture = fixtures.EvaluationResultTests(); self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
+        complete_report_candidate(self.fixture, "C1")
         self.fixture.manual_result()
         root = rx.State(_reflex_internal_init=True)
         self.auth = root.get_substate(tuple(AuthState.get_full_name().split('.')))
@@ -134,7 +179,10 @@ class ReportStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fac.download_pdf_candidate, 'C1 Name (C1)')
         event = await self.fac.download_pdf_modal_submit()
         self.assertFalse(self.fac.show_download_pdf_modal)
-        self.assertIn('application/pdf', str(event))
+        event_text = str(event)
+        self.assertIn('_call_script', event_text)
+        self.assertIn('temp-pdf-report-frame', event_text)
+        self.assertIn('contentWindow.print', event_text)
 
     async def test_stale_scope_rejected_before_download(self):
         await self.fac.open_download_pdf_modal()

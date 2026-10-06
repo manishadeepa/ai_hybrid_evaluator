@@ -10,6 +10,7 @@ and to enrich it with resolved candidate details.
 
 import asyncio
 import base64
+import re
 from datetime import datetime
 from backend.services.manual_evaluation_service import ManualEvaluationService
 from backend.services.assessment_service import AssessmentService
@@ -178,8 +179,177 @@ def _batch_candidate_display(candidate_id, label, assessment, test, rows):
     return result
 
 
+def _authoritative_result_display(result: dict) -> dict:
+    """Adapt one finalized EvaluationResultService record for existing Report UI."""
+    questions = result.get("questions", [])
+
+    def number(value):
+        value = float(value or 0)
+        return str(int(value)) if value == int(value) else str(value)
+
+    display_questions = []
+
+    for row in questions:
+        maximum = float(row.get("maximum_marks", 0) or 0)
+        awarded = float(row.get("awarded_marks", 0) or 0)
+        percentage = (
+            round(awarded / maximum * 100, 1)
+            if maximum
+            else 0.0
+        )
+
+        display_questions.append({
+            **row,
+            "q_no": str(row.get("question_no", "")),
+            "response": row.get("candidate_answer") or "",
+            "ai_score": number(awarded),
+            "max_marks": number(maximum),
+            "score_pct": f"{number(percentage)}%",
+            "justification": row.get("justification") or "",
+        })
+
+    total = float(result.get("total_marks", 0) or 0)
+    maximum = float(result.get("max_marks", 0) or 0)
+    percentage = float(result.get("percentage", 0) or 0)
+
+    display = {
+        **result,
+        "candidate_id": str(result.get("candidate_id", "")),
+        "candidate_label": (
+            result.get("candidate_name")
+            or str(result.get("candidate_id", ""))
+        ),
+        "assessment_name": result.get("assessment_name", ""),
+        "test_name": result.get("test_name", ""),
+        "evaluation_type": result.get("evaluation_type", ""),
+        "status": "completed",
+        "score": f"{number(total)} / {number(maximum)}",
+        "marks_obtained": total,
+        "successful_marks": total,
+        "max_marks": maximum,
+        "max_score": number(maximum),
+        "normalized_score": percentage,
+        "percentage": f"{number(percentage)}%",
+        "eval_date": str(
+            result.get("updated_at")
+            or result.get("completed_at")
+            or result.get("created_at")
+            or ""
+        ),
+        "questions": display_questions,
+    }
+
+    for dimension in (
+        "co",
+        "lo",
+        "rbt_level",
+        "domain",
+        "knowledge_type",
+    ):
+        groups = {}
+
+        for row in questions:
+            code = str(row.get(dimension, "") or "")
+            if code:
+                groups.setdefault(code, []).append(row)
+
+        items = []
+
+        for code, members in groups.items():
+            max_marks = sum(
+                float(row.get("maximum_marks", 0) or 0)
+                for row in members
+            )
+            awarded = sum(
+                float(row.get("awarded_marks", 0) or 0)
+                for row in members
+            )
+
+            name = (
+                f"{dimension.upper()} - {code}"
+                if dimension in ("co", "lo")
+                else code
+            )
+
+            items.append({
+                "name": name,
+                "code": code,
+                "score": (
+                    int(round(awarded / max_marks * 100))
+                    if max_marks
+                    else 0
+                ),
+            })
+
+        display[dimension] = items
+
+    return display
+
+
+
+def _load_workspace_snapshot(scope, papers, upload_dir, ai_results, include_progress):
+    """Load a view in a worker, never from a computed property or by grading."""
+    from backend.services.evaluation_result_service import EvaluationResultService
+    from backend.services.assessment_progress_service import AssessmentProgressService
+    from backend.repositories.json_repository import repository_read_scope
+    aid, assessment_name, test_name, candidate = scope
+    snapshot = {"scope": list(scope), "results": {}, "response": {}, "papers": {}, "errors": []}
+    if not (aid or assessment_name):
+        return snapshot
+    with repository_read_scope():
+        try:
+            service = EvaluationResultService()
+            catalog = service.assessments.load_assessments()
+            matches = [a for a in catalog if (a.get("assessment_id") == aid if aid else a["name"] == assessment_name)]
+            if len(matches) == 1:
+                for result in service.list_results(assessment_id=matches[0]["assessment_id"]):
+                    display = _authoritative_result_display(result)
+                    snapshot["results"][f"{display['candidate_label']}:{display['test_name']}"] = display
+                if include_progress:
+                    snapshot["progress"] = AssessmentProgressService(service.assessments).get_progress(
+                        matches[0]["assessment_id"], ai_results)
+        except (ValueError, OSError) as exc:
+            import logging
+            logging.getLogger(__name__).exception("Unable to refresh assessment results")
+            snapshot["errors"].append(str(exc))
+        if candidate and candidate not in ("All Candidates", "No candidates assigned") and test_name:
+            snapshot["response"] = _find_candidate_response(candidate, test_name, assessment_name) or {}
+        for test, filename in papers.get(assessment_name, {}).items():
+            snapshot["papers"][test] = bool(filename and (
+                (Path(upload_dir) / filename).exists() or (Path("uploaded_files") / filename).exists()))
+    return snapshot
+
+
 class FacilitatorState(rx.State):
     # â”€â”€ Dashboard selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    # Backend-only snapshots: raw rows are not sent with every browser event.
+    _workspace_snapshot: dict = {}
+    _workspace_refresh_generation: int = 0
+    _last_ai_revision: tuple = ()
+
+    @rx.event(background=True)
+    async def refresh_workspace_snapshot(self, include_progress: bool = True):
+        async with self:
+            self._workspace_refresh_generation += 1
+            generation = self._workspace_refresh_generation
+            scope = (self.selected_assessment_id, self.selected_assessment_name,
+                     self.selected_test_name, self.selected_evaluation_candidate)
+            papers = {k: dict(v) for k, v in self.question_papers.items()}
+            ai_results = dict(self.real_ai_results_per_candidate) if include_progress else {}
+        snapshot = await asyncio.to_thread(_load_workspace_snapshot, scope, papers,
+                                           str(rx.get_upload_dir()), ai_results, include_progress)
+        async with self:
+            current = (self.selected_assessment_id, self.selected_assessment_name,
+                       self.selected_test_name, self.selected_evaluation_candidate)
+            if generation != self._workspace_refresh_generation or scope != current:
+                return  # A slower old selection may not overwrite the current one.
+            if not include_progress and self._workspace_snapshot.get("scope", [])[:2] == list(scope[:2]):
+                snapshot["progress"] = self._workspace_snapshot.get("progress", {})
+            self._workspace_snapshot = snapshot
+        if snapshot["errors"]:
+            yield rx.toast.error("Unable to refresh assessment data: " + "; ".join(snapshot["errors"]))
+
     selected_assessment_index: int = -1
     selected_assessment_name: str = ""
     selected_assessment_id: str = ""
@@ -204,7 +374,9 @@ class FacilitatorState(rx.State):
             return rx.redirect("/signin")
         admin_state = await self.get_state(AdminState)
         try:
-            admin_state._load_persisted_assessments(self.question_papers)
+            error = await admin_state.load_persisted_assessments_async(self.question_papers)
+            if error:
+                return error
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
         self.question_papers = {
@@ -219,6 +391,11 @@ class FacilitatorState(rx.State):
                 self.selected_assessment_index = -1
                 return rx.toast.error(str(exc))
         self.selected_evaluation_test = self.selected_test_name
+        self.saved_assessment_weightages = await asyncio.to_thread(self._load_saved_weightages)
+        self.saved_assessment_pass_percentages = await asyncio.to_thread(self._load_saved_pass_percentages)
+        self.completed_assessments = await asyncio.to_thread(self._load_saved_completions)
+        # Routing also calls this method internally and treats a return as an error.
+        # The workspace component mounts the refresh event after navigation.
 
     async def _workspace_assessment(self):
         """Resolve display state against the assigned canonical assessment identity."""
@@ -240,17 +417,10 @@ class FacilitatorState(rx.State):
 
     @rx.var
     async def assessment_management_progress(self) -> dict:
-        from backend.services.assessment_service import AssessmentService
-        from backend.services.assessment_progress_service import AssessmentProgressService
-        admin_state = await self.get_state(AdminState)
-        record = next((a for a in admin_state.assessments if a["name"] == self.selected_assessment_name), None)
-        if not record or not record.get("assessment_id"):
+        snapshot = self._workspace_snapshot
+        if snapshot.get("scope", [])[:2] != [self.selected_assessment_id, self.selected_assessment_name]:
             return {}
-        try:
-            return AssessmentProgressService(AssessmentService()).get_progress(
-                record["assessment_id"], self.real_ai_results_per_candidate)
-        except (ValueError, OSError) as exc:
-            return {"error": str(exc)}
+        return snapshot.get("progress", {})
 
     async def set_workspace_tab(self, tab: str):
         """Switch the active tab inside the Assessment Workspace."""
@@ -258,7 +428,7 @@ class FacilitatorState(rx.State):
             self.active_workspace_tab = tab
             if tab == "weightage" and self.selected_assessment_name:
                 await self.sync_assessment_weightage(self.selected_assessment_name)
-        return rx.redirect("/facilitator/assessment")
+        return [rx.redirect("/facilitator/assessment"), FacilitatorState.refresh_workspace_snapshot()]
 
     # â”€â”€ Question Paper uploads (Test-wise) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Structure: { assessment_name: { test_name: filename } }
@@ -483,7 +653,7 @@ class FacilitatorState(rx.State):
                         parts = key.split(":")
                         t_part = parts[1].strip() if len(parts) > 1 else ""
                         c_part = parts[0].strip()
-                        if t_part == t_name and (cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name)):
+                        if t_part == t_name and self._results_candidate_matches(c_part, cand_name, cand_id):
                             t_score = self._calculate_normalized_score(val)
                             break
                     if t_score is not None:
@@ -512,7 +682,7 @@ class FacilitatorState(rx.State):
                     if t_part != test_name:
                         continue
                     # Match by name or emp_id embedded in key
-                    if cand_name in c_part or cand_id in c_part or c_part.startswith(cand_name):
+                    if self._results_candidate_matches(c_part, cand_name, cand_id):
                         score = self._calculate_normalized_score(val)
                         break
 
@@ -1543,8 +1713,6 @@ class FacilitatorState(rx.State):
     def get_test_pass_percentage(self, test_name: str, assessment_name: str = "") -> float:
         """Get configured pass percentage for a specific test in an assessment (defaults to 50.0)."""
         asmn = assessment_name or self.selected_assessment_name
-        if not self.saved_assessment_pass_percentages:
-            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
         cur_inputs = self.pass_percentage_inputs.get(asmn, {})
         if test_name in cur_inputs and str(cur_inputs[test_name]).strip():
             try:
@@ -1561,10 +1729,6 @@ class FacilitatorState(rx.State):
         """Weighted pass percentage across all tests in the assessment if weightages total 100%,
         otherwise simple average of test pass percentages (defaults to 50.0)."""
         asmn = assessment_name or self.selected_assessment_name
-        if not self.saved_assessment_weightages:
-            self.saved_assessment_weightages = self._load_saved_weightages()
-        if not self.saved_assessment_pass_percentages:
-            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
         saved_w = self.saved_assessment_weightages.get(asmn, {})
         total_w = sum(saved_w.values())
         if total_w == 100 and saved_w:
@@ -1821,8 +1985,6 @@ class FacilitatorState(rx.State):
         if not match:
             return []
 
-        if not self.saved_assessment_pass_percentages:
-            self.saved_assessment_pass_percentages = self._load_saved_pass_percentages()
         saved_w = self.saved_assessment_weightages.get(asmn, {})
         cur_w = self.weightage_inputs.get(asmn, {})
         saved_p = self.saved_assessment_pass_percentages.get(asmn, {})
@@ -2009,13 +2171,17 @@ class FacilitatorState(rx.State):
             self.real_ai_max_score_display = saved.get("max_score", "â€”")
             self.real_ai_percentage_display = saved.get("percentage", "â€”")
             self.real_ai_evaluation_date = saved.get("eval_date", "Not evaluated")
-            self.real_ai_eval_questions = saved.get("questions", [])
+            self.real_ai_eval_questions = sorted(
+                [dict(q) for q in saved.get("questions", [])],
+                key=lambda q: self._question_number_sort_key(q.get("q_no", ""))
+            )
         else:
             self.real_ai_score_display = "â€”"
             self.real_ai_max_score_display = "â€”"
             self.real_ai_percentage_display = "â€”"
             self.real_ai_evaluation_date = "Not evaluated"
             self.real_ai_eval_questions = []
+        return FacilitatorState.refresh_workspace_snapshot(False)
 
     def start_replacing_qp(self, test_name: str = ""):
         """Switch active view to the upload dropzone to replace the existing question paper."""
@@ -2048,7 +2214,7 @@ class FacilitatorState(rx.State):
             file = files[0]
             await asyncio.to_thread(papers.import_upload, assessment["assessment_id"],
                                     assessment["test_ids"][test_name], file.filename, await file.read())
-            admin_state._apply_assessment_records(service.load_assessments())
+            admin_state._apply_assessment_records(await asyncio.to_thread(service.load_assessments))
             self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
         except (ValueError, OSError) as exc:
             self.qp_validation_status = "error"
@@ -2060,7 +2226,7 @@ class FacilitatorState(rx.State):
         self.qp_validation_error = ""
         self.qp_validation_status = "success"
         self.qp_validation_popup_open = True
-        return rx.toast.success(f"Question paper uploaded for {test_name}: {file.filename}")
+        return [rx.toast.success(f"Question paper uploaded for {test_name}: {file.filename}"), FacilitatorState.refresh_workspace_snapshot()]
 
     async def remove_test_question_paper(self, test_name: str):
         """Detach safely while retaining the original workbook."""
@@ -2072,10 +2238,10 @@ class FacilitatorState(rx.State):
                 raise ValueError("Select an existing assessment; reload the workspace if necessary.")
             service = AssessmentService()
             QuestionPaperService(service.tests).remove_paper(assessment["assessment_id"], assessment.get("test_ids", {}).get(test_name, ""))
-            admin_state._apply_assessment_records(service.load_assessments())
+            admin_state._apply_assessment_records(await asyncio.to_thread(service.load_assessments))
             self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
             self.is_replacing_qp = False
-            return rx.toast.info(f"Question paper removed for {test_name}.")
+            return [rx.toast.info(f"Question paper removed for {test_name}."), FacilitatorState.refresh_workspace_snapshot()]
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc) if isinstance(exc, ValueError) else "Unable to remove question paper; please try again.")
 
@@ -2090,9 +2256,10 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def has_current_test_qp(self) -> bool:
-        """True when the active test in open assessment has a QP uploaded."""
-        qp_map = self.question_papers.get(self.selected_assessment_name, {})
-        return bool(qp_map.get(self.selected_test_name, ""))
+        snapshot = self._workspace_snapshot
+        if snapshot.get("scope", [])[:2] != [self.selected_assessment_id, self.selected_assessment_name]:
+            return False
+        return bool(snapshot.get("papers", {}).get(self.selected_test_name, False))
 
     @rx.var
     def current_assessment_qp_dict(self) -> dict[str, str]:
@@ -2150,53 +2317,42 @@ class FacilitatorState(rx.State):
     excel_total_rows_count: int = 0
     excel_total_cols_count: int = 0
 
-    def load_excel_preview_data(self, filename: str, test_name: str):
-        """Parse the actual uploaded Excel file from disk. Resets to empty if no file exists."""
-        self.excel_headers = []
-        self.excel_rows = []
-        self.excel_sheet_name = ""
-        self.excel_total_rows_count = 0
-        self.excel_total_cols_count = 0
+    @staticmethod
+    def _read_excel_preview(filepath: str):
+        import openpyxl
+        workbook = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+        try:
+            sheet = workbook.active
+            data = [[str(v) if v is not None else "" for v in row]
+                    for row in sheet.iter_rows(values_only=True) if any(v is not None for v in row)]
+            return data[0] if data else [], data[1:] if data else [], sheet.title or "Questions"
+        finally:
+            workbook.close()
 
-        if filename:
-            filepath = rx.get_upload_dir() / filename
-            if not filepath.exists():
-                filepath = Path("uploaded_files") / filename
-            if filepath.exists() and filename.lower().endswith((".xlsx", ".xls")):
-                try:
-                    import openpyxl
-                    wb = openpyxl.load_workbook(filepath, data_only=True)
-                    sheet = wb.active
-                    data = []
-                    for row in sheet.iter_rows(values_only=True):
-                        if any(v is not None for v in row):
-                            data.append([str(v) if v is not None else "" for v in row])
-                    if data and len(data) >= 1:
-                        self.excel_headers = [str(h) for h in data[0]]
-                        self.excel_rows = data[1:]
-                        self.excel_sheet_name = f"{sheet.title or 'Questions'}"
-                        self.excel_total_rows_count = len(self.excel_rows)
-                        self.excel_total_cols_count = len(self.excel_headers)
-                except Exception:
-                    pass
+    async def load_excel_preview_data(self, filename: str, test_name: str):
+        filepath = Path(rx.get_upload_dir()) / filename
+        if not filepath.exists():
+            filepath = Path("uploaded_files") / filename
+        self.excel_headers, self.excel_rows, self.excel_sheet_name = await asyncio.to_thread(
+            self._read_excel_preview, str(filepath))
+        self.excel_total_rows_count = len(self.excel_rows)
+        self.excel_total_cols_count = len(self.excel_headers)
 
-    def open_qp_preview(self, test_name: str, assessment_name: str = ""):
-        """Opens the Question Paper preview dialog for the given test only if actual file exists."""
+    async def open_qp_preview(self, test_name: str, assessment_name: str = ""):
+        """Read the selected workbook without blocking other browser sessions."""
         asmn_name = assessment_name or self.selected_assessment_name
         qp_fn = self.question_papers.get(asmn_name, {}).get(test_name, "")
         if not qp_fn:
             return rx.toast.warning(f"No question paper uploaded for {test_name}.")
-
-        filepath = rx.get_upload_dir() / qp_fn
-        if not filepath.exists():
-            filepath = Path("uploaded_files") / qp_fn
-        if not filepath.exists():
-            return rx.toast.warning(f"Question paper file '{qp_fn}' not found on server.")
-
+        try:
+            await self.load_excel_preview_data(qp_fn, test_name)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Unable to read question paper preview")
+            return rx.toast.error("Unable to read the selected question paper. Check the file and server log.")
         self.viewing_qp_test_name = test_name
         self.viewing_qp_assessment_name = asmn_name
         self.viewing_qp_filename = qp_fn
-        self.load_excel_preview_data(qp_fn, test_name)
         self.show_qp_preview_dialog = True
 
     def set_show_qp_preview_dialog(self, value: bool):
@@ -2246,8 +2402,6 @@ class FacilitatorState(rx.State):
             admin_qp_dict = a.get("question_papers", {})
 
             # Ensure saved weightages loaded
-            if not self.saved_assessment_weightages:
-                self.saved_assessment_weightages = self._load_saved_weightages()
             saved_w = self.saved_assessment_weightages.get(a["name"], {})
             cur_w = self.weightage_inputs.get(a["name"], {})
 
@@ -2453,6 +2607,7 @@ class FacilitatorState(rx.State):
     new_test_name: str = ""
     new_test_date: str = ""
     new_test_description: str = ""
+    new_question_type: str = ""  # "" (unset) | "Objective" | "Subjective" | "Hybrid"
     suggested_formative_name: str = ""
 
     def set_show_add_test_modal(self, value: bool):
@@ -2475,6 +2630,9 @@ class FacilitatorState(rx.State):
 
     def set_new_test_date(self, value: str):
         self.new_test_date = value
+
+    def set_new_question_type(self, value: str):
+        self.new_question_type = value
 
     def set_new_test_description(self, value: str):
         if len(value) <= 200:
@@ -2512,6 +2670,7 @@ class FacilitatorState(rx.State):
         self.new_test_name = formative_name
         self.new_test_date = ""
         self.new_test_description = ""
+        self.new_question_type = ""
         self.show_add_test_modal = True
 
     async def facilitator_add_test(self):
@@ -2550,6 +2709,8 @@ class FacilitatorState(rx.State):
             print(f"[CREATE TEST TIMING] _workspace_assessment: {time.perf_counter() - _step:.3f}s", flush=True)
         except ValueError as exc:
             return rx.toast.error(str(exc))
+        if self.new_question_type not in ("Objective", "Subjective", "Hybrid"):
+            return rx.toast.error("Please select a Question Type.")
         admin_state = await self.get_state(AdminState)
         name = assessment["name"]
         found = False
@@ -2560,7 +2721,8 @@ class FacilitatorState(rx.State):
                     _step = time.perf_counter()
                     updated = admin_state._add_assessment_test(
                         dict(a), test_name, formatted_date, self.new_test_description.strip(),
-                        self.new_test_type == "Summative")
+                        self.new_test_type == "Summative",
+                        test_type={"Objective": "objective", "Subjective": "subjective", "Hybrid": "mixed"}[self.new_question_type])
                     print(f"[CREATE TEST TIMING] _add_assessment_test: {time.perf_counter() - _step:.3f}s", flush=True)
                 except (ValueError, OSError) as exc:
                     return rx.toast.error(str(exc))
@@ -2586,7 +2748,10 @@ class FacilitatorState(rx.State):
 
         self.show_add_test_modal = False
         print(f"[CREATE TEST TIMING] TOTAL HANDLER: {time.perf_counter() - _create_start:.3f}s", flush=True)
-        return rx.toast.success(f"Test '{test_name}' created successfully!")
+        return [
+            rx.toast.success(f"Test '{test_name}' created successfully!"),
+            FacilitatorState.refresh_workspace_snapshot(),
+        ]
 
     async def facilitator_remove_test(self, test_name: str):
         """Remove a test from the currently open assessment."""
@@ -2601,7 +2766,7 @@ class FacilitatorState(rx.State):
                         a = admin_state._persist_assessment_record(dict(a))
                     service = AssessmentService()
                     updated = service.delete_test(a["assessment_id"], a["test_ids"][test_name])
-                    admin_state._apply_assessment_records(service.load_assessments())
+                    admin_state._apply_assessment_records(await asyncio.to_thread(service.load_assessments))
                 except (ValueError, OSError) as exc:
                     return rx.toast.error(str(exc))
                 self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
@@ -2616,7 +2781,10 @@ class FacilitatorState(rx.State):
         # Reset Overall Report lock â€” facilitator must re-mark assessment Complete after removing tests
         self._unmark_assessment_complete(name)
         await self.sync_assessment_weightage(name)
-        return rx.toast.info(f"Test '{test_name}' removed from {name}.")
+        return [
+            rx.toast.info(f"Test '{test_name}' removed from {name}."),
+            FacilitatorState.refresh_workspace_snapshot(),
+        ]
 
     # â”€â”€ AI Evaluation Engine & Candidate Submissions State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     is_ai_evaluating: bool = False
@@ -2835,7 +3003,11 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def assessment_evaluation_results(self) -> dict[str, dict]:
-        return _assessment_result_view(self.real_ai_results_per_candidate, self.selected_assessment_name)
+        """Memory view refreshed on selection, page load, and finalized evaluations."""
+        snapshot = getattr(self, "_workspace_snapshot", {})
+        if snapshot.get("scope", [])[:2] != [getattr(self, "selected_assessment_id", ""), self.selected_assessment_name]:
+            return {}
+        return snapshot.get("results", {})
 
     batch_evaluation_errors: list[dict] = []
 
@@ -2850,13 +3022,34 @@ class FacilitatorState(rx.State):
         # A late old worker may save its own history but cannot replace newer UI state.
         if self.active_ai_run_id != run['run_id'] or run.get('superseded_by_run_id'):
             return
+        revision = (run['run_id'], run.get('updated_at'), run['status'],
+                    self.selected_assessment_name, self.selected_test_name, self.selected_evaluation_candidate)
+        if not restore and run.get('updated_at') and getattr(self, '_last_ai_revision', ()) == revision:
+            return
+        self._last_ai_revision = revision
         self.ai_run_status = run['status']
         self.is_ai_evaluating = run['status'] in ('running', 'stop_requested')
         self.ai_evaluation_done = run['status'] == 'completed' and not run['skipped']
         self.eval_progress_current = run['completed_questions']
+        def _progress_question_number(question):
+            question_no = str(
+                question.get('record', {}).get('question_no', '')
+            ).strip()
+            match = re.search(r'\d+', question_no)
+            return int(match.group()) if match else 10**9
+
+        progress_questions = sorted(
+            run['questions'],
+            key=_progress_question_number,
+        )
+
         self.eval_progress_questions = [
-            {'label': f"{q['record']['candidate_id']} / {q['record']['question_no']}", 'status': q['status']}
-            for q in run['questions']]
+            {
+                'label': str(q['record']['question_no']).strip(),
+                'status': q['status'],
+            }
+            for q in progress_questions
+        ]
         errors = list(run['skipped'])
         errors.extend({'candidate_id': q['record']['candidate_id'], 'question_no': q['record']['question_no'],
                        'status': 'failed', 'error': q['error']} for q in run['questions'] if q['status'] == 'failed')
@@ -2919,7 +3112,7 @@ class FacilitatorState(rx.State):
         self.ai_evaluation_done = False
         try:
             service = AIEvaluationRunService()
-            existing = self._selected_ai_run(service)
+            existing = await asyncio.to_thread(self._selected_ai_run, service)
             if existing:
                 self.active_ai_run_id = existing['run_id']
                 self._apply_ai_run(existing)
@@ -2938,11 +3131,39 @@ class FacilitatorState(rx.State):
                 paper = Path('uploaded_files') / filename
             if not paper.exists():
                 raise FileNotFoundError("The selected question paper is missing.")
-            answer_key = self.answer_key_uploaded_path if self.answer_key_uploaded and self.answer_key_uploaded_path else None
+            # The Question Paper is the single source of truth.
+            # Its canonical question records already contain the Answer Key.
+            # A separate Answer Key workbook must never control AI evaluation.
+            answer_key = None
             mine = await self.my_assessments
-            assessment_record = next((a for a in mine if a['name'] == assessment), {})
-            identities = {'assessment_id': assessment_record.get('assessment_id', ''),
-                          'test_id': assessment_record.get('test_ids', {}).get(test, '')}
+
+            # Prefer the canonical assessment ID selected by the UI.
+            # Fall back to the display name only for legacy/restored state.
+            selected_assessment_id = getattr(
+                self,
+                'selected_assessment_id',
+                '',
+            )
+
+            assessment_record = next(
+                (
+                    a for a in mine
+                    if selected_assessment_id
+                    and a.get('assessment_id') == selected_assessment_id
+                ),
+                None,
+            )
+
+            if assessment_record is None:
+                assessment_record = next(
+                    (a for a in mine if a.get('name') == assessment),
+                    {},
+                )
+
+            identities = {
+                'assessment_id': assessment_record.get('assessment_id', ''),
+                'test_id': assessment_record.get('test_ids', {}).get(test, ''),
+            }
             if all_candidates:
                 records, labels, errors = [], {}, []
                 for candidate in assessment_record.get('candidate_details', []):
@@ -2950,7 +3171,7 @@ class FacilitatorState(rx.State):
                     if candidate_id in labels:
                         continue
                     labels[candidate_id] = f"{candidate['name']} ({candidate_id})"
-                    response = get_latest_candidate_response(candidate_id=candidate_id, candidate_name=candidate['name'],
+                    response = await asyncio.to_thread(get_latest_candidate_response, candidate_id=candidate_id, candidate_name=candidate['name'],
                         assessment_name=assessment, test_name=test, require_assessment_scope=True)
                     if not response.get('responses'):
                         errors.append({'candidate_id': candidate_id, 'status': 'skipped',
@@ -2964,17 +3185,17 @@ class FacilitatorState(rx.State):
                 if not records:
                     yield rx.toast.warning("No assessment-verified candidate responses are available for evaluation.")
                     return
-                run = service.prepare_batch(assessment, test, records, labels, paper, answer_key, skipped=errors, **identities)
+                run = await asyncio.to_thread(service.prepare_batch, assessment, test, records, labels, paper, answer_key, skipped=errors, **identities)
             else:
                 label = self.selected_evaluation_candidate
                 candidate_id = _evaluation_candidate_id(label)
                 if (not candidate_id or label == 'No candidates assigned'
                         or candidate_id not in [str(c['emp_id']) for c in assessment_record.get('candidate_details', [])]):
                     raise ValueError("Select an assigned candidate.")
-                response = _find_response_file_path(label, test, assessment, require_assessment_scope=True)
+                response = await asyncio.to_thread(_find_response_file_path, label, test, assessment, require_assessment_scope=True)
                 if response is None:
                     raise FileNotFoundError("No candidate response found for this assessment/test.")
-                run = service.prepare_single(assessment, test, candidate_id, label, paper, response, answer_key, **identities)
+                run = await asyncio.to_thread(service.prepare_single, assessment, test, candidate_id, label, paper, response, answer_key, **identities)
             self.active_ai_run_id = run['run_id']
             self.show_eval_progress_modal = True
             self._apply_ai_run(run)
@@ -3009,7 +3230,7 @@ class FacilitatorState(rx.State):
                     details = '; '.join(f"{e.get('question_no', '')}: {e['error']}" for e in self.batch_evaluation_errors)
                     message = (rx.toast.warning(f"AI evaluation incomplete. {details}") if run['candidate_scope'] == 'all'
                                else rx.toast.error(f"AI evaluation incomplete. {details}"))
-            yield message
+            yield [message, FacilitatorState.refresh_workspace_snapshot()]
         except Exception as exc:
             async with self:
                 if self.active_ai_run_id != run_id:
@@ -3057,7 +3278,7 @@ class FacilitatorState(rx.State):
         return rx.toast.info("AI Evaluation Results Report downloaded (Mock CSV)!")
 
     # â”€â”€ Results Tab Analytics State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    results_selected_candidate: str = "All Candidates"
+    results_selected_candidate: str = ""
     results_view_mode: str = "individual"  # "individual" or "all"
     results_active_dimension_tab: str = "co"  # "co", "lo", "knowledge_type", "domain", "rbt_level", "question_wise"
     results_selected_test: str = ""  # empty = first test / all tests; otherwise specific test name
@@ -3081,6 +3302,46 @@ class FacilitatorState(rx.State):
     close_assessment_feedback_answers: dict[str, str] = {}
     # Sync cache of the current assessment's candidates â€” populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
+
+    @staticmethod
+    def _parse_results_key(key: str) -> tuple[str, str]:
+        """Parse the canonical Results key: candidate:test."""
+        candidate_part, separator, test_part = str(key).partition(":")
+        if not separator:
+            return candidate_part.strip(), ""
+        return candidate_part.strip(), test_part.strip()
+
+    @staticmethod
+    def _results_candidate_identity(candidate_value: str) -> tuple[str, str]:
+        """Return normalized (candidate_name, candidate_id) from a Results label."""
+        value = str(candidate_value or "").strip()
+
+        if "(" in value and value.endswith(")"):
+            name, candidate_id = value.rsplit("(", 1)
+            return name.strip(), candidate_id[:-1].strip()
+
+        return value, value
+
+    @classmethod
+    def _results_candidate_matches(
+        cls,
+        candidate_part: str,
+        candidate_name: str,
+        candidate_id: str,
+    ) -> bool:
+        """Match a Results candidate exactly by persisted ID or exact name."""
+        part_name, part_id = cls._results_candidate_identity(candidate_part)
+
+        expected_name = str(candidate_name or "").strip()
+        expected_id = str(candidate_id or "").strip()
+
+        if expected_id and part_id and expected_id.casefold() == part_id.casefold():
+            return True
+
+        if expected_name and part_name:
+            return expected_name.casefold() == part_name.casefold()
+
+        return False
 
     def set_results_view_mode(self, mode: str):
         self.results_view_mode = mode
@@ -3322,8 +3583,14 @@ class FacilitatorState(rx.State):
         self.show_download_pdf_modal = True
 
     async def download_pdf_from_preview(self):
-        """Keep the upstream preview control and the backend's real PDF download."""
-        return await self.download_pdf_modal_submit()
+        """Export the exact report currently shown in the PDF preview."""
+        if not self.pdf_preview_html:
+            return rx.toast.warning(
+                "PDF preview is not available. Please generate the preview again."
+            )
+
+        script = generate_iframe_print_script(self.pdf_preview_html)
+        return rx.call_script(script)
 
     async def print_pdf_from_preview(self):
         """Print directly from the active preview HTML."""
@@ -3336,28 +3603,67 @@ class FacilitatorState(rx.State):
 
     async def download_pdf_modal_submit(self):
         auth = await self.get_state(AuthState)
+
         try:
             if not (auth.is_authenticated or auth.is_facilitator_authenticated):
                 raise ValueError("Please sign in before downloading reports.")
-            if not self.report_assessment_id or self.report_assessment_id != self.selected_assessment_id:
+
+            if (
+                not self.report_assessment_id
+                or self.report_assessment_id != self.selected_assessment_id
+            ):
                 raise ValueError("Assessment selection changed. Reopen Download PDF.")
+
             if len(self.download_pdf_selected_tests) != 1:
                 raise ValueError("Select exactly one test.")
-            tid = self._report_test_ids.get(self.download_pdf_selected_tests[0], "")
-            cid = None
+
+            test_label = self.download_pdf_selected_tests[0]
+            if test_label not in self._report_test_ids:
+                raise ValueError("The selected test is no longer available.")
+
             if self.download_pdf_report_type == "individual":
-                cid = self._report_candidate_ids.get(self.download_pdf_candidate, "")
-            elif self.download_pdf_report_type != "all":
-                raise ValueError("Select a report type.")
-            filename, data = await asyncio.to_thread(ReportService().download,
-                self.report_assessment_id, tid, cid,
-                facilitator_id=auth.facilitator_emp_id, admin=auth.is_authenticated)
+                if self.download_pdf_candidate not in self._report_candidate_ids:
+                    raise ValueError("Select a candidate assigned to this assessment.")
+
+                report_data, candidate_name, test_name = (
+                    await self._get_individual_test_report_data(test_label)
+                )
+                if not report_data:
+                    raise ValueError(
+                        self._report_preview_error
+                        or f"No finalized result is available for {candidate_name} / {test_name}."
+                    )
+
+                html_content = build_individual_test_pdf_html(report_data)
+                self.pdf_preview_title = (
+                    f"{candidate_name} - {test_name} Results PDF Preview"
+                )
+
+            elif self.download_pdf_report_type == "all":
+                report_data = await self._get_all_candidates_report_data()
+                if not report_data or not report_data.get("candidates"):
+                    raise ValueError(
+                        self._report_preview_error
+                        or "No candidate data is available for this report."
+                    )
+
+                html_content = build_all_candidates_pdf_html(report_data)
+                self.pdf_preview_title = (
+                    f"All Candidates - {report_data['assessment_name']} "
+                    f"({test_label}) Results PDF Preview"
+                )
+
+            else:
+                raise ValueError("Select Individual Candidate or All Candidates.")
+
+            self.pdf_preview_html = html_content
             self.show_download_pdf_modal = False
-            return rx.download(data=data, filename=filename, mime_type="application/pdf")
+
+            script = generate_iframe_print_script(html_content)
+            return rx.call_script(script)
+
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
-        except ImportError:
-            return rx.toast.error("PDF support is not installed. Install the project requirements.")
 
     def open_close_assessment_dialog(self):
         self.show_close_assessment_confirm_dialog = True
@@ -3541,13 +3847,11 @@ class FacilitatorState(rx.State):
         self.results_active_dimension_tab = tab_key
 
     def set_results_selected_test(self, test_name: str):
-        """Update the results test filter and also sync selected_test_name."""
+        """Update only the Results-page test filter."""
         if test_name in ("All Tests (Overall)", ""):
             self.results_selected_test = ""
-            self.selected_test_name = ""
         else:
             self.results_selected_test = test_name
-            self.selected_test_name = test_name
 
     def set_results_selected_analysis_test(self, test_name: str):
         self.results_selected_analysis_test = test_name
@@ -3579,52 +3883,150 @@ class FacilitatorState(rx.State):
 
     @rx.var(cache=True)
     async def results_candidate_options(self) -> list[str]:
-        """Derive Results candidate dropdown dynamically from the actual candidates assigned to the currently selected assessment."""
-        options = []
+        """Candidates assigned to the currently selected assessment.
+
+        Assessment membership is authoritative. Persisted candidate data is
+        used for display names. Evaluation results may help resolve a name,
+        but they must never add a candidate that is not assigned to the
+        assessment.
+        """
         admin_state = await self.get_state(AdminState)
 
-        # 1. Match assessment by selected_assessment_name, or fall back to first assessment in admin_state
-        target_name = self.selected_assessment_name.strip().lower()
-        target_a = None
-        for a in admin_state.assessments:
-            if target_name and a.get("name", "").strip().lower() == target_name:
-                target_a = a
+        selected_name = str(
+            self.selected_assessment_name or ""
+        ).strip().casefold()
+
+        selected_id = str(
+            self.selected_assessment_id or ""
+        ).strip()
+
+        target_assessment = None
+
+        for assessment in admin_state.assessments:
+            assessment_id = str(
+                assessment.get("assessment_id", "") or ""
+            ).strip()
+
+            assessment_name = str(
+                assessment.get("name", "") or ""
+            ).strip().casefold()
+
+            if selected_id and assessment_id == selected_id:
+                target_assessment = assessment
                 break
-        if target_a is None and admin_state.assessments:
-            target_a = admin_state.assessments[0]
 
-        if target_a:
-            # Candidate IDs assigned to this assessment
-            assigned_ids = target_a.get("assigned_candidates", [])
+            if selected_name and assessment_name == selected_name:
+                target_assessment = assessment
+                break
 
-            # Map of candidate ID -> Candidate Name from admin_state.candidates
-            cand_map = {c["emp_id"]: c["name"] for c in admin_state.candidates if "emp_id" in c and "name" in c}
+        if target_assessment is None:
+            return []
 
-            # Fallback to SHARED_CANDIDATES
-            from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
-            for c in SHARED_CANDIDATES:
-                if c["emp_id"] not in cand_map:
-                    cand_map[c["emp_id"]] = c["name"]
+        assigned_ids = [
+            str(candidate_id).strip()
+            for candidate_id in target_assessment.get(
+                "assigned_candidates", []
+            )
+            if str(candidate_id).strip()
+        ]
 
-            for cid in assigned_ids:
-                cname = cand_map.get(cid, cid)
-                label = f"{cname} ({cid})"
-                if label not in options:
-                    options.append(label)
+        # Persisted candidate records loaded by AdminState.
+        candidate_map = {}
 
-            # Also check if target_a has candidate_details or candidates dicts directly
-            for c in target_a.get("candidate_details", []):
-                label = f"{c['name']} ({c['emp_id']})"
-                if label not in options:
-                    options.append(label)
+        for candidate in admin_state.candidates:
+            candidate_id = str(
+                candidate.get("emp_id")
+                or candidate.get("candidate_id")
+                or ""
+            ).strip()
 
-        # Also include any evaluated candidates from real_ai_results_per_candidate
-        for key in self.assessment_evaluation_results.keys():
-            cand_part = key.split(":")[0].strip()
-            if cand_part and cand_part != "All Candidates" and cand_part not in options:
-                options.append(cand_part)
+            candidate_name = str(
+                candidate.get("name", "") or ""
+            ).strip()
+
+            if candidate_id:
+                candidate_map[candidate_id.casefold()] = (
+                    candidate_name or candidate_id
+                )
+
+        # candidate_details belongs to this assessment and is therefore
+        # safe as a secondary identity source.
+        for candidate in target_assessment.get(
+            "candidate_details", []
+        ):
+            candidate_id = str(
+                candidate.get("emp_id")
+                or candidate.get("candidate_id")
+                or ""
+            ).strip()
+
+            candidate_name = str(
+                candidate.get("name", "") or ""
+            ).strip()
+
+            if candidate_id and candidate_id.casefold() not in candidate_map:
+                candidate_map[candidate_id.casefold()] = (
+                    candidate_name or candidate_id
+                )
+
+        # Persisted evaluation results may contain a useful display name.
+        # IMPORTANT: they cannot create assessment membership.
+        evaluated_names = {}
+
+        for key, result in self.assessment_evaluation_results.items():
+            parts = str(key).split(":")
+
+            result_candidate_id = str(
+                result.get("candidate_id", "") or ""
+            ).strip()
+
+            if not result_candidate_id and parts:
+                candidate_part = parts[0].strip()
+
+                id_match = re.search(
+                    r"\(([^()]+)\)\s*$",
+                    candidate_part,
+                )
+
+                if id_match:
+                    result_candidate_id = id_match.group(1).strip()
+                elif candidate_part in assigned_ids:
+                    result_candidate_id = candidate_part
+
+            result_name = str(
+                result.get("candidate_name", "") or ""
+            ).strip()
+
+            if (
+                not result_name
+                and parts
+                and "(" in parts[0]
+            ):
+                result_name = parts[0].split("(", 1)[0].strip()
+
+            if result_candidate_id and result_name:
+                evaluated_names[
+                    result_candidate_id.casefold()
+                ] = result_name
+
+        options = []
+
+        for candidate_id in assigned_ids:
+            lookup_id = candidate_id.casefold()
+
+            candidate_name = (
+                candidate_map.get(lookup_id)
+                or evaluated_names.get(lookup_id)
+                or candidate_id
+            )
+
+            label = f"{candidate_name} ({candidate_id})"
+
+            if label not in options:
+                options.append(label)
 
         return options
+
 
     @rx.var(cache=True)
     async def results_effective_candidate(self) -> str:
@@ -3632,7 +4034,7 @@ class FacilitatorState(rx.State):
             if self.results_selected_candidate and self.results_selected_candidate != "All Candidates":
                 return self.results_selected_candidate
             opts = await self.results_candidate_options
-            return opts[0] if opts else "Priya Sharma (CAND-2031)"
+            return opts[0] if opts else ""
         return "All Candidates"
 
     @rx.var(cache=True)
@@ -3655,7 +4057,7 @@ class FacilitatorState(rx.State):
         for t_name in saved_w.keys():
             if t_name not in options:
                 options.append(t_name)
-        for key in self.real_ai_results_per_candidate.keys():
+        for key in self.assessment_evaluation_results.keys():
             parts = key.split(":")
             if len(parts) > 1:
                 t_name = parts[1].strip()
@@ -3714,7 +4116,7 @@ class FacilitatorState(rx.State):
                 first_c = self._current_assessment_candidates[0]
                 cand = f"{first_c['name']} ({first_c['emp_id']})"
             else:
-                for key in self.real_ai_results_per_candidate.keys():
+                for key in self.assessment_evaluation_results.keys():
                     cand = key.split(":")[0].strip()
                     break
 
@@ -3724,7 +4126,7 @@ class FacilitatorState(rx.State):
             if saved_w:
                 test = list(saved_w.keys())[0]
             if not test:
-                for key in self.real_ai_results_per_candidate.keys():
+                for key in self.assessment_evaluation_results.keys():
                     parts = key.split(":")
                     if len(parts) > 1 and parts[1].strip():
                         test = parts[1].strip()
@@ -3738,7 +4140,7 @@ class FacilitatorState(rx.State):
         # â”€â”€ All Candidates Mode: Average score for each question across candidates â”€â”€
         if not is_ind or cand in ("All Candidates", ""):
             q_agg: dict[str, dict] = {}
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 if t_part.lower() == test.lower():
@@ -3802,6 +4204,11 @@ class FacilitatorState(rx.State):
                     "bar_pct": pct,
                     "justification": "",
                 })
+            items.sort(
+                key=lambda item: self._question_number_sort_key(
+                    item.get("q_no", "")
+                )
+            )
             return items
 
         # â”€â”€ Individual Candidate Mode: Single candidate's question results â”€â”€
@@ -3862,6 +4269,11 @@ class FacilitatorState(rx.State):
                         "bar_pct": pct,
                         "justification": justification,
                     })
+                items.sort(
+                    key=lambda item: self._question_number_sort_key(
+                        item.get("q_no", "")
+                    )
+                )
                 return items
         return []
 
@@ -4549,7 +4961,7 @@ class FacilitatorState(rx.State):
         for t in tests:
             t_name = t["name"]
             score_val = None
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 c_part = parts[0].strip()
                 t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -4592,7 +5004,7 @@ class FacilitatorState(rx.State):
         for t in tests:
             t_name = t["name"]
             w = saved_w.get(t_name, t.get("weightage", 0))
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 c_part = parts[0].strip()
                 t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -4640,7 +5052,7 @@ class FacilitatorState(rx.State):
         for t in tests:
             t_name = t["name"]
             scores = []
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 if t_part == t_name:
@@ -4671,7 +5083,7 @@ class FacilitatorState(rx.State):
         for t in tests:
             t_name = t["name"]
             scores = []
-            for key, val in self.real_ai_results_per_candidate.items():
+            for key, val in self.assessment_evaluation_results.items():
                 parts = key.split(":")
                 t_part = parts[1].strip() if len(parts) > 1 else ""
                 if t_part == t_name:
@@ -4714,7 +5126,7 @@ class FacilitatorState(rx.State):
                 target_test = tests[0]["name"]
 
         questions = []
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -4750,6 +5162,17 @@ class FacilitatorState(rx.State):
                 if target_test or questions:
                     break
 
+        # Post-test facilitator results must follow the ORIGINAL
+        # question-paper order. This changes display order only.
+        import re
+
+        def _question_sort_key(item):
+            raw = str(item.get("q_no") or "")
+            match = re.search(r"\d+", raw)
+            return int(match.group()) if match else 10**9
+
+        questions.sort(key=_question_sort_key)
+
         if not self.show_all_questions and len(questions) > 5:
             return questions[:5]
         return questions
@@ -4765,7 +5188,7 @@ class FacilitatorState(rx.State):
             if tests:
                 target_test = tests[0]["name"]
         total = 0
-        for key, val in self.real_ai_results_per_candidate.items():
+        for key, val in self.assessment_evaluation_results.items():
             parts = key.split(":")
             c_part = parts[0].strip()
             t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -4793,20 +5216,28 @@ class FacilitatorState(rx.State):
         candidates_list = []
         seen_ids = set()
 
+        # Assessment membership is authoritative.
+        # Evaluation-result records may provide marks, but they must never
+        # introduce candidates who are not assigned to this assessment.
         if match:
             for c in match.get("candidate_details", []):
-                cid = c.get("emp_id", "")
-                if cid and cid not in seen_ids:
-                    seen_ids.add(cid)
-                    candidates_list.append({"name": c.get("name", cid), "emp_id": cid})
+                cid = str(
+                    c.get("emp_id")
+                    or c.get("candidate_id")
+                    or ""
+                ).strip()
 
-        for key in self.real_ai_results_per_candidate.keys():
-            c_part = key.split(":")[0].strip()
-            cid = c_part.split("(")[-1].rstrip(")").strip() if "(" in c_part else c_part
-            cname = c_part.split("(")[0].strip() if "(" in c_part else c_part
-            if cid and cid != "All Candidates" and cid not in seen_ids:
-                seen_ids.add(cid)
-                candidates_list.append({"name": cname, "emp_id": cid})
+                cname = str(
+                    c.get("name")
+                    or cid
+                ).strip()
+
+                if cid and cid.casefold() not in seen_ids:
+                    seen_ids.add(cid.casefold())
+                    candidates_list.append({
+                        "name": cname,
+                        "emp_id": cid,
+                    })
 
         query = (self.results_search_candidate or "").strip().lower()
         rows = []
@@ -4825,7 +5256,7 @@ class FacilitatorState(rx.State):
                 t_name = t["name"]
                 t_w = t["weightage"]
                 score_val = None
-                for key, val in self.real_ai_results_per_candidate.items():
+                for key, val in self.assessment_evaluation_results.items():
                     parts = key.split(":")
                     c_part = parts[0].strip()
                     t_part = parts[1].strip() if len(parts) > 1 else ""
@@ -4990,13 +5421,10 @@ class FacilitatorState(rx.State):
     show_ai_eval_modal: bool = False
 
     manual_eval_q_index: int = 0
-    manual_marks: dict[str, str] = {"0": "4", "1": "3", "2": "5", "3": "4"}
-    manual_justifications: dict[str, str] = {
-        "0": "Good explanation of workplace safety and its importance.",
-        "1": "Listed 2 correct hazards, one minor additional hazard mentioned.",
-        "2": "Correctly mentioned standard examples.",
-        "3": "Explained most basic hazards clearly.",
-    }
+    # Manual evaluation must start empty.
+    # Marks and justifications must be entered deliberately by the facilitator.
+    manual_marks: dict[str, str] = {}
+    manual_justifications: dict[str, str] = {}
 
     answer_key_uploaded: bool = False
     answer_key_filename: str = ""
@@ -5015,9 +5443,24 @@ class FacilitatorState(rx.State):
         if candidate_name == "All Candidates":
             if sync_run:
                 self._restore_selected_ai_run()
+                return FacilitatorState.refresh_workspace_snapshot(False)
             return
-        # Re-load persisted real result if it exists
-        saved = _saved_evaluation(self.real_ai_results_per_candidate, candidate_name, self.selected_assessment_name, self.selected_test_name)
+        # Prefer the finalized persisted workspace result when available.
+        # Fresh AI runs and legacy-compatible tests may exist only in the
+        # in-memory AI result map until the workspace snapshot is refreshed.
+        saved = _saved_evaluation(
+            self.assessment_evaluation_results,
+            candidate_name,
+            self.selected_assessment_name,
+            self.selected_test_name,
+        )
+        if not saved:
+            saved = _saved_evaluation(
+                self.real_ai_results_per_candidate,
+                candidate_name,
+                self.selected_assessment_name,
+                self.selected_test_name,
+            )
         if saved:
             self.real_ai_score_display = saved.get("score", "\u2014")
             self.real_ai_max_score_display = saved.get("max_score", "\u2014")
@@ -5033,9 +5476,24 @@ class FacilitatorState(rx.State):
                         q["score_pct"] = f"{int(q_p)}%" if q_p == int(q_p) else f"{round(q_p, 1)}%"
                     except Exception:
                         q["score_pct"] = "0%"
-            self.real_ai_eval_questions = qs
+            import re
+
+            def _selector_question_sort_key(question):
+                raw = str(
+                    question.get("q_no")
+                    or question.get("question_no")
+                    or ""
+                )
+                match = re.search(r"\d+", raw)
+                return int(match.group()) if match else 999999
+
+            self.real_ai_eval_questions = sorted(
+                qs,
+                key=_selector_question_sort_key,
+            )
         if sync_run:
             self._restore_selected_ai_run()
+            return FacilitatorState.refresh_workspace_snapshot(False)
 
     @rx.var
     def is_all_candidates_evaluation(self) -> bool:
@@ -5076,35 +5534,25 @@ class FacilitatorState(rx.State):
         self.real_ai_evaluation_date = "Not evaluated"
         self.real_ai_eval_questions = []
         # Re-load persisted AI result for the selected candidate + new test if it exists
-        saved = _saved_evaluation(self.real_ai_results_per_candidate, self.selected_evaluation_candidate, self.selected_assessment_name, test_name)
+        saved = _saved_evaluation(self.assessment_evaluation_results, self.selected_evaluation_candidate, self.selected_assessment_name, test_name)
         if saved:
             self.real_ai_score_display = saved.get("score", "â€”")
             self.real_ai_max_score_display = saved.get("max_score", "â€”")
             self.real_ai_percentage_display = saved.get("percentage", "â€”")
             self.real_ai_evaluation_date = saved.get("eval_date", "Not evaluated")
-            self.real_ai_eval_questions = [dict(q) for q in saved.get("questions", [])]
+            self.real_ai_eval_questions = sorted(
+                [dict(q) for q in saved.get("questions", [])],
+                key=lambda q: self._question_number_sort_key(q.get("q_no", ""))
+            )
         self._restore_selected_ai_run()
+        return FacilitatorState.refresh_workspace_snapshot(False)
 
     @rx.var
     def current_candidate_eval_data(self) -> dict:
-        """Returns real submitted response data if available from candidate_response_service.
-        Never falls back to mock/hard-coded candidate answers.
-        """
-        raw = self.selected_evaluation_candidate
-        test_name = self.selected_test_name
-        assessment_name = self.selected_assessment_name
-
-
-        if not raw or raw == "All Candidates":
-            return {}
-
-        # Search for real response file matching candidate + assessment + test
-        real = _find_candidate_response(raw, test_name, assessment_name)
-        if real and real.get("responses"):
-            return real
-
-        # Candidate has NOT submitted a response - return empty dict
-        return {}
+        snapshot = self._workspace_snapshot
+        scope = [self.selected_assessment_id, self.selected_assessment_name,
+                 self.selected_test_name, self.selected_evaluation_candidate]
+        return snapshot.get("response", {}) if snapshot.get("scope") == scope else {}
 
     @rx.var
     def has_submitted_response(self) -> bool:
@@ -5181,13 +5629,7 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def has_eval_qp(self) -> bool:
-        """True if an actual question paper file is uploaded for the current assessment + test."""
-        qp = self.question_papers.get(self.selected_assessment_name, {}).get(self.selected_test_name, "")
-        if not qp:
-            return False
-        p1 = Path(rx.get_upload_dir()) / qp
-        p2 = Path("uploaded_files") / qp
-        return p1.exists() or p2.exists()
+        return self.has_current_test_qp
 
     # Manual Evaluation Navigation & Input computed vars
     @rx.var
@@ -5229,6 +5671,7 @@ class FacilitatorState(rx.State):
 
     def open_candidate_response_modal(self):
         self.show_candidate_response_modal = True
+        return FacilitatorState.refresh_workspace_snapshot(False)
 
     def set_show_candidate_response_modal(self, value: bool):
         self.show_candidate_response_modal = value
@@ -5245,24 +5688,68 @@ class FacilitatorState(rx.State):
         return rx.toast.success(f"Answer Key '{self.answer_key_filename}' uploaded successfully!")
 
     async def handle_answer_key_upload(self, files: list[rx.UploadFile]):
-        """Upload the answer key Excel file to uploaded_files/ and mark as uploaded."""
+        """Persist a real answer-key workbook before marking it uploaded."""
         if not files:
-            return rx.toast.error("Please select an answer key file to upload.")
+            return rx.toast.error(
+                "Please select an answer key file to upload."
+            )
+
         file = files[0]
-        upload_data = await file.read()
+        filename = Path(str(file.filename or "")).name
+
+        if not filename:
+            return rx.toast.error(
+                "The selected answer key has no valid filename."
+            )
+
+        if Path(filename).suffix.lower() not in {".xlsx", ".xls"}:
+            return rx.toast.error(
+                "Answer Key must be an Excel file (.xlsx or .xls)."
+            )
+
         try:
+            upload_data = await file.read()
+
+            if not upload_data:
+                raise ValueError("The selected Answer Key file is empty.")
+
             out_dir = Path("uploaded_files")
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / file.filename
+
+            out_path = out_dir / filename
             with open(out_path, "wb") as f:
                 f.write(upload_data)
-            self.answer_key_filename = file.filename
-            self.answer_key_uploaded_path = str(out_path)
-        except Exception:
-            pass
+
+            if not out_path.exists() or out_path.stat().st_size == 0:
+                raise OSError(
+                    "Answer Key could not be persisted."
+                )
+
+        except (OSError, ValueError) as exc:
+            self.answer_key_uploaded = False
+            self.answer_key_filename = ""
+            self.answer_key_uploaded_path = ""
+
+            return rx.toast.error(
+                f"Answer Key upload failed: {exc}"
+            )
+
+        self.answer_key_filename = filename
+        self.answer_key_uploaded_path = str(out_path)
         self.answer_key_uploaded = True
         self.show_answer_key_upload_modal = False
-        return rx.toast.success(f"Answer Key '{file.filename}' uploaded successfully!")
+
+        return rx.toast.success(
+            f"Answer Key '{filename}' uploaded successfully!"
+        )
+
+    @staticmethod
+    def _question_number_sort_key(q_no):
+        """Sort original question numbers naturally: Q1, Q2, ... Q10, Q11."""
+        import re
+
+        match = re.search(r"\d+", str(q_no or ""))
+        return int(match.group()) if match else 999999
 
     def open_manual_eval_modal(self):
         if self.selected_evaluation_candidate == "All Candidates":
@@ -5411,10 +5898,13 @@ class FacilitatorState(rx.State):
         self.real_ai_evaluation_date = datetime.now().strftime(
             "%d %b %Y, %I:%M %p"
         )
-        self.real_ai_eval_questions = breakdown
+        self.real_ai_eval_questions = sorted(
+            breakdown,
+            key=lambda q: self._question_number_sort_key(q.get("q_no", ""))
+        )
 
         k = f"{candidate_id}:{test_name}"
-        saved_results = dict(self.real_ai_results_per_candidate)
+        saved_results = dict(self.assessment_evaluation_results)
         saved_results[k] = {
             "score": disp_score,
             "marks_obtained": total_awarded,
@@ -5426,13 +5916,13 @@ class FacilitatorState(rx.State):
             "evaluation_type": "manual",
             "questions": breakdown,
         }
-        self.real_ai_results_per_candidate = saved_results
+        self.assessment_evaluation_results = saved_results
 
         self.show_manual_eval_modal = False
 
-        return rx.toast.success(
+        return [rx.toast.success(
             f"Manual evaluation saved! Score: {disp_score} ({norm_str})"
-        )
+        ), FacilitatorState.refresh_workspace_snapshot()]
     def open_ai_eval_modal(self):
         self.show_ai_eval_modal = True
 
@@ -5449,26 +5939,321 @@ class FacilitatorState(rx.State):
             yield update
 
     def download_candidate_response(self):
-        return rx.toast.info(f"{self.current_candidate_excel_file} downloaded successfully (Mock Excel)!")
+        """Download the selected candidate's submitted response as Excel.
+
+        Uses the canonical response lifecycle data, which is also used by
+        View Response. The workbook is generated in original question-number
+        order without modifying the stored randomized candidate attempt.
+        """
+        from io import BytesIO
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
+
+        candidate_id = _evaluation_candidate_id(
+            self.selected_evaluation_candidate
+        )
+
+        if not candidate_id:
+            return rx.toast.error(
+                "Select a candidate before downloading the response."
+            )
+
+        if not self.selected_assessment_name or not self.selected_test_name:
+            return rx.toast.error(
+                "Select an assessment and test before downloading the response."
+            )
+
+        # Use the same canonical source as View Response.
+        data = get_latest_candidate_response(
+            candidate_id=candidate_id,
+            assessment_name=self.selected_assessment_name,
+            test_name=self.selected_test_name,
+            require_assessment_scope=True,
+        )
+
+        rows = data.get("responses", []) if data else []
+
+        if not rows:
+            return rx.toast.error(
+                "Submitted response could not be found for the selected candidate."
+            )
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Responses"
+
+        headers = [
+            "Question No",
+            "Question",
+            "Candidate Answer",
+            "Marks",
+            "CO",
+            "LO",
+            "Knowledge Type",
+            "Domain",
+            "RBT level",
+        ]
+
+        ws.append(headers)
+
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+            )
+
+        for row in rows:
+            ws.append([
+                row.get("q_no", ""),
+                row.get("question", ""),
+                row.get("response", ""),
+                row.get("max_marks", ""),
+                row.get("CO", ""),
+                row.get("LO", ""),
+                row.get("Knowledge Type", ""),
+                row.get("Domain", ""),
+                row.get("RBT level", ""),
+            ])
+
+        # Make long question/answer text readable in Excel.
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(
+                    vertical="top",
+                    wrap_text=True,
+                )
+
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 70
+        ws.column_dimensions["C"].width = 45
+        ws.column_dimensions["D"].width = 12
+        ws.column_dimensions["E"].width = 12
+        ws.column_dimensions["F"].width = 12
+        ws.column_dimensions["G"].width = 20
+        ws.column_dimensions["H"].width = 20
+        ws.column_dimensions["I"].width = 15
+
+        # Preserve submission metadata in a separate sheet.
+        meta = wb.create_sheet("Submission")
+        meta.append([
+            "candidate_id",
+            "assessment_name",
+            "test_name",
+            "submitted_on",
+        ])
+        meta.append([
+            candidate_id,
+            self.selected_assessment_name,
+            self.selected_test_name,
+            data.get("submitted_on", ""),
+        ])
+
+        for cell in meta[1]:
+            cell.font = Font(bold=True)
+
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        original_name = str(data.get("excel_file", "") or "").strip()
+
+        if original_name.lower().endswith(".xlsx"):
+            filename = original_name
+        else:
+            safe_test = (
+                self.selected_test_name
+                .replace(" ", "_")
+                .replace("/", "_")
+                .replace("\\", "_")
+            )
+            filename = (
+                f"{candidate_id}_{safe_test}_Response.xlsx"
+            )
+
+        return rx.download(
+            data=buffer.getvalue(),
+            filename=filename,
+        )
+
 
     def _download_evaluation_csv(self, test_name, candidate_id=None):
+        """Download question-wise evaluation results as an Excel workbook."""
+        from io import BytesIO
+        import re
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
         from backend.services.evaluation_result_service import EvaluationResultService
+        from backend.services.test_service import TestService
+
         try:
             service = EvaluationResultService()
-            assessments = [a for a in service.assessments.load_assessments()
-                           if a['name'] == self.selected_assessment_name]
+
+            assessments = [
+                a for a in service.assessments.load_assessments()
+                if a["name"] == self.selected_assessment_name
+            ]
+
             if len(assessments) != 1:
                 raise ValueError("Select a valid assessment for the report.")
+
             assessment = assessments[0]
-            filters = {'assessment_id': assessment['assessment_id']}
-            test_id = assessment.get('test_ids', {}).get(test_name)
-            if test_id:
-                filters['test_id'] = test_id
-            elif test_name not in ("Overall Assessment Report", "Overall Report"):
-                raise ValueError("Select a valid test for the report.")
+            assessment_id = assessment["assessment_id"]
+            filters = {"assessment_id": assessment_id}
+
+            if test_name not in ("Overall Assessment Report", "Overall Report"):
+                tests = TestService().list_tests(assessment_id)
+                matching_tests = [
+                    test for test in tests
+                    if test.get("test_name") == test_name
+                ]
+
+                if len(matching_tests) != 1:
+                    raise ValueError("Select a valid test for the report.")
+
+                filters["test_id"] = matching_tests[0]["test_id"]
+
             if candidate_id:
-                filters['candidate_id'] = candidate_id
-            return rx.download(data=service.export_csv(**filters), filename="evaluation-results.csv")
+                filters["candidate_id"] = candidate_id
+
+            results = service.list_results(**filters)
+
+            if not results:
+                raise ValueError(
+                    "No completed evaluation results are available for this selection."
+                )
+
+            question_rows = []
+
+            for result in results:
+                for question in result.get("questions", []):
+                    q_no = str(
+                        question.get("question_no")
+                        or question.get("question_number")
+                        or question.get("number")
+                        or ""
+                    ).strip()
+
+                    max_marks = float(
+                        question.get("maximum_marks")
+                        or question.get("max_marks")
+                        or 0
+                    )
+                    awarded_marks = float(
+                        question.get("awarded_marks")
+                        or question.get("marks_obtained")
+                        or 0
+                    )
+
+                    score = (
+                        (awarded_marks / max_marks) * 100
+                        if max_marks > 0
+                        else 0
+                    )
+
+                    remarks = str(
+                        question.get("justification")
+                        or question.get("remarks")
+                        or question.get("feedback")
+                        or ""
+                    )
+
+                    match = re.search(r"\d+", q_no)
+                    sort_no = int(match.group()) if match else 999999
+
+                    question_rows.append({
+                        "sort_no": sort_no,
+                        "q_no": q_no,
+                        "marks": awarded_marks,
+                        "max_marks": max_marks,
+                        "score": score,
+                        "remarks": remarks,
+                    })
+
+            if not question_rows:
+                raise ValueError(
+                    "No question-wise evaluation results are available for this selection."
+                )
+
+            question_rows.sort(key=lambda row: row["sort_no"])
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Question-wise Results"
+
+            headers = [
+                "S.No",
+                "Q No.",
+                "Marks Obtained",
+                "Max Marks",
+                "Score (Out of 100)",
+                "Remarks",
+            ]
+
+            sheet.append(headers)
+
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
+                )
+
+            for serial_no, row in enumerate(question_rows, start=1):
+                sheet.append([
+                    serial_no,
+                    row["q_no"],
+                    row["marks"],
+                    row["max_marks"],
+                    round(row["score"], 2),
+                    row["remarks"],
+                ])
+
+            sheet.column_dimensions["A"].width = 10
+            sheet.column_dimensions["B"].width = 12
+            sheet.column_dimensions["C"].width = 18
+            sheet.column_dimensions["D"].width = 15
+            sheet.column_dimensions["E"].width = 22
+            sheet.column_dimensions["F"].width = 90
+
+            for row in sheet.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = Alignment(
+                        vertical="top",
+                        wrap_text=True,
+                    )
+
+            for row in sheet.iter_rows(
+                min_row=2,
+                min_col=1,
+                max_col=5,
+            ):
+                for cell in row:
+                    cell.alignment = Alignment(
+                        horizontal="center",
+                        vertical="top",
+                        wrap_text=True,
+                    )
+
+            output = BytesIO()
+            workbook.save(output)
+
+            safe_candidate = candidate_id or "all-candidates"
+            safe_test = re.sub(
+                r"[^A-Za-z0-9_-]+",
+                "_",
+                str(test_name),
+            ).strip("_")
+
+            filename = (
+                f"{safe_candidate}_{safe_test}_Question_Wise_Results.xlsx"
+            )
+
+            return rx.download(
+                data=output.getvalue(),
+                filename=filename,
+            )
+
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
 

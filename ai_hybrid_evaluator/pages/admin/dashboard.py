@@ -98,62 +98,120 @@ def donut_legend_item(color: str, label: str, count_pct: str) -> rx.Component:
     )
 
 
+def assessment_donut_svg() -> rx.Component:
+    return rx.html(AdminState.assessment_donut_svg_html)
+
+
+def status_overview_card(
+    dot_color: str,
+    title: str,
+    count: rx.Var | str,
+    subtitle: rx.Var | str,
+    card_bg: str,
+    card_border: str,
+) -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.box(
+                    width="10px",
+                    height="10px",
+                    border_radius="50%",
+                    background=dot_color,
+                    flex_shrink="0",
+                ),
+                rx.text(
+                    title,
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                spacing="2",
+                align_items="center",
+                width="100%",
+            ),
+            rx.vstack(
+                rx.text(
+                    count,
+                    font_family=FONT_DISPLAY,
+                    size="7",
+                    weight="bold",
+                    color=COLORS["ink"],
+                    line_height="1",
+                ),
+                rx.text(
+                    subtitle,
+                    font_family=FONT_BODY,
+                    size="1",
+                    color=COLORS["slate"],
+                ),
+                spacing="1",
+                align_items="start",
+            ),
+            spacing="3",
+            align_items="start",
+            width="100%",
+        ),
+        background=card_bg,
+        border=f"1px solid {card_border}",
+        border_radius="12px",
+        padding="1.2em 1.3em",
+        flex="1",
+    )
+
+
 def assessments_overview_card() -> rx.Component:
     return rx.box(
         rx.vstack(
             # Header
             rx.vstack(
-                rx.text("Assessments Overview", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
-                rx.text("Active assessments by status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                rx.text("Assessment Overview", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
+                rx.text("Current assessment status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                 spacing="0",
                 align_items="start",
             ),
 
-            # Chart + Legend row
+            # Chart + 3 Status Cards row
             rx.hstack(
                 # Donut Visual
                 rx.box(
-                    # Outer Donut ring
-                    rx.box(
-                        # Cutout circle
-                        rx.box(
-                            rx.vstack(
-                                rx.text("3", font_family=FONT_DISPLAY, size="6", weight="bold", color=COLORS["ink"], line_height="1"),
-                                rx.text("Total", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                                spacing="0",
-                                align_items="center",
-                                justify_content="center",
-                            ),
-                            width="90px",
-                            height="90px",
-                            border_radius="50%",
-                            background=COLORS["surface"],
-                            display="flex",
-                            align_items="center",
-                            justify_content="center",
-                        ),
-                        width="140px",
-                        height="140px",
-                        border_radius="50%",
-                        background="conic-gradient(#10B981 0% 66.7%, #F59E0B 66.7% 100%)",
-                        display="flex",
-                        align_items="center",
-                        justify_content="center",
-                        box_shadow="inset 0 0 0 1px rgba(0,0,0,0.05)",
-                    ),
+                    assessment_donut_svg(),
                     display="flex",
                     align_items="center",
                     justify_content="center",
-                    flex="1",
+                    padding_x="1.5em",
+                    flex_shrink="0",
                 ),
 
-                # Legend List
-                rx.vstack(
-                    donut_legend_item("#10B981", "In Progress", "2 (66.7%)"),
-                    donut_legend_item("#F59E0B", "Awaiting Evaluation", "1 (33.3%)"),
-                    donut_legend_item("#EF4444", "Completed", "0 (0%)"),
-                    spacing="3",
-                    align_items="start",
+                # 3 Status Cards
+                rx.hstack(
+                    status_overview_card(
+                        dot_color="#10B981",
+                        title="In Progress",
+                        count=AdminState.assessment_in_progress_count.to_string(),
+                        subtitle=AdminState.assessment_in_progress_pct_subtitle,
+                        card_bg="#ECFDF5",
+                        card_border="#D1FAE5",
+                    ),
+                    status_overview_card(
+                        dot_color="#F59E0B",
+                        title="Pending",
+                        count=AdminState.assessment_pending_count.to_string(),
+                        subtitle=AdminState.assessment_pending_pct_subtitle,
+                        card_bg="#FFFBEB",
+                        card_border="#FEF3C7",
+                    ),
+                    status_overview_card(
+                        dot_color="#2563EB",
+                        title="Completed",
+                        count=AdminState.assessment_completed_count.to_string(),
+                        subtitle=AdminState.assessment_completed_pct_subtitle,
+                        card_bg="#EFF6FF",
+                        card_border="#DBEAFE",
+                    ),
+                    spacing="4",
+                    align_items="stretch",
                     flex="1",
                 ),
                 spacing="4",
@@ -195,9 +253,10 @@ def assessments_overview_card() -> rx.Component:
         border=f"1px solid {COLORS['line']}",
         border_radius="14px",
         padding="1.4em",
-        flex="1",
+        width="100%",
         box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
     )
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -380,7 +439,8 @@ def recent_assessment_row(assessment) -> rx.Component:
 
         rx.table.cell(
             rx.text(
-                assessment["facilitator_name"],
+                rx.cond(assessment["facilitator_names"].length() > 0,
+                            assessment["facilitator_names"].join(", "), assessment["facilitator_name"]),
                 font_family=FONT_BODY,
                 size="2",
                 color=COLORS["slate"],
@@ -602,26 +662,20 @@ def admin_dashboard_page() -> rx.Component:
                 "#FEF3C7",
             ),
             dashboard_kpi_card(
-                "Pending Evaluations",
-                AdminState.pending_evaluations,
-                "Awaiting evaluation",
-                "clock",
-                "#DC2626",
-                "#FEF2F2",
+                "Completed Assessments",
+                AdminState.completed_assessments,
+                "Successfully completed",
+                "circle-check",
+                "#2563EB",
+                "#DBEAFE",
             ),
             spacing="4",
             width="100%",
             flex_wrap="wrap",
         ),
 
-        # ── 2 Visualization Cards ─────────────────────────────────────
-        rx.hstack(
-            assessments_overview_card(),
-            evaluation_progress_card(),
-            spacing="4",
-            width="100%",
-            align_items="stretch",
-        ),
+        # ── Assessment Overview (expanded) ───────────────────────────
+        assessments_overview_card(),
 
         # ── Recent Assessments Table ──────────────────────────────────
         recent_assessments_card(),

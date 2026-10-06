@@ -1,12 +1,14 @@
 """The supplied objective template uses single-choice A-D options in Question."""
 import re
 
-TEST_TYPES = ("objective", "subjective")
+TEST_TYPES = ("objective", "subjective", "mixed")
 
 
 def validate_test_type(value):
     if not isinstance(value, str) or value not in TEST_TYPES:
-        raise ValueError("test_type must be objective or subjective.")
+        raise ValueError(
+            "test_type must be objective, subjective or mixed."
+        )
 
 
 def objective_question(question, answer):
@@ -35,28 +37,90 @@ def objective_question(question, answer):
 
 
 def validate_question_type(row, test_type):
+    has_options = bool(
+        re.search(r"(?m)^\s*[A-D]\)\s*\S", row["Question"])
+    )
+
     if test_type == "objective":
-        return objective_question(row["Question"], row["Answer Key"])
-    if re.search(r"(?m)^\s*[A-D]\)\s*\S", row["Question"]):
-        raise ValueError("Subjective paper contains option-labelled questions; upload the paper to detect its type.")
-    return {}
+        parsed = objective_question(
+            row["Question"],
+            row["Answer Key"],
+        )
+        return {
+            "question_type": "objective",
+            **parsed,
+        }
+
+    if test_type == "subjective":
+        if has_options:
+            raise ValueError(
+                "Subjective paper contains option-labelled questions; "
+                "upload the paper to detect its type."
+            )
+        return {"question_type": "subjective"}
+
+    if test_type == "mixed":
+        if has_options:
+            parsed = objective_question(
+                row["Question"],
+                row["Answer Key"],
+            )
+            return {
+                "question_type": "objective",
+                **parsed,
+            }
+
+        return {"question_type": "subjective"}
+
+    raise ValueError(
+        f"Unsupported test_type: {test_type!r}"
+    )
 
 
 def detect_paper_type(questions):
-    """Classify validated rows once at ingestion; malformed choices never fall back."""
+    """
+    Classify every question independently and then determine the
+    overall paper type.
+
+    A paper may therefore be:
+        objective
+        subjective
+        mixed
+
+    The per-question question_type is the authoritative grading mode.
+    """
     kinds = set()
+
     for row in questions:
-        if re.search(r"(?im)(?:^|\s)[a-d]\)", row["Question"]):
+        if re.search(
+            r"(?im)(?:^|\s)[a-d]\)",
+            row["Question"],
+        ):
             try:
-                row.update(objective_question(row["Question"], row["Answer Key"]))
+                parsed = objective_question(
+                    row["Question"],
+                    row["Answer Key"],
+                )
             except ValueError as exc:
-                raise ValueError(f"Question {row['Question No']}: {exc}") from exc
+                raise ValueError(
+                    f"Question {row['Question No']}: {exc}"
+                ) from exc
+
+            row.update(parsed)
+            row["question_type"] = "objective"
             kinds.add("objective")
+
         else:
+            row["question_type"] = "subjective"
             kinds.add("subjective")
-    if len(kinds) != 1:
-        raise ValueError("Mixed Objective and Subjective questions are not supported in the same test.")
-    return kinds.pop()
+
+    if kinds == {"objective"}:
+        return "objective"
+
+    if kinds == {"subjective"}:
+        return "subjective"
+
+    return "mixed"
 
 
 def selected_option(answer, options):

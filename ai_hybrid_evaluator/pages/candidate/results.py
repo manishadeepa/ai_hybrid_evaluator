@@ -273,6 +273,18 @@ class CandidateResultsState(rx.State):
     async def question_items(self) -> list[dict]:
         d = await self.selected_test_eval_data
         qs = d.get("questions", [])
+
+        # Post-test results use original question-paper order.
+        # Only presentation order changes; original question IDs remain unchanged.
+        import re
+
+        def _question_sort_key(q):
+            raw = str(q.get("question_no") or "")
+            match = re.search(r"\d+", raw)
+            return int(match.group()) if match else 10**9
+
+        qs = sorted(qs, key=_question_sort_key)
+
         res = []
         for q in qs:
             obt = q["awarded_marks"]

@@ -3,5 +3,19 @@
   "Leadership": {
     "Formative 1": 30,
     "Summative Test": 30
+  },
+  "APDTE": {
+    "Formative 1": 50,
+    "Formative 2": 50
+  },
+  "Assessment 6": {
+    "Formative 1": 30,
+    "Formative 2": 30,
+    "Summative Test": 30
+  },
+  "Assessment 2": {
+    "Formative 1": 50,
+    "Formative 2": 50,
+    "Formative 3": 50
   }
 }

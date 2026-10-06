@@ -41,6 +41,7 @@ class EvaluationResultTests(unittest.TestCase):
     def ai_result(self, candidates=('C1',), complete=True, ids=True):
         rows = [dict(candidate_id=cid, question_no=f'Q{i}', question=f'Question {i}', candidate_answer='Answer' if i == 1 else '',
                      unanswered=i == 2, answer_key='Reference', max_marks=2,
+                     question_type='subjective',
                      metadata=dict(co='CO1', lo='LO1', knowledge_type='Fact', domain='Cognitive', rbt_level='Remember'))
                 for cid in candidates for i in (1, 2)]
         run = self.runs.create_run('A', 'Formative 1', rows, candidate_scope='single' if len(candidates) == 1 else 'all',

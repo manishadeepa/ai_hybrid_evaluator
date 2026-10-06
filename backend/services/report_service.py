@@ -25,9 +25,10 @@ class ReportService:
                      if t['assessment_id'] == assessment_id]
             candidates = []
             if include_candidates:
-                # Historic finalized results remain selectable after membership changes.
-                finalized = self.results.list_results(assessment_id=assessment_id)
-                ids = set(assessment.get("assigned_candidates", [])) | {r["candidate_id"] for r in finalized}
+                # Assessment membership is authoritative.
+                # Finalized evaluation results provide report data only and
+                # must never introduce unassigned candidates.
+                ids = set(assessment.get("assigned_candidates", []))
                 candidates = [c for c in self.results._candidate_rows() if c["candidate_id"] in ids]
             return deepcopy(dict(assessment=assessment, tests=tests, candidates=candidates))
 
@@ -38,6 +39,14 @@ class ReportService:
             raise ValueError("Select a candidate.")
         with _PERSISTENCE_LOCK:
             catalog = self.catalog(assessment_id, facilitator_id=facilitator_id, admin=admin, include_candidates=False)
+
+            # An individual report may only be generated for a candidate
+            # currently assigned to this assessment.
+            if candidate_id is not None and candidate_id not in set(
+                catalog["assessment"].get("assigned_candidates", [])
+            ):
+                raise ValueError("Candidate is not assigned to this assessment.")
+
             test = next((t for t in catalog['tests'] if t['test_id'] == test_id), None)
             if test is None:
                 raise ValueError("The selected test does not belong to this assessment.")

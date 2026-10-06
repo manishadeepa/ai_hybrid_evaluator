@@ -1,9 +1,33 @@
 ﻿import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
 import os
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+
+_READ_SCOPE = ContextVar("json_repository_read_scope", default=None)
+
+
+@contextmanager
+def repository_read_scope():
+    """Reuse unchanged JSON within one synchronous service operation only.
+
+    Repository validation still runs on every access. Each caller owns its copy;
+    file signatures detect replacements by other repository instances/processes.
+    Never hold this scope across an await or use it as a process-wide cache.
+    """
+    if _READ_SCOPE.get() is not None:
+        yield
+        return
+    token = _READ_SCOPE.set({})
+    try:
+        yield
+    finally:
+        _READ_SCOPE.reset(token)
 
 
 class JSONRepository:
@@ -15,9 +39,8 @@ class JSONRepository:
 
     def _ensure_file_exists(self) -> None:
         """Create the parent directory and an empty JSON list if needed."""
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-
         if not self.file_path.exists():
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
             self._write_data([])
 
     def _read_data(self) -> list[dict[str, Any]]:
@@ -63,9 +86,26 @@ class JSONRepository:
 
     def get_all(self) -> list[dict[str, Any]]:
         """Return all stored records."""
-        return self._read_data()
+        scope = _READ_SCOPE.get()
+        if scope is None:
+            return self._read_data()
+        key = self.file_path.resolve()
+        stat = key.stat()
+        signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        cached = scope.get(key)
+        if cached is not None and cached[0] == signature:
+            return deepcopy(cached[1])
+        rows = self._read_data()
+        # A concurrently replaced file must not be cached under its old signature.
+        after = key.stat()
+        if signature == (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            scope[key] = (signature, deepcopy(rows))
+        return rows
 
     def save_all(self, data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Replace all stored records."""
+        scope = _READ_SCOPE.get()
+        if scope is not None:
+            scope.pop(self.file_path.resolve(), None)
         self._write_data(data)
         return data

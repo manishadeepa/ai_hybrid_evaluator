@@ -46,8 +46,13 @@ app.add_page(index, route="/", on_load=rx.redirect("/signin"))
 # Admin Routes
 app.add_page(login_page, route="/signin", title="Sign In", on_load=AuthState.on_signin_page_load)
 app.add_page(signup_page, route="/signup", title="Sign Up")
-app.add_page(admin_dashboard_page, route="/admin/dashboard", title="Admin Dashboard", on_load=AdminState.load_persisted_assessments)
-app.add_page(facilitators_page, route="/admin/facilitators", title="Facilitators")
+app.add_page(admin_dashboard_page, route="/admin/dashboard", title="Admin Dashboard", on_load=AdminState.load_persisted_assessments_async)
+app.add_page(
+    facilitators_page,
+    route="/admin/facilitators",
+    title="Facilitators",
+    on_load=AdminState.load_persisted_facilitators,
+)
 app.add_page(
     candidates_page,
     route="/admin/candidates",
@@ -67,21 +72,21 @@ app.add_page(admin_feedback_page, route="/admin/feedback", title="Feedback Manag
 # Facilitator Routes
 app.add_page(facilitator_login_page, route="/facilitator/signin", title="Facilitator Sign In")
 app.add_page(facilitator_dashboard_page, route="/facilitator/dashboard", title="My Assessments", on_load=FacilitatorState.load_persisted_assessment_workspace)
-app.add_page(assessment_workspace_page, route="/facilitator/assessment", title="Assessment Workspace", on_load=FacilitatorState.load_persisted_assessment_workspace)
+app.add_page(assessment_workspace_page, route="/facilitator/assessment", title="Assessment Workspace", on_load=[FacilitatorState.load_persisted_assessment_workspace, FacilitatorState.refresh_workspace_snapshot])
 app.add_page(facilitator_feedback_page, route="/facilitator/feedback", title="Feedback", on_load=FacilitatorState.on_feedback_page_load)
 app.add_page(facilitator_profile_page, route="/facilitator/profile", title="My Profile", on_load=FacilitatorProfileState.load_profile)
 
 # Candidate Routes
 app.add_page(candidate_login_page, route="/candidate/login", title="Candidate Sign In")
 app.add_page(candidate_login_page, route="/candidate/signin", title="Candidate Sign In")
-app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard", on_load=[AdminState.load_persisted_assessments, CandidateState.on_dashboard_load])
+app.add_page(candidate_dashboard_page, route="/candidate/dashboard", title="Candidate Dashboard", on_load=[AdminState.load_persisted_assessments_async, CandidateState.on_dashboard_load])
 app.add_page(candidate_profile_page, route="/candidate/profile", title="My Profile", on_load=CandidateProfileState.load_profile)
 app.add_page(
     candidate_test_page,
     route="/candidate/test",
     title="Test Environment",
     on_load=[
-        AdminState.load_persisted_assessments,
+        AdminState.load_persisted_assessments_async,
         CandidateState.on_test_page_load,
     ],
 )

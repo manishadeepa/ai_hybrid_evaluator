@@ -161,17 +161,24 @@ class CandidateBrowserPerformanceTests(unittest.TestCase):
     def script():
         path=Path(__file__).parent/'ai_hybrid_evaluator/pages/candidate/candidate_test.py'
         tree=ast.parse(path.read_text(encoding='utf-8'))
-        return next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and 'function checkFS()' in n.value)
+        return next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and '__candidate_fs_handler' in n.value)
 
     def node(self, code):
         node=shutil.which('node')
         if not node:self.skipTest('Node required for browser event checks')
-        result=subprocess.run([node,'-e',code],capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stderr)
+        result=subprocess.run(
+            [node],
+            input=code.encode('utf-8'),
+            capture_output=True,
+        )
+        stderr = result.stderr.decode('utf-8', errors='replace')
+        self.assertEqual(result.returncode,0,stderr)
 
     def test_tab_blur_visibility_deduplicated_until_real_return(self):
         self.node(r"""
-const assert=require('node:assert/strict');let tab=0,focused=true,mounted=true;const listeners={};
+const assert=require('node:assert/strict');let tab=0,focused=true,mounted=true;const listeners={};let timers=[];
+global.setTimeout=(f,ms)=>{timers.push(f);return timers.length};
+global.clearTimeout=()=>{};
 global.window={addEventListener(){},removeEventListener(){},focus(){}};
 global.document={fullscreenElement:{},hidden:false,hasFocus(){return focused},
  addEventListener(n,f){listeners[n]=f},removeEventListener(){},
@@ -180,13 +187,17 @@ global.document={fullscreenElement:{},hidden:false,hasFocus(){return focused},
 focused=false;window.__candidate_blur_handler();document.hidden=true;listeners.visibilitychange();
 window.__candidate_blur_handler();assert.equal(tab,1);
 document.hidden=false;listeners.visibilitychange();window.__candidate_blur_handler();assert.equal(tab,1);
-focused=true;window.__candidate_return_handler();focused=false;window.__candidate_blur_handler();assert.equal(tab,2);
+focused=true;window.__candidate_return_handler();
+timers.splice(0).forEach(f=>f());
+focused=false;window.__candidate_blur_handler();assert.equal(tab,2);
 mounted=false;window.__candidate_blur_handler();assert.equal(tab,2);
 """)
 
     def test_minimize_fullscreen_blur_hidden_and_script_remount_are_one_episode(self):
         self.node(r"""
-const assert=require('node:assert/strict');let alerts=0,focused=true;
+const assert=require('node:assert/strict');let alerts=0,focused=true;let timers=[];
+global.setTimeout=(f,ms)=>{timers.push(f);return timers.length};
+global.clearTimeout=()=>{};
 global.window={addEventListener(){},removeEventListener(){},focus(){}};
 global.document={fullscreenElement:{},hidden:false,hasFocus(){return focused},addEventListener(){},removeEventListener(){},getElementById(id){return ['fs-exit-btn','tab-switch-btn'].includes(id)?{disabled:false,click(){alerts++}}:null}};
 """+self.script()+r"""
@@ -196,7 +207,86 @@ assert.equal(alerts,1);
 """+self.script()+r"""
 window.__candidate_blur_handler();window.__candidate_vis_handler();assert.equal(alerts,1);
 document.hidden=false;focused=true;document.fullscreenElement={};window.__candidate_fs_handler();
+
+// Complete the delayed return/rearm before starting a new away episode.
+window.__candidate_return_handler();
+timers.splice(0).forEach(f=>f());
+
 focused=false;window.__candidate_blur_handler();assert.equal(alerts,2);
+""")
+
+    def test_printscreen_uses_same_episode_and_deduplicates_with_blur(self):
+        self.node(r"""
+const assert=require('node:assert/strict');
+let alerts=0,focused=true,mounted=true;
+let timers=[];
+const listeners={};
+
+global.setTimeout=(f,ms)=>{
+    timers.push(f);
+    return timers.length;
+};
+global.clearTimeout=()=>{};
+
+global.window={
+    addEventListener(n,f){listeners['window:'+n]=f},
+    removeEventListener(){},
+    focus(){}
+};
+
+global.document={
+    fullscreenElement:{},
+    hidden:false,
+    hasFocus(){return focused},
+    addEventListener(n,f){listeners[n]=f},
+    removeEventListener(){},
+    getElementById(id){
+        if(!mounted)return null;
+        if(id==='tab-switch-btn'){
+            return {
+                disabled:false,
+                click(){alerts++}
+            };
+        }
+        return null;
+    }
+};
+"""+self.script()+r"""
+
+// PrintScreen creates one violation.
+window.__candidate_screenshot_handler({key:'PrintScreen'});
+assert.equal(alerts,1);
+
+// Blur/visibility from the same physical episode must NOT add warnings.
+focused=false;
+window.__candidate_blur_handler();
+document.hidden=true;
+window.__candidate_vis_handler();
+assert.equal(alerts,1);
+
+// Ordinary keys must not count.
+window.__candidate_screenshot_handler({key:'A'});
+assert.equal(alerts,1);
+
+// Candidate genuinely returns.
+document.hidden=false;
+focused=true;
+window.__candidate_return_handler();
+timers.splice(0).forEach(f=>f());
+
+// A NEW PrintScreen incident may now create exactly one new warning.
+window.__candidate_screenshot_handler({key:'PrintScreen'});
+assert.equal(alerts,2);
+
+// Same episode still remains deduplicated.
+focused=false;
+window.__candidate_blur_handler();
+assert.equal(alerts,2);
+
+// Unmounted relay must be safe.
+mounted=false;
+window.__candidate_screenshot_handler({key:'PrintScreen'});
+assert.equal(alerts,2);
 """)
 
     def test_editor_coalesces_burst_and_keeps_original_question_on_flush(self):

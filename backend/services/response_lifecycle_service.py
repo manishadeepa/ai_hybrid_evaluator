@@ -5,6 +5,7 @@ from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 import random
 from backend.repositories.response_repository import ResponseRepository
+from backend.repositories.json_repository import repository_read_scope
 from backend.services.assessment_service import _PERSISTENCE_LOCK
 from backend.services.candidate_assignment_service import CandidateAssignmentService
 
@@ -27,13 +28,72 @@ class ResponseLifecycleService:
         from backend.services.question_paper_service import QuestionPaperService
         papers = QuestionPaperService(self.assignments.assessments.tests, self.assignments.candidates.dependencies.upload_dir)
         rows = papers.get_questions(assessment_id, test_id)
-        kind = self.assignments.assessments.tests.get_test(test_id, assessment_id).get("test_type")
-        return [{"id": int(float(str(r["Question No"]).strip().removeprefix("Q"))), "title": str(r["Question No"]),
-                 "text": r["Question"], "marks": r["Marks"], "co": r["CO"], "lo": r["LO"],
-                 "knowledge_type": r["Knowledge Type"], "category": r["Domain"], "rbt_level": r["RBT level"],
-                 "question_type": "Objective" if kind == "objective" else "Subjective",
-                 "question_stem": r.get("question_stem", r["Question"]),
-                 "options": deepcopy(r.get("options", {})) if kind == "objective" else {}} for r in rows]
+        test_type = self.assignments.assessments.tests.get_test(
+            test_id,
+            assessment_id,
+        ).get("test_type")
+
+        questions = []
+
+        for r in rows:
+            # Mixed papers must use the authoritative per-question type.
+            # Pure legacy papers may safely fall back to the overall test type.
+            question_type = str(
+                r.get("question_type", "")
+            ).strip().lower()
+
+            if not question_type and test_type in (
+                "objective",
+                "subjective",
+            ):
+                question_type = test_type
+
+            if question_type not in (
+                "objective",
+                "subjective",
+            ):
+                raise ValueError(
+                    f"Question {r['Question No']}: question_type is missing "
+                    "or invalid; upload the question paper again."
+                )
+
+            is_objective = question_type == "objective"
+
+            questions.append(
+                {
+                    "id": int(
+                        float(
+                            str(r["Question No"])
+                            .strip()
+                            .removeprefix("Q")
+                        )
+                    ),
+                    "title": str(r["Question No"]),
+                    "text": r["Question"],
+                    "marks": r["Marks"],
+                    "co": r["CO"],
+                    "lo": r["LO"],
+                    "knowledge_type": r["Knowledge Type"],
+                    "category": r["Domain"],
+                    "rbt_level": r["RBT level"],
+                    "question_type": (
+                        "Objective"
+                        if is_objective
+                        else "Subjective"
+                    ),
+                    "question_stem": r.get(
+                        "question_stem",
+                        r["Question"],
+                    ),
+                    "options": (
+                        deepcopy(r.get("options", {}))
+                        if is_objective
+                        else {}
+                    ),
+                }
+            )
+
+        return questions
 
     def _identity(self, candidate_id, assessment_id, test_id):
         assignment = self.assignments.get_test_assignment(candidate_id, test_id)
@@ -73,14 +133,14 @@ class ResponseLifecycleService:
         return record, assignment
 
     def get_response(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             return self._read(candidate_id, assessment_id, test_id)[0]
 
     def get_latest_response(self, candidate_id, assessment_id, test_id):
         return self.get_response(candidate_id, assessment_id, test_id)
 
     def get_status(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record, assignment = self._read(candidate_id, assessment_id, test_id)
             return record["status"] if record else assignment["status"]
 
@@ -92,7 +152,7 @@ class ResponseLifecycleService:
         return {k: record[k] for k in ("status", "submission_receipt", "submitted_at", "response_file")} if record else {}
 
     def start_test(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record, assignment = self._read(candidate_id, assessment_id, test_id)
             if assignment["status"] in ("Submitted", "Disqualified"):
                 raise ValueError("Submitted or disqualified tests cannot be restarted.")
@@ -100,9 +160,16 @@ class ResponseLifecycleService:
                 return record
             questions = deepcopy(self.question_loader(assessment_id, test_id))
 
-            # Preserve the original question-paper order for every candidate.
-            # No question shuffling is performed for Objective or Subjective
-            # questions. Stable question IDs continue to map answers correctly.
+            # Shuffle once when the candidate response session is created.
+            # The shuffled order is persisted in the canonical response snapshot,
+            # while stable original question IDs continue to map answers correctly.
+            if len(questions) > 1:
+                original_order = [q.get("id") for q in questions]
+                random.shuffle(questions)
+
+                # Avoid accidentally retaining the exact source order.
+                if [q.get("id") for q in questions] == original_order:
+                    questions[0], questions[-1] = questions[-1], questions[0]
 
             fields = {"id", "title", "text", "marks", "co", "lo", "knowledge_type", "category", "rbt_level"}
             if not questions or any(not isinstance(q, dict) or fields - q.keys() or type(q["id"]) is not int or q["id"] < 1 for q in questions):
@@ -124,7 +191,7 @@ class ResponseLifecycleService:
             return self._transition(record, "In Progress")
 
     def resume_test(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             return self._editable(candidate_id, assessment_id, test_id)
 
     def _editable(self, candidate_id, assessment_id, test_id):
@@ -162,12 +229,12 @@ class ResponseLifecycleService:
         return self.repository.save(record)
 
     def save_answer(self, candidate_id, assessment_id, test_id, question_id, text, *, clear=False):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record = self._editable(candidate_id, assessment_id, test_id)
             return self._save(self._answers(record, {question_id: text}, clear))
 
     def mark_for_review(self, candidate_id, assessment_id, test_id, question_id, marked=True):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record = self._editable(candidate_id, assessment_id, test_id)
             identity = self._question_id(record, question_id)
             if not isinstance(marked, bool):
@@ -179,7 +246,7 @@ class ResponseLifecycleService:
             return self._save(record)
 
     def update_violation_count(self, candidate_id, assessment_id, test_id, count):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record = self._editable(candidate_id, assessment_id, test_id)
             if type(count) is not int or count < record["violation_count"]:
                 raise ValueError("Violation count must be a nonnegative integer and cannot decrease.")
@@ -189,7 +256,7 @@ class ResponseLifecycleService:
             return self._save(record)
 
     def record_violation(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             record = self._editable(candidate_id, assessment_id, test_id)
             return self.update_violation_count(candidate_id, assessment_id, test_id, record["violation_count"] + 1)
 
@@ -199,7 +266,7 @@ class ResponseLifecycleService:
         return self._transition(record, "Disqualified")
 
     def disqualify(self, candidate_id, assessment_id, test_id):
-        with _PERSISTENCE_LOCK:
+        with _PERSISTENCE_LOCK, repository_read_scope():
             return self._disqualify(self._editable(candidate_id, assessment_id, test_id))
 
     @staticmethod
@@ -209,24 +276,46 @@ class ResponseLifecycleService:
             raise ValueError("Candidate/test name is not safe for the existing response workbook filename.")
 
     def submit(self, candidate_id, assessment_id, test_id, *, answers=None, clear=False, reason="submitted"):
-        with _PERSISTENCE_LOCK:
+        print("SUBMIT TRACE 01: entered submit()", flush=True)
+
+        with _PERSISTENCE_LOCK, repository_read_scope():
+            print("SUBMIT TRACE 02: persistence/read scope acquired", flush=True)
+
             record = self._editable(candidate_id, assessment_id, test_id)
+            print("SUBMIT TRACE 03: editable response loaded", flush=True)
+
             if reason not in ("submitted", "time_expired"):
                 raise ValueError("Invalid submission reason.")
+
             if answers is not None:
+                print("SUBMIT TRACE 04: saving final answers", flush=True)
                 record = self._save(self._answers(record, answers, clear))
+                print("SUBMIT TRACE 05: final answers saved", flush=True)
+
             # Display names may change during a session; resolve them using stable IDs.
+            print("SUBMIT TRACE 06: resolving assessment", flush=True)
             record["assessment_name"] = self.assignments.assessments.get_assessment(assessment_id)["name"]
+
+            print("SUBMIT TRACE 07: resolving test", flush=True)
             record["test_name"] = self.assignments.assessments.tests.get_test(test_id, assessment_id)["test_name"]
+
+            print("SUBMIT TRACE 08: resolving candidate", flush=True)
             record["candidate_name"] = self.assignments.candidates.get_candidate(record["candidate_id"])["name"]
+
+            print("SUBMIT TRACE 09: identities resolved", flush=True)
             self._safe_artifact_name(record["candidate_name"])
             self._safe_artifact_name(record["test_name"])
             output_dir = (Path("uploaded_files") / "candidate_responses").resolve()
             existing_files = set(output_dir.glob("*.xlsx"))
             try:
+                print("SUBMIT TRACE 10: starting Excel writer", flush=True)
+
                 filename = self.excel_writer(candidate_id=record["candidate_id"], candidate_name=record["candidate_name"],
                     assessment_name=record["assessment_name"], test_name=record["test_name"],
                     questions=deepcopy(record["questions"]), answers=deepcopy(record["answers"]))
+
+                print("SUBMIT TRACE 11: Excel writer returned:", filename, flush=True)
+
                 path = Path(filename).resolve()
                 if path.parent != output_dir or not path.is_file():
                     raise ValueError("Response workbook was not created in the expected directory.")
@@ -235,7 +324,10 @@ class ResponseLifecycleService:
             record.update({"response_file": str(path), "submitted_at": _now(), "submission_receipt": "SUB-" + uuid4().hex,
                            "submission_reason": reason})
             try:
-                return self._transition(record, "Submitted")
+                print("SUBMIT TRACE 12: starting Submitted transition", flush=True)
+                result = self._transition(record, "Submitted")
+                print("SUBMIT TRACE 13: Submitted transition COMPLETE", flush=True)
+                return result
             except (ValueError, OSError):
                 # Delete only this newly generated artifact if no durable intent exists.
                 stored = self.repository.get(record["candidate_id"], assessment_id, test_id)

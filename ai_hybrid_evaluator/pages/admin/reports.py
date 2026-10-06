@@ -48,7 +48,7 @@ class AdminReportsPageState(rx.State):
                     if c["emp_id"] in a.get("assigned_candidates", [])
                 ]
                 await fac_state.sync_assessment_weightage(name)
-                break
+                return FacilitatorState.refresh_workspace_snapshot()
 
     async def on_load(self):
         admin_state = await self.get_state(AdminState)
@@ -57,9 +57,9 @@ class AdminReportsPageState(rx.State):
         names = [a["name"] for a in admin_state.assessments if "name" in a]
         if not target or target not in names:
             if names:
-                await self.select_assessment(names[0])
+                return await self.select_assessment(names[0])
         else:
-            await self.select_assessment(target)
+            return await self.select_assessment(target)
 
 
 def _admin_reports_assessment_bar() -> rx.Component:

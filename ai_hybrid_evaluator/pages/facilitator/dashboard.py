@@ -176,9 +176,8 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                 flex="1",
             ),
             rx.spacer(),
-            # Right: status badge + Open button (hidden when declined)
+            # Right: Open button (hidden when declined)
             rx.vstack(
-                status_badge(a["status"]),
                 rx.cond(
                     a["approval_status"] != "declined",
                     rx.button(
@@ -192,7 +191,6 @@ def assessment_card(a: dict, idx: int) -> rx.Component:
                         border_radius="8px",
                         _hover={"background": COLORS["primary_hover"]},
                         cursor="pointer",
-                        margin_top="0.5em",
                     ),
                 ),
                 align_items="end",

@@ -214,7 +214,27 @@ def get_latest_candidate_response(
 
             responses = []
 
-            for question in questions:
+            # Post-test presentation must use the ORIGINAL question-paper
+            # numbering, not the randomized candidate attempt order.
+            # This changes display/export order only. Stored questions,
+            # question IDs and candidate answers remain untouched.
+            import re
+
+            def _post_test_question_sort_key(question):
+                raw = str(
+                    question.get("title")
+                    or question.get("id")
+                    or ""
+                )
+                match = re.search(r"\d+", raw)
+                return int(match.group()) if match else 10**9
+
+            ordered_questions = sorted(
+                questions,
+                key=_post_test_question_sort_key,
+            )
+
+            for question in ordered_questions:
                 question_id = question.get("id")
 
                 responses.append({

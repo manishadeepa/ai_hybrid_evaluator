@@ -7,5 +7,19 @@
     "Formative 1": 80,
     "Summative Test": 20
   },
-  "Quality": {}
+  "Quality": {},
+  "APDTE": {
+    "Formative 1": 10,
+    "Formative 2": 90
+  },
+  "Assessment 6": {
+    "Formative 1": 30,
+    "Formative 2": 30,
+    "Summative Test": 40
+  },
+  "Assessment 2": {
+    "Formative 1": 25,
+    "Formative 2": 25,
+    "Formative 3": 50
+  }
 }

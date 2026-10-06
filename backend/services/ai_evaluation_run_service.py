@@ -1,4 +1,4 @@
-"""Persisted evaluation lifecycle: local objective grading or the existing AI engine."""
+"""Persisted question-wise LLM evaluation for objective, subjective and mixed papers."""
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
@@ -35,22 +35,21 @@ class AIEvaluationRunService:
         if not run.get('test_id') or not run.get('assessment_id'):
             raise ValueError('Canonical assessment/test IDs are required; start a new evaluation from the assigned test.')
         test = self.tests.get_test(run['test_id'], run['assessment_id'])
-        if test.get('test_type') not in ('objective', 'subjective'):
-            raise ValueError('Test type is missing or unknown; upload the question paper again before evaluation.')
+        if test.get('test_type') not in ('objective', 'subjective', 'mixed'):
+            raise ValueError(
+                'Test type is missing or unknown; upload the question paper again before evaluation.'
+            )
         return test
 
-    def _objective_questions(self, run, test):
+    def _validate_submission_snapshot(self, run, test):
         from backend.services.question_paper_service import QuestionPaperService
         from backend.repositories.response_repository import ResponseRepository
         paper = QuestionPaperService(self.tests).get_paper(test['assessment_id'], test['test_id'])
-        if not paper or paper.get('test_type') != 'objective':
-            raise ValueError('A validated objective question paper is required; upload it again.')
+        if not paper:
+            raise ValueError('A validated canonical question paper is required; upload it again.')
         def number(value):
             return str(int(float(str(value).strip().removeprefix('Q'))))
         questions = {number(q['Question No']): q for q in paper['questions']}
-        if any(q.get('correct_option') not in ('A', 'B', 'C', 'D') or set(q.get('options', {})) != set('ABCD')
-               for q in questions.values()):
-            raise ValueError('Objective answer keys/options are missing; upload the question paper again.')
         responses = ResponseRepository(self.tests.repository.file_path.parent / 'responses.json')
         keyed = {}
         for cid in run['candidate_ids']:
@@ -116,7 +115,10 @@ class AIEvaluationRunService:
         records = json.loads(json.dumps(records, allow_nan=False))
         with _LOCK:
             for old in self.repository.get_all():
-                if (old['assessment_name'], old['test_name']) == (assessment_name, test_name):
+                same_scope = ((old.get('assessment_id'), old.get('test_id')) == (assessment_id, test_id)
+                              if old.get('assessment_id') and old.get('test_id') and assessment_id and test_id
+                              else (old['assessment_name'], old['test_name']) == (assessment_name, test_name))
+                if same_scope:
                     if old['status'] in ('idle', 'running', 'stop_requested', 'paused', 'restarting') and set(old['candidate_ids']) & set(candidates):
                         if old['run_id'] != restarted_from_run_id:
                             raise ValueError('An unfinished run already exists for this candidate/assessment/test; resume or restart it.')
@@ -237,8 +239,26 @@ class AIEvaluationRunService:
             pending = [q for q in run['questions'] if q['status'] == 'pending']
             if not pending:
                 return []
-            question = pending[0]['record']['question_no']
-            chunk = [q for q in pending if q['record']['question_no'] == question][:batch_size]
+
+            def question_number(item):
+                value = str(item['record']['question_no']).strip()
+                normalized = value.removeprefix('Q').removeprefix('q').strip()
+                try:
+                    return int(float(normalized))
+                except (TypeError, ValueError):
+                    return float('inf')
+
+            question = min(
+                pending,
+                key=question_number,
+            )['record']['question_no']
+
+            chunk = [
+                q for q in pending
+                if question_number(q) == question_number(
+                    {'record': {'question_no': question}}
+                )
+            ][:batch_size]
             for q in chunk:
                 q['status'] = 'evaluating'
             run['current_question'] = question
@@ -258,7 +278,14 @@ class AIEvaluationRunService:
                 maximum = q['record']['max_marks']
                 if isinstance(marks, bool) or not isinstance(marks, (float, int)) or not math.isfinite(marks) or not 0 <= marks <= maximum:
                     raise ValueError('Invalid marks from evaluation engine.')
+                mode = q['record'].get('question_type') or self._canonical_test(run)['test_type']
+                if mode not in ('objective', 'subjective'):
+                    raise ValueError('Missing canonical per-question grading mode.')
+                if mode == 'objective' and marks not in (0, maximum):
+                    raise ValueError('Objective marks must be zero or full marks.')
                 result = deepcopy(result)
+                result.update(assessment_id=run['assessment_id'], test_id=run['test_id'],
+                              response_id=pair_id, question_type=mode, test_type=mode)
                 result.update({k: q['record'][k] for k in ('candidate_id', 'question_no', 'question', 'candidate_answer', 'unanswered', 'assessment_name', 'test_name')})
                 result.update(q['record']['metadata'])
                 result['maximum_marks'] = maximum
@@ -286,30 +313,192 @@ class AIEvaluationRunService:
             run['error'] = error
             return self._save(run)
 
+    def _attach_canonical_question_types(self, rows, test_record):
+        """
+        Attach and verify the authoritative per-question grading mode.
+
+        The validated canonical Question Paper stored in the JSON repository
+        is authoritative. Workbook-derived question_type values are never
+        trusted for evaluation routing.
+        """
+        from backend.services.question_paper_service import QuestionPaperService
+
+        paper = QuestionPaperService(self.tests).get_paper(
+            test_record['assessment_id'],
+            test_record['test_id'],
+        )
+
+        if not paper:
+            raise ValueError(
+                'A validated canonical question paper is required before evaluation.'
+            )
+
+        def number(value):
+            return str(
+                int(
+                    float(
+                        str(value).strip().removeprefix('Q')
+                    )
+                )
+            )
+
+        canonical = {}
+
+        for question in paper['questions']:
+            qno = number(question['Question No'])
+
+            question_type = str(
+                question.get('question_type', '')
+            ).strip().lower()
+
+            # Legacy/pure papers may not yet carry question_type on every
+            # stored question. Their canonical test type is sufficient.
+            if not question_type and paper.get('test_type') in (
+                'objective',
+                'subjective',
+            ):
+                question_type = paper['test_type']
+
+            if question_type not in ('objective', 'subjective'):
+                raise ValueError(
+                    f'Question Q{qno}: canonical question_type is missing '
+                    f'or invalid; upload the question paper again.'
+                )
+
+            canonical[qno] = {
+                'question_type': question_type,
+                'question': str(question['Question']).strip(),
+                'max_marks': question['Marks'],
+                'answer_key': question['Answer Key'],
+            }
+
+        if len(canonical) != len(paper['questions']):
+            raise ValueError(
+                'Canonical question paper contains duplicate question numbers.'
+            )
+
+        for row in rows:
+            qno = number(row['question_no'])
+            question = canonical.get(qno)
+
+            if question is None:
+                raise ValueError(
+                    f'Question Q{qno} is not present in the canonical question paper.'
+                )
+
+            if str(row['question']).strip() != question['question']:
+                raise ValueError(
+                    f'Question Q{qno}: evaluation question differs from '
+                    f'the canonical question paper.'
+                )
+
+            if row['max_marks'] != question['max_marks']:
+                raise ValueError(
+                    f'Question Q{qno}: evaluation marks differ from '
+                    f'the canonical question paper.'
+                )
+
+            # Canonical JSON is authoritative for both grading mode
+            # and Answer Key.
+            row['question_type'] = question['question_type']
+            row['answer_key'] = question['answer_key']
+
+        candidates = {r['candidate_id'] for r in rows if r.get('candidate_id')}
+        for cid in candidates or {None}:
+            selected = [r for r in rows if cid is None or r.get('candidate_id') == cid]
+            if len(selected) != len(canonical) or {number(r['question_no']) for r in selected} != set(canonical):
+                raise ValueError('Response must contain every question from this test exactly once.')
+        return rows
+
     def prepare_single(self, assessment, test, candidate_id, label, paper, response, answer_key=None, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+
         test_record = self._canonical_test(ids)
-        if test_record['test_type'] == 'objective':
+
+        # Canonical paper owns the Answer Key for every paper type:
+        # Objective, Subjective and Mixed.
+        answer_key = None
+
+        # Preserve the existing candidate/assessment/test response ownership
+        # protection for Objective and Mixed papers.
+        if test_record['test_type'] in ('objective', 'mixed'):
             from pathlib import Path
             from backend.repositories.response_repository import ResponseRepository
-            stored = ResponseRepository(self.tests.repository.file_path.parent / 'responses.json').get(
-                candidate_id, ids['assessment_id'], ids['test_id'])
-            if not stored or Path(stored.get('response_file') or '').resolve() != Path(response).resolve():
-                raise ValueError('Response workbook does not belong to this candidate/assessment/test.')
-            answer_key = None  # Objective keys belong to the validated canonical paper.
-        rows = engine.prepare_candidate_records(paper, response, answer_key)
+
+            stored = ResponseRepository(
+                self.tests.repository.file_path.parent / 'responses.json'
+            ).get(
+                candidate_id,
+                ids['assessment_id'],
+                ids['test_id'],
+            )
+
+            if (
+                not stored
+                or Path(stored.get('response_file') or '').resolve()
+                != Path(response).resolve()
+            ):
+                raise ValueError(
+                    'Response workbook does not belong to this '
+                    'candidate/assessment/test.'
+                )
+
+        rows = engine.prepare_candidate_records(
+            paper,
+            response,
+            answer_key,
+        )
+
+        rows = self._attach_canonical_question_types(
+            rows,
+            test_record,
+        )
+
         for row in rows:
             row['candidate_id'] = candidate_id
-        return self.create_run(assessment, test, self._json_records(rows), labels={candidate_id: label}, **ids)
+
+        return self.create_run(
+            assessment,
+            test,
+            self._json_records(rows),
+            labels={candidate_id: label},
+            **ids,
+        )
 
     def prepare_batch(self, assessment, test, rows, labels, paper, answer_key=None, skipped=None, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+
         test_record = self._canonical_test(ids)
-        if test_record['test_type'] == 'objective':
-            answer_key = None
-        groups = engine.prepare_questionwise_records(paper, rows, answer_key)
-        return self.create_run(assessment, test, self._json_records([r for group in groups.values() for r in group]),
-                               candidate_scope='all', labels=labels, skipped=skipped, **ids)
+
+        # Canonical JSON paper owns all Answer Keys.
+        answer_key = None
+
+        groups = engine.prepare_questionwise_records(
+            paper,
+            rows,
+            answer_key,
+        )
+
+        normalized = [
+            row
+            for group in groups.values()
+            for row in group
+        ]
+
+        normalized = self._attach_canonical_question_types(
+            normalized,
+            test_record,
+        )
+
+        return self.create_run(
+            assessment,
+            test,
+            self._json_records(normalized),
+            candidate_scope='all',
+            labels=labels,
+            skipped=skipped,
+            **ids,
+        )
 
     @staticmethod
     def _json_records(rows):
@@ -339,27 +528,77 @@ class AIEvaluationRunService:
         fatal = ''
         try:
             test = self._canonical_test(run)
-            objective = test['test_type'] == 'objective'
-            if objective:
-                from backend.services.question_type_schema import evaluate_objective
-                questions = self._objective_questions(run, test)
-            else:
-                from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+            if test['test_type'] in ('objective', 'mixed') or run.get('canonical_input'):
+                self._validate_submission_snapshot(run, test)
+
+            # Business rule:
+            # Both Objective and Subjective tests are evaluated by the LLM.
+            # The canonical Answer Key remains the grading reference for both.
+            from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+
             while True:
                 chunk = self._next_chunk(run_id, token, batch_size if run['candidate_scope'] == 'all' else 1)
                 if not chunk:
                     break
-                rows = [dict(q['record'], response_id=q['pair_id']) for q in chunk]
+                # Resolve grading mode per question.
+                #
+                # Pure Objective/Subjective papers use the canonical test type.
+                # Mixed papers use each question's authoritative question_type.
+                # This keeps evaluation question-wise while allowing Objective
+                # and Subjective questions to coexist in the same assessment.
+                rows = []
+
+                for q in chunk:
+                    record = q['record']
+
+                    grading_type = record.get('question_type') or test['test_type']
+
+                    if grading_type not in ('objective', 'subjective'):
+                        raise ValueError(
+                            f"Question {record.get('question_no')}: "
+                            f"missing or invalid question_type "
+                            f"{grading_type!r}."
+                        )
+
+                    rows.append(
+                        dict(
+                            record,
+                            response_id=q['pair_id'],
+                            test_type=grading_type,
+                        )
+                    )
                 try:
-                    if not objective and client is None and any(not r['unanswered'] for r in rows):
+                    # Unanswered responses need no Azure call; the engine
+                    # deterministically awards zero for them.
+                    if client is None and any(not r['unanswered'] for r in rows):
                         client, deployment = engine._load_client()
-                    if objective:
-                        outcomes = [evaluate_objective(r, questions[str(r['question_no'])]) for r in rows]
-                    elif run['candidate_scope'] == 'all':
-                        outcomes = engine._evaluate_question_batch(client, deployment, rows, max_retries, delay_seconds,
-                            lambda pair_id, outcome: self.checkpoint(run_id, token, pair_id, result=outcome))
+
+                    # Both Objective and Subjective answers use the same LLM
+                    # evaluation engine and their canonical Answer Key.
+                    if run['candidate_scope'] == 'all':
+                        outcomes = engine._evaluate_question_batch(
+                            client,
+                            deployment,
+                            rows,
+                            max_retries,
+                            delay_seconds,
+                            lambda pair_id, outcome: self.checkpoint(
+                                run_id,
+                                token,
+                                pair_id,
+                                result=outcome,
+                            ),
+                        )
                     else:
-                        outcomes = [engine._evaluate_with_retry(client, deployment, rows[0], max_retries, delay_seconds)]
+                        outcomes = [
+                            engine._evaluate_with_retry(
+                                client,
+                                deployment,
+                                rows[0],
+                                max_retries,
+                                delay_seconds,
+                            )
+                        ]
                 except Exception as exc:
                     outcomes = [{'status': 'failed', 'error': str(exc)} for _ in rows]
                 for q, outcome in zip(chunk, outcomes):

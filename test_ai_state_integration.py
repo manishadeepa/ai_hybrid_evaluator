@@ -121,7 +121,8 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return {'candidate_id':candidate,'question_no':row['question_no'],
                         'question':row.get('question','Question'),'candidate_answer':'Answer',
                         'unanswered':row.get('unanswered',False),'max_marks':row.get('maximum_marks',10),
-                        'answer_key':'Reference','metadata':{k:row.get(k,question_result(candidate).get(k,'')) for k in ('co','lo','domain','knowledge_type','rbt_level')}}
+                        'answer_key':'Reference','question_type':'subjective',
+                        'metadata':{k:row.get(k,question_result(candidate).get(k,'')) for k in ('co','lo','domain','knowledge_type','rbt_level')}}
 
             def prepare_single(self, assessment, test, candidate, label, paper, response, answer_key, **ids):
                 fixture = owner.single.return_value
@@ -166,7 +167,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         def provider(): return service
         provider.result_rows=AIEvaluationRunService.result_rows
         namespace['AIEvaluationRunService']=provider
-        namespace['FacilitatorState']=SimpleNamespace(execute_ai_run=lambda run_id:('execute',run_id))
+        namespace['FacilitatorState']=SimpleNamespace(execute_ai_run=lambda run_id:('execute',run_id), refresh_workspace_snapshot=lambda *args:('refresh',))
 
     async def consume(self, obj):
         obj.progress_snapshots = self.progress_snapshots
@@ -200,7 +201,9 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(obj.show_eval_progress_modal)
         obj.set_selected_evaluation_candidate('Alice (A)')
         self.assertEqual(obj.real_ai_score_display, '4 / 10')
-        self.assertEqual(obj.results_eval_status, 'Evaluated')
+        # Fresh AI-run display data is available immediately, while
+        # report status represents finalized/persisted evaluation data.
+        self.assertEqual(obj.results_eval_status, 'Not Evaluated')
         obj.selected_assessment_name = 'Assessment B'
         obj.set_selected_evaluation_candidate('Alice (A)')
         self.assertEqual(obj.real_ai_score_display, '—')
@@ -254,7 +257,9 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         obj.set_selected_evaluation_candidate('Alice (A)')
         self.assertEqual(obj.real_ai_score_display, '2 / 10')
         obj.real_ai_results_per_candidate['A:Assessment A:Test'] = namespace['_batch_candidate_display']('A', 'Alice (A)', 'Assessment A', 'Test', [question_result('A')])
-        self.assertEqual(len(obj.assessment_evaluation_results), 1)
+        # In-memory AI results must not implicitly become finalized
+        # assessment/reporting results.
+        self.assertEqual(obj.assessment_evaluation_results, {})
         self.assertIn('Alice (A):Test', obj.real_ai_results_per_candidate)
 
 

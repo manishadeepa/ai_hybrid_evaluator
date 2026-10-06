@@ -49,12 +49,24 @@ class CandidateManagementService:
         if not isinstance(email, str) or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email.strip()):
             raise ValueError("Enter a valid candidate email address.")
         value["email"] = email.strip().lower()
+
+        if "password" in value:
+            raise ValueError(
+                "Candidate credentials are not managed by Candidate Management."
+            )
+
         return value
 
     @staticmethod
     def _fields(details):
-        if not isinstance(details, dict) or set(details) - {"candidate_id", "name", "email"}:
-            raise ValueError("Candidate details support only candidate_id, name and email; credentials are not managed here.")
+        if not isinstance(details, dict) or set(details) - {
+            "candidate_id",
+            "name",
+            "email",
+        }:
+            raise ValueError(
+                "Candidate details support only candidate_id, name and email."
+            )
 
     def list_candidates(self):
         legacy = {self._identity(c.get("candidate_id", c.get("emp_id"))):
@@ -64,7 +76,17 @@ class CandidateManagementService:
             if row.get("deleted_at"):
                 legacy.pop(row["candidate_id"], None)
             else:
-                legacy[row["candidate_id"]] = {k: v for k, v in row.items() if k in {"candidate_id", "name", "email", "created_at", "updated_at"}}
+                legacy[row["candidate_id"]] = {
+                    k: v
+                    for k, v in row.items()
+                    if k in {
+                        "candidate_id",
+                        "name",
+                        "email",
+                        "created_at",
+                        "updated_at",
+                    }
+                }
         return [deepcopy(v) for v in legacy.values()]
 
     def get_candidate(self, candidate_id):

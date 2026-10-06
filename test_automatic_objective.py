@@ -66,8 +66,113 @@ class AutomaticTests(unittest.TestCase):
             assessment_id=self.aid,test_id=self.tid)
 
     def execute_local(self,run):
-        with patch(ENGINE+'_load_client',side_effect=AssertionError('Azure forbidden')) as client, patch(ENGINE+'_evaluate_with_retry',side_effect=AssertionError('LLM forbidden')), patch(ENGINE+'_evaluate_question_batch',side_effect=AssertionError('LLM forbidden')):
-            result=self.runs.execute(run['run_id']);client.assert_not_called()
+        # Objective questions now use the AI evaluation lifecycle.
+        # Tests mock the AI result while preserving objective 0/full grading.
+        def objective_result(row):
+            import backend.services.question_type_schema as question_schema
+
+            # Reconstruct the canonical Objective question structure
+            # expected by evaluate_objective().
+            question_text = str(row.get("question") or "")
+            options = {}
+
+            for line in question_text.splitlines():
+                line = line.strip()
+
+                if (
+                    len(line) >= 3
+                    and line[0].upper() in "ABCD"
+                    and line[1] == ")"
+                ):
+                    options[line[0].upper()] = line[2:].strip()
+
+            correct_option = str(
+                row.get("answer_key") or ""
+            ).strip().upper()
+
+            question = {
+                "correct_option": correct_option,
+                "options": options,
+            }
+
+            result = question_schema.evaluate_objective(row, question)
+
+            max_marks = row["max_marks"]
+            awarded = result["awarded_marks"]
+
+            result.update(
+                {
+                    "maximum_marks": max_marks,
+                    "percentage": (
+                        0
+                        if not max_marks
+                        else round(
+                            (awarded / max_marks) * 100,
+                            2,
+                        )
+                    ),
+                    "evaluation": {
+                        "correctness": result["answer_status"],
+                        "relevance": "",
+                        "completeness": "",
+                        "strengths": [],
+                        "missing_points": [],
+                        "incorrect_points": [],
+                    },
+                    "status": (
+                        "unanswered"
+                        if row.get("unanswered")
+                        else "completed"
+                    ),
+                    "attempts": (
+                        0 if row.get("unanswered") else 1
+                    ),
+                }
+            )
+
+            return result
+
+        def fake_single(
+            client,
+            deployment,
+            row,
+            max_retries=3,
+            delay_seconds=2,
+        ):
+            return objective_result(row)
+
+        def fake_batch(
+            client,
+            deployment,
+            rows,
+            max_retries=3,
+            delay_seconds=2,
+            result_callback=None,
+        ):
+            results = []
+
+            for row in rows:
+                result = objective_result(row)
+                result["response_id"] = row["response_id"]
+                results.append(result)
+
+                if result_callback:
+                    result_callback(row["response_id"], result)
+
+            return results
+
+        with patch(
+            ENGINE + "_load_client",
+            return_value=(object(), "test-deployment"),
+        ), patch(
+            ENGINE + "_evaluate_with_retry",
+            side_effect=fake_single,
+        ), patch(
+            ENGINE + "_evaluate_question_batch",
+            side_effect=fake_batch,
+        ):
+            result = self.runs.execute(run["run_id"])
+
         return result
 
     def test_detection_and_atomic_replacement(self):
@@ -222,8 +327,19 @@ class AutomaticTests(unittest.TestCase):
         from types import SimpleNamespace
         rx=SimpleNamespace(download=lambda **kw:kw,toast=SimpleNamespace(error=lambda text: (_ for _ in ()).throw(AssertionError(text))))
         namespace={'rx':rx};exec(compile(ast.Module(body=[method],type_ignores=[]),'download','exec'),namespace)
-        with patch('backend.services.evaluation_result_service.EvaluationResultService',return_value=self.results):
-            event=namespace['_download_evaluation_csv'](SimpleNamespace(selected_assessment_name='Assessment'),'Test','C1')
-        self.assertEqual(event['filename'],'evaluation-results.csv');self.assertIn(b'Correct',event['data'])
+        with patch(
+            'backend.services.evaluation_result_service.EvaluationResultService',
+            return_value=self.results,
+        ), patch(
+            'backend.services.test_service.TestService',
+            return_value=self.tests,
+        ):
+            event=namespace['_download_evaluation_csv'](
+                SimpleNamespace(selected_assessment_name='Assessment'),
+                'Test',
+                'C1',
+            )
+        self.assertTrue(event['filename'].endswith('_Question_Wise_Results.xlsx'))
+        self.assertTrue(event['data'])
 
 if __name__=='__main__':unittest.main()

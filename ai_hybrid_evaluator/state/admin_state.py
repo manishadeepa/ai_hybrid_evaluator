@@ -6,12 +6,15 @@ shapes kept stable on purpose so that swap is easy later.
 """
 
 import json
+import asyncio
+import math
 from pathlib import Path
 import re
 import reflex as rx
 from backend.services.assessment_service import AssessmentService
 from backend.services.candidate_management_service import CandidateManagementService
 from backend.services.feedback_service import FeedbackService
+from backend.repositories.facilitator_repository import FacilitatorRepository
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
@@ -24,6 +27,93 @@ FACILITATOR_ID_REGEX = r"^F\d{3}$"
 PHONE_REGEX = r"^\d{10}$"
 
 
+def generate_assessment_donut_svg(
+    in_prog: int,
+    pending: int,
+    completed: int,
+    cx: float = 100.0,
+    cy: float = 100.0,
+    R: float = 86.0,
+    r: float = 50.0,
+) -> str:
+    total = in_prog + pending + completed
+
+    lbl_ip = str(in_prog)
+    lbl_pe = str(pending)
+    lbl_co = str(completed)
+
+    # Order matches reference design: Green (top-right), Blue (bottom), Orange (top-left)
+    items = [
+        ("In Progress", in_prog, lbl_ip, "#10B981"),    # Green
+        ("Completed", completed, lbl_co, "#2563EB"),    # Blue
+        ("Pending", pending, lbl_pe, "#F59E0B"),        # Orange
+    ]
+
+    # Angular allocation:
+    min_arc = 42.0
+    zero_count = sum(1 for _, cnt, _, _ in items if cnt == 0)
+
+    if total == 0 or zero_count == 3:
+        spans = [120.0, 120.0, 120.0]
+    elif zero_count > 0:
+        reserved_for_zero = zero_count * min_arc
+        remaining_deg = 360.0 - reserved_for_zero
+        non_zero_sum = sum(cnt for _, cnt, _, _ in items if cnt > 0)
+        spans = [min_arc if cnt == 0 else (cnt / non_zero_sum) * remaining_deg for _, cnt, _, _ in items]
+    else:
+        raw_spans = [(cnt / total) * 360.0 for _, cnt, _, _ in items]
+        small_count = sum(1 for s in raw_spans if s < min_arc)
+        if small_count > 0:
+            rem = 360.0 - (small_count * min_arc)
+            large_sum = sum(cnt for s, (_, cnt, _, _) in zip(raw_spans, items) if s >= min_arc)
+            spans = [min_arc if s < min_arc else (cnt / large_sum) * rem for s, (_, cnt, _, _) in zip(raw_spans, items)]
+        else:
+            spans = raw_spans
+
+    current_angle = 0.0  # Start at top (12 o'clock)
+    paths = []
+    labels = []
+    r_mid = (R + r) / 2.0
+
+    for i, (name, cnt, lbl, fill_color) in enumerate(items):
+        span = spans[i]
+        a1 = current_angle
+        a2 = current_angle + span
+        current_angle += span
+
+        t1 = math.radians(a1 - 90)
+        t2 = math.radians(a2 - 90)
+
+        x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+        x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+        x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+        x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+
+        large = 1 if (span % 360) > 180 else 0
+
+        d = f"M {x1_o:.2f} {y1_o:.2f} A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} L {x2_i:.2f} {y2_i:.2f} A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+        paths.append(f'<path d="{d}" fill="{fill_color}" stroke="#ffffff" stroke-width="1.5" />')
+
+        mid = (a1 + a2) / 2.0
+        tm = math.radians(mid - 90)
+        tx, ty = cx + r_mid * math.cos(tm), cy + r_mid * math.sin(tm)
+        labels.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="13" font-weight="700" font-family="Inter, system-ui, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.35);">{lbl}</text>')
+
+    svg = (
+        f'<svg width="190" height="190" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+        f'<g>'
+        + "".join(paths)
+        + f'<circle cx="{cx}" cy="{cy}" r="{r-1}" fill="#ffffff" />'
+        + "".join(labels)
+        + f'<text x="{cx}" y="{cy-9}" text-anchor="middle" dominant-baseline="central" fill="#0F172A" font-size="28" font-weight="700" font-family="Plus Jakarta Sans, system-ui, sans-serif">{total}</text>'
+        + f'<text x="{cx}" y="{cy+11}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Total</text>'
+        + f'<text x="{cx}" y="{cy+25}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Assessments</text>'
+        f'</g>'
+        f'</svg>'
+    )
+    return svg
+
+
 class AdminState(rx.State):
     # ---- Sidebar UI state ----
     users_menu_open: bool = True
@@ -34,7 +124,6 @@ class AdminState(rx.State):
     # ---- Mock data ----
     facilitators: list[Facilitator] = list(SHARED_FACILITATORS)
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
-    active_assessments: int = 3
     pending_evaluations: int = 12
 
     def load_persisted_candidates(self):
@@ -45,11 +134,6 @@ class AdminState(rx.State):
         except (ValueError, OSError):
             return
 
-        existing_passwords = {
-            str(candidate.get("emp_id", "")).casefold(): str(candidate.get("password", ""))
-            for candidate in SHARED_CANDIDATES
-        }
-
         loaded_candidates = []
 
         for candidate in backend_candidates:
@@ -59,15 +143,41 @@ class AdminState(rx.State):
                 "emp_id": candidate_id,
                 "name": str(candidate["name"]),
                 "email": str(candidate["email"]),
-                "password": existing_passwords.get(candidate_id.casefold(), ""),
+                "password": str(candidate.get("password", "")),
             })
 
         self.candidates = loaded_candidates
 
+    def load_persisted_facilitators(self):
+        """Load persisted facilitators from the JSON repository."""
+        try:
+            backend_facilitators = FacilitatorRepository().get_all()
+        except (ValueError, OSError):
+            return
+
+        self.facilitators = [
+            {
+                "emp_id": str(facilitator.get("emp_id", "")),
+                "name": str(facilitator.get("name", "")),
+                "email": str(facilitator.get("email", "")),
+                "phone": str(facilitator.get("phone", "")),
+                "password": str(facilitator.get("password", "")),
+            }
+            for facilitator in backend_facilitators
+        ]
+
+        # Keep the existing shared UI/auth catalogue synchronized
+        # with the persisted repository.
+        SHARED_FACILITATORS[:] = [
+            dict(facilitator)
+            for facilitator in self.facilitators
+        ]
+
     def load_assessments_page_data(self):
-        """Load persisted assessments and candidates required by the Assessments page."""
+        """Load persisted assessments, candidates and facilitators."""
         self.load_persisted_assessments()
         self.load_persisted_candidates()
+        self.load_persisted_facilitators()
 
     # =========================================================
     # VIEW FACILITATOR PROFILE (dialog)
@@ -194,9 +304,20 @@ class AdminState(rx.State):
             "phone": self.new_facilitator_phone,
             "password": self.new_facilitator_password,
         }
+        try:
+            FacilitatorRepository().save(new_f)
+        except (ValueError, OSError) as exc:
+            self.facilitator_form_error = str(exc)
+            return
+
         self.facilitators.append(new_f)
-        if not any(f["emp_id"] == new_f["emp_id"] for f in SHARED_FACILITATORS):
+
+        if not any(
+            f["emp_id"] == new_f["emp_id"]
+            for f in SHARED_FACILITATORS
+        ):
             SHARED_FACILITATORS.append(new_f)
+
         self.set_show_add_facilitator(False)
 
     # =========================================================
@@ -268,13 +389,36 @@ class AdminState(rx.State):
                 self.edit_facilitator_error = "This Employee ID already exists."
                 return
 
-        self.facilitators[self.edit_facilitator_index] = {
+        old_emp_id = self.facilitators[
+            self.edit_facilitator_index
+        ]["emp_id"]
+
+        updated_facilitator: Facilitator = {
             "emp_id": self.edit_facilitator_empid,
             "name": self.edit_facilitator_name,
             "email": self.edit_facilitator_email,
             "phone": self.edit_facilitator_phone,
             "password": self.edit_facilitator_password,
         }
+
+        try:
+            FacilitatorRepository().replace(
+                old_emp_id,
+                updated_facilitator,
+            )
+        except (ValueError, OSError) as exc:
+            self.edit_facilitator_error = str(exc)
+            return
+
+        self.facilitators[
+            self.edit_facilitator_index
+        ] = updated_facilitator
+
+        for i, facilitator in enumerate(SHARED_FACILITATORS):
+            if facilitator["emp_id"] == old_emp_id:
+                SHARED_FACILITATORS[i] = updated_facilitator
+                break
+
         self.set_show_edit_facilitator(False)
 
     # =========================================================
@@ -297,7 +441,26 @@ class AdminState(rx.State):
 
     def confirm_delete_facilitator(self):
         if 0 <= self.delete_facilitator_index < len(self.facilitators):
-            del self.facilitators[self.delete_facilitator_index]
+            facilitator = self.facilitators[
+                self.delete_facilitator_index
+            ]
+            emp_id = facilitator["emp_id"]
+
+            try:
+                FacilitatorRepository().delete(emp_id)
+            except (ValueError, OSError):
+                return
+
+            del self.facilitators[
+                self.delete_facilitator_index
+            ]
+
+            SHARED_FACILITATORS[:] = [
+                f
+                for f in SHARED_FACILITATORS
+                if f["emp_id"] != emp_id
+            ]
+
         self.set_show_delete_facilitator(False)
 
     # =========================================================
@@ -362,6 +525,7 @@ class AdminState(rx.State):
                 "candidate_id": candidate_id,
                 "name": candidate_name,
                 "email": candidate_email,
+                "password": self.new_candidate_password,
             })
 
         except (ValueError, OSError) as exc:
@@ -462,6 +626,7 @@ class AdminState(rx.State):
                     "candidate_id": original_id,
                     "name": self.edit_candidate_name.strip(),
                     "email": self.edit_candidate_email.strip().lower(),
+                    "password": self.edit_candidate_password,
                 },
             )
 
@@ -545,7 +710,7 @@ class AdminState(rx.State):
         self.set_show_delete_candidate(False)
 
     # =========================================================
-    # ASSESSMENTS — mock data
+    # ASSESSMENTS
     # =========================================================
     assessments: list[Assessment] = [
         {
@@ -557,8 +722,8 @@ class AdminState(rx.State):
             "facilitator_id": "F001",
             "facilitator_name": "Ravi Kumar",
             "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
-            "status": "Scheduled",
-            # Tests start empty — Facilitators add them via their workspace
+            "status": "In Progress",
+            # Tests are empty by default — Facilitators add them via their workspace
             "tests": [],
             "final_test": "",
             "approval_status": "approved",
@@ -568,8 +733,9 @@ class AdminState(rx.State):
             },
             "question_papers": {},
             "test_dates": {},
-        }
+        },
     ]
+
 
     def _apply_assessment_records(self, records):
         self.assessments = records
@@ -584,7 +750,14 @@ class AdminState(rx.State):
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
 
-    def _load_persisted_assessments(self, legacy_question_papers=None):
+    async def load_persisted_assessments_async(self, legacy_question_papers: dict | None = None):
+        try:
+            records = await asyncio.to_thread(self._load_persisted_assessments, legacy_question_papers, False)
+            self._apply_assessment_records(records)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+    def _load_persisted_assessments(self, legacy_question_papers=None, apply=True):
         """Restore the shared assessment structures; bootstrap legacy state once."""
         initial = []
         for assessment in self.assessments:
@@ -598,7 +771,10 @@ class AdminState(rx.State):
                     qps[test] = filename
             value["question_papers"] = qps
             initial.append(value)
-        self._apply_assessment_records(AssessmentService().load_or_bootstrap(initial))
+        records = AssessmentService().load_or_bootstrap(initial)
+        if apply:
+            self._apply_assessment_records(records)
+        return records
 
     def _persist_assessment_record(self, record, validate_assignments=False):
         service = AssessmentService()
@@ -614,19 +790,28 @@ class AdminState(rx.State):
         self._apply_assessment_records(service.load_assessments())
         return saved
 
-    def _add_assessment_test(self, record, name, date="", description="", is_final=False):
+    def _add_assessment_test(self, record, name, date="", description="", is_final=False, *, test_type=None):
         service = AssessmentService()
         if not record.get("assessment_id"):
             record = self._persist_assessment_record(record)
-        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final)
+        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final, test_type=test_type)
         self._apply_assessment_records(service.load_assessments())
         return saved
 
-    assessment_status_options: list[str] = ["Draft", "Scheduled", "Active", "Completed"]
+    assessment_status_options: list[str] = ["Draft", "Scheduled", "In Progress", "Pending", "Active", "Completed"]
+
 
     @rx.var
     def total_assessments(self) -> int:
         return len(self.assessments)
+
+    @rx.var
+    def active_assessments(self) -> int:
+        return self.assessment_in_progress_count
+
+    @rx.var
+    def completed_assessments(self) -> int:
+        return self.assessment_completed_count
 
     @rx.var
     def total_approved_assessments(self) -> int:
@@ -639,6 +824,54 @@ class AdminState(rx.State):
     @rx.var
     def total_declined_assessments(self) -> int:
         return sum(1 for a in self.assessments if a.get("approval_status", "pending") == "declined")
+
+    @rx.var
+    def assessment_in_progress_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["in progress", "active"]
+        )
+
+    @rx.var
+    def assessment_pending_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["pending", "scheduled", "draft", "awaiting evaluation"]
+        )
+
+    @rx.var
+    def assessment_completed_count(self) -> int:
+        return sum(
+            1 for a in self.assessments
+            if str(a.get("status", "")).strip().lower() in ["completed", "done", "finished"]
+        )
+
+    @rx.var
+    def assessment_total_count(self) -> int:
+        return self.assessment_in_progress_count + self.assessment_pending_count + self.assessment_completed_count
+
+    @rx.var
+    def assessment_in_progress_pct_subtitle(self) -> str:
+        count = self.assessment_in_progress_count
+        return "assessment" if count == 1 else "assessments"
+
+    @rx.var
+    def assessment_pending_pct_subtitle(self) -> str:
+        count = self.assessment_pending_count
+        return "assessment" if count == 1 else "assessments"
+
+    @rx.var
+    def assessment_completed_pct_subtitle(self) -> str:
+        count = self.assessment_completed_count
+        return "assessment" if count == 1 else "assessments"
+
+    @rx.var
+    def assessment_donut_svg_html(self) -> str:
+        return generate_assessment_donut_svg(
+            self.assessment_in_progress_count,
+            self.assessment_pending_count,
+            self.assessment_completed_count,
+        )
 
     # =========================================================
     # ADD ASSESSMENT (dialog/form)
@@ -2322,6 +2555,8 @@ class AdminReportsState(rx.State):
 # ─────────────────────────────────────────────────────────────
 
 class AdminFeedbackState(rx.State):
+    _feedback_catalog: list[dict] = []
+
     """State for the Admin Feedback Management page — manages Candidate and Facilitator feedback."""
 
     active_tab: str = "candidate"  # "candidate" | "facilitator"
@@ -2369,45 +2604,77 @@ class AdminFeedbackState(rx.State):
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 
-    def _load_data_from_disk(self):
-        c_path = self._get_data_dir() / "candidate_feedbacks.json"
-        if c_path.exists():
-            try:
-                with open(c_path, "r", encoding="utf-8") as f:
-                    self.raw_candidate_feedbacks = json.load(f)
-            except Exception:
-                self.raw_candidate_feedbacks = {}
-        else:
-            self.raw_candidate_feedbacks = {}
+    @staticmethod
+    def _read_feedback_data():
+        """Load authoritative submitted feedback for the Admin Feedback page."""
+        try:
+            from backend.services.feedback_service import FeedbackService
 
-        f_path = self._get_data_dir() / "facilitator_feedbacks.json"
-        if f_path.exists():
-            try:
-                with open(f_path, "r", encoding="utf-8") as f:
-                    self.raw_facilitator_feedbacks = json.load(f)
-            except Exception:
-                self.raw_facilitator_feedbacks = {}
-        else:
-            self.raw_facilitator_feedbacks = {}
+            views = FeedbackService().response_views()
 
-    def on_load(self):
-        """Sync latest feedback data from disk on page load."""
-        self._load_data_from_disk()
+            candidate_feedbacks = {}
+            facilitator_feedbacks = {}
+
+            for row in views:
+                response_id = str(
+                    row.get("feedback_response_id", "")
+                ).strip()
+
+                if not response_id:
+                    continue
+
+                role = row.get("respondent_role")
+
+                # Keep the existing Admin Feedback UI shape so its current
+                # filtering, pagination, details panel and QA rendering remain
+                # unchanged.
+                item = {
+                    **row,
+                    "assessment": row.get("assessment") or "",
+                    "test": row.get("test") or "",
+                    "candidate_name": row.get("candidate_name") or "",
+                    "candidate_id": row.get("candidate_id") or "",
+                    "facilitator": row.get("facilitator") or "",
+                    "qa_pairs": list(row.get("qa_pairs") or []),
+                    "submitted_at": row.get("submitted_at") or "",
+                }
+
+                if role == "candidate":
+                    candidate_feedbacks[response_id] = item
+                elif role == "facilitator":
+                    facilitator_feedbacks[response_id] = item
+
+            return candidate_feedbacks, facilitator_feedbacks
+
+        except (ValueError, OSError):
+            import logging
+            logging.getLogger(__name__).exception("Unable to load submitted feedback")
+            raise
+
+    async def on_load(self):
+        """Refresh authoritative feedback once, off the event loop."""
+        try:
+            candidates, facilitators = await asyncio.to_thread(self._read_feedback_data)
+            catalog = await asyncio.to_thread(AssessmentService().load_assessments)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(f"Unable to load feedback: {exc}")
+        self.raw_candidate_feedbacks = candidates
+        self.raw_facilitator_feedbacks = facilitators
+        self._feedback_catalog = catalog
         entries = self.filtered_entries
-        if entries:
-            self.selected_entry = entries[0]
-            self.show_details_panel = True
+        self.selected_entry = entries[0] if entries else {}
+        self.show_details_panel = bool(entries)
 
     @rx.var
     def candidate_entries(self) -> list[dict]:
         entries: list[dict] = []
         i = 1
         for key, item in self.raw_candidate_feedbacks.items():
-            c_name = item.get("candidate_name") or "Candidate"
-            c_id = item.get("candidate_id") or "CAND-2031"
-            asmn = item.get("assessment") or "Quality"
-            test_name = item.get("test") or "Formative 1"
-            sub_on = item.get("submitted_at") or "14 Sep 2026 11:26 PM"
+            c_name = item.get("candidate_name") or item.get("candidate_id") or "Unknown Candidate"
+            c_id = item.get("candidate_id") or ""
+            asmn = item.get("assessment") or ""
+            test_name = item.get("test") or ""
+            sub_on = item.get("submitted_at") or ""
 
             # Parse dynamic QA pairs from submitted form
             qa_pairs: list[dict] = []
@@ -2466,9 +2733,9 @@ class AdminFeedbackState(rx.State):
         entries: list[dict] = []
         i = 1
         for key, item in self.raw_facilitator_feedbacks.items():
-            asmn = item.get("assessment") or "Quality"
-            fac = item.get("facilitator") or "Ravi Kumar"
-            sub_on = item.get("updated_at") or item.get("submitted_at") or "14 Sep 2026 10:15 PM"
+            asmn = item.get("assessment") or ""
+            fac = item.get("facilitator") or item.get("respondent_id") or "Unknown Facilitator"
+            sub_on = item.get("updated_at") or item.get("submitted_at") or ""
 
             # Parse dynamic QA pairs from submitted facilitator form
             qa_pairs: list[dict] = []
@@ -2613,7 +2880,7 @@ class AdminFeedbackState(rx.State):
         opts = set()
 
         try:
-            assessments = AssessmentService().load_assessments()
+            assessments = self._feedback_catalog
             for assessment in assessments:
                 name = str(assessment.get("name", "")).strip()
                 if name:
@@ -2636,7 +2903,7 @@ class AdminFeedbackState(rx.State):
         opts = set()
 
         try:
-            assessments = AssessmentService().load_assessments()
+            assessments = self._feedback_catalog
 
             for assessment in assessments:
                 assessment_name = str(assessment.get("name", "")).strip()
@@ -2677,16 +2944,10 @@ class AdminFeedbackState(rx.State):
 
         return ["All Tests"] + sorted(opts, key=str.casefold)
 
-    def set_active_tab(self, tab: str):
+    async def set_active_tab(self, tab: str):
         self.active_tab = tab
         self.current_page = 1
-        self._load_data_from_disk()
-        entries = self.filtered_entries
-        if entries:
-            self.selected_entry = entries[0]
-            self.show_details_panel = True
-        else:
-            self.selected_entry = {}
+        return await self.on_load()
 
     def set_filter_assessment(self, val: str):
         self.filter_assessment = val

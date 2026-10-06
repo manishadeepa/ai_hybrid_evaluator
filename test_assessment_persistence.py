@@ -126,8 +126,8 @@ class PersistenceTests(unittest.TestCase):
 
     def harnesses(self):
         toast = SimpleNamespace(success=lambda *args, **kw: args, error=lambda *args, **kw: args, info=lambda *args, **kw: args)
-        ns = {'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime}
-        names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', '_persist_assessment_record', '_add_assessment_test',
+        ns = {'asyncio': asyncio, 'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime}
+        names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', 'load_persisted_assessments_async', '_persist_assessment_record', '_add_assessment_test',
                  'add_assessment', 'save_edit_assessment', 'confirm_delete_assessment',
                  'add_test_to_selected_assessment', 'remove_test_from_selected_assessment', 'set_test_date'}
         Admin = extract_methods('ai_hybrid_evaluator/state/admin_state.py', 'AdminState', names, ns)
@@ -151,6 +151,12 @@ class PersistenceTests(unittest.TestCase):
         fnames = {'_workspace_assessment', 'load_persisted_assessment_workspace', 'create_new_test', 'facilitator_remove_test', 'remove_test_question_paper'}
         Fac = extract_methods('ai_hybrid_evaluator/state/facilitator_state.py', 'FacilitatorState', fnames, ns)
         fac = Fac()
+        # Page loads now refresh optional display configuration off the event loop.
+        # This catalog fixture has no saved display configuration.
+        fac._load_saved_weightages = lambda: {}
+        fac._load_saved_pass_percentages = lambda: {}
+        fac._load_saved_completions = lambda: {}
+        ns['FacilitatorState'] = SimpleNamespace(refresh_workspace_snapshot=lambda *args: ('refresh',))
         fac.question_papers = {}
         fac.selected_assessment_id = ''
         async def get_state(cls):
@@ -207,6 +213,10 @@ class PersistenceTests(unittest.TestCase):
         fac.new_test_date='2026-09-18'
         fac.new_test_type='Formative'
         fac.new_test_description='New test'
+
+        # create_new_test() now requires the canonical question type.
+        fac.new_question_type='Subjective'
+
         asyncio.run(fac.create_new_test())
         saved=self.service.load_assessments()[0]
         self.assertIn('Formative 3', saved['test_ids'])

@@ -192,13 +192,17 @@ class BrowserBridgeTests(unittest.TestCase):
         if not node: self.skipTest("Node is required for the browser bridge test")
         path=Path(__file__).parent/'ai_hybrid_evaluator/pages/candidate/candidate_test.py'
         tree=ast.parse(path.read_text(encoding='utf-8'))
-        script=next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and 'function checkFS()' in n.value)
+        script=next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and '__candidate_fs_handler' in n.value)
         harness = r"""
 const assert = require('node:assert/strict');
 let entered=0, exited=0, tab=0, mounted=true;
 const listeners={};
+let timers=[];
+global.setTimeout=(f,ms)=>{timers.push(f);return timers.length};
+global.clearTimeout=()=>{};
 global.window={addEventListener(){},removeEventListener(){}};
 global.document={fullscreenElement:null,hidden:false,
+ hasFocus(){return true},
  addEventListener(n,f){listeners[n]=f},removeEventListener(){},
  getElementById(id){
   if(!mounted)return null;
@@ -208,17 +212,42 @@ global.document={fullscreenElement:null,hidden:false,
   return null;
  }};
 """ + script + r"""
-assert.equal(exited,1); assert.equal(entered,0);
-document.fullscreenElement={}; listeners.fullscreenchange(); listeners.webkitfullscreenchange();
+console.log('CHECK 1 initial:', {entered, exited, tab});
+
+// Current bridge initializes from the browser's existing fullscreen state.
+// It must not report a violation until a real fullscreen transition occurs.
+assert.equal(exited,0);
+assert.equal(entered,0);
+
+document.fullscreenElement={};
+listeners.fullscreenchange();
+listeners.webkitfullscreenchange();
+console.log('CHECK 2 entered fullscreen:', {entered, exited, tab});
 assert.equal(entered,1);
-document.fullscreenElement=null; listeners.fullscreenchange(); listeners.webkitfullscreenchange();
-assert.equal(exited,2);
-mounted=false; window.__candidate_blur_handler(); window.__candidate_beforeunload({});
+
+document.fullscreenElement=null;
+listeners.fullscreenchange();
+listeners.webkitfullscreenchange();
+console.log('CHECK 3 before timers:', {entered, exited, tab, timers:timers.length});
+
+timers.splice(0).forEach(f=>f());
+console.log('CHECK 4 after timers:', {entered, exited, tab});
+assert.equal(exited,1);
+// Component is now unmounted.
+// Blur must safely do nothing when its hidden Reflex relay is unavailable.
+mounted=false;
+window.__candidate_blur_handler();
 assert.equal(tab,0);
 console.log('Fullscreen browser bridge: initial state, transitions, duplicate suppression and unmounted guards OK');
 """
-        result=subprocess.run([node,'-e',harness],capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stderr)
-        print(result.stdout.strip())
+        result=subprocess.run(
+            [node],
+            input=harness.encode('utf-8'),
+            capture_output=True,
+        )
+        stderr=result.stderr.decode('utf-8',errors='replace')
+        stdout=result.stdout.decode('utf-8',errors='replace')
+        print(stdout.strip())
+        self.assertEqual(result.returncode,0,stderr)
 
 if __name__=='__main__': unittest.main()

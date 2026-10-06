@@ -18,6 +18,7 @@ from ai_hybrid_evaluator.models.models import get_candidate_profile, save_candid
 from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response
 from backend.services.assessment_service import AssessmentService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
+from backend.services.feedback_service import FeedbackService
 
 
 # Ã¢â€â‚¬Ã¢â€â‚¬ Per-session question store Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -25,7 +26,6 @@ from backend.services.response_lifecycle_service import ResponseLifecycleService
 # Value: list of question dicts loaded from the Facilitator-uploaded file.
 # Populated in start_test / on_test_page_load from FacilitatorState.question_papers.
 LOADED_TEST_QUESTIONS: dict[str, list[dict]] = {}
-
 
 def _load_questions_from_file(filepath: Path) -> list[dict]:
     """Parse an uploaded question-paper Excel file and return a list of question dicts.
@@ -170,6 +170,73 @@ def _strip_html(html: str) -> str:
 PERSISTED_CANDIDATE_TEST_DATA: dict[str, dict] = {}
 
 
+
+def _load_dashboard_statuses(cand_id):
+    from backend.repositories.json_repository import repository_read_scope
+    with repository_read_scope():
+        subs: dict[str, dict[str, str]] = {}
+        dqs: dict[str, dict[str, str]] = {}
+
+        # Read the candidate's persisted assessments/tests.
+        try:
+            assessments = AssessmentService().load_assessments()
+        except (ValueError, OSError):
+            assessments = []
+
+        for assessment in assessments:
+            if cand_id not in assessment.get("assigned_candidates", []):
+                continue
+
+            assessment_id = assessment.get("assessment_id", "")
+            assessment_name = assessment.get("name", "")
+
+            if not assessment_id or not assessment_name:
+                continue
+
+            test_ids = assessment.get("test_ids", {})
+
+            if not isinstance(test_ids, dict):
+                continue
+
+            for test_name, test_id in test_ids.items():
+                if not test_id:
+                    continue
+
+                try:
+                    lifecycle_record = ResponseLifecycleService().get_response(
+                        cand_id,
+                        assessment_id,
+                        test_id,
+                    )
+                except (ValueError, OSError):
+                    lifecycle_record = None
+
+                if not lifecycle_record:
+                    continue
+
+                status = lifecycle_record.get("status", "")
+
+                if status == "Submitted":
+                    if assessment_name not in subs:
+                        subs[assessment_name] = {}
+
+                    subs[assessment_name][test_name] = (
+                        lifecycle_record.get("submitted_at", "") or ""
+                    )
+
+                elif status == "Disqualified":
+                    if assessment_name not in dqs:
+                        dqs[assessment_name] = {}
+
+                    dqs[assessment_name][test_name] = (
+                        lifecycle_record.get("terminated_at")
+                        or lifecycle_record.get("submitted_at")
+                        or ""
+                    )
+
+        return subs, dqs
+
+
 class CandidateState(rx.State):
     # Candidate identity (emp_id or email)
     candidate_id: str = "CAND-2031"
@@ -254,6 +321,10 @@ class CandidateState(rx.State):
             pass
         return self.candidate_id or "CAND-2031"
 
+    def _get_current_original_qid_str(self) -> str:
+        """The canonical session snapshot already owns the shuffled order."""
+        return str(self.current_question_number)
+
     def _save_current_test_record(self, status: str = ""):
         cand_id = self.candidate_id or "CAND-2031"
         key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
@@ -276,7 +347,6 @@ class CandidateState(rx.State):
             "marked_for_review": list(self.marked_for_review),
         }
 
-    # Ã¢â€â‚¬Ã¢â€â‚¬ Computed Variables Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     @rx.var
     def current_question(self) -> dict:
         qs = self.questions
@@ -305,8 +375,14 @@ class CandidateState(rx.State):
         return len(self.questions)
 
     @rx.var
+    def current_original_question_id(self) -> str:
+        """UI alias for the original ID in the persisted shuffled snapshot."""
+        return str(self.current_question_number)
+
+    @rx.var
     def current_answer_text(self) -> str:
-        qid_str = str(self.current_question_number)
+        # Key by ORIGINAL question id (survives shuffle)
+        qid_str = self.current_original_question_id
         return self.answers.get(qid_str, "")
 
     @rx.var
@@ -318,10 +394,16 @@ class CandidateState(rx.State):
 
     @rx.var
     def is_current_marked(self) -> bool:
-        return self.current_question_number in self.marked_for_review
+        # marked_for_review stores original question ids
+        try:
+            orig_id = int(self.current_original_question_id)
+        except (ValueError, TypeError):
+            orig_id = self.current_question_number
+        return (orig_id in self.marked_for_review) or (self.current_original_question_id in self.marked_for_review)
 
     @rx.var
     def answered_count(self) -> int:
+        # Iterate original questions (answers are keyed by original id)
         count = 0
         for q in self.questions:
             qid_str = str(q["id"])
@@ -351,47 +433,46 @@ class CandidateState(rx.State):
             "Write in your own words.",
         ])
 
-    @rx.var
-    def current_question_type(self) -> str:
-        """Returns 'Objective' or 'Subjective' for the current question."""
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("question_type", "Subjective"))
-        return "Subjective"
+    # current_question_type is defined after nav_questions to use current_question var
 
     @rx.var
     def current_mcq_answer(self) -> str:
-        """Returns the selected option letter (e.g. 'A') for the current MCQ question."""
-        qid_str = str(self.current_question_number)
+        """Returns the selected option letter (e.g. 'A') for the current MCQ question.
+        Keyed by ORIGINAL question id."""
+        qid_str = self.current_original_question_id
         return self.mcq_answers.get(qid_str, "")
 
     @rx.var
     def current_option_a(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("options", {}).get("A", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("A", "")) if q else ""
 
     @rx.var
     def current_option_b(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("options", {}).get("B", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("B", "")) if q else ""
 
     @rx.var
     def current_option_c(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("options", {}).get("C", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("C", "")) if q else ""
 
     @rx.var
     def current_option_d(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("options", {}).get("D", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("options", {}).get("D", "")) if q else ""
+
+    @rx.var
+    def current_mcq_selected_display(self) -> str:
+        """Returns formatted string like 'A. Quality Function Deployment (QFD)' for selected option."""
+        letter = self.current_mcq_answer
+        if not letter:
+            return ""
+        q = self.current_question
+        raw_text = str(q.get("options", {}).get(letter, "")) if q else ""
+        raw_text = raw_text.strip()
+        clean_text = re.sub(r"^[A-Za-z][\.\)]\s*", "", raw_text)
+        return f"{letter}.  {clean_text}" if clean_text else (f"{letter}.  {raw_text}" if raw_text else letter)
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Question Navigation Computed Vars Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     @rx.var
@@ -423,7 +504,8 @@ class CandidateState(rx.State):
                 status = "unanswered"
 
             items.append({
-                "id": q_id,
+                "id": position,
+                "orig_id": q_id,
                 "number": str(position),
                 "position": position,
                 "type": q_type,
@@ -445,6 +527,12 @@ class CandidateState(rx.State):
     @rx.var
     def subjective_nav_count(self) -> int:
         return sum(1 for q in self.questions if q.get("question_type") == "Subjective")
+
+    @rx.var
+    def current_question_type(self) -> str:
+        """Returns 'Objective' or 'Subjective' for the currently displayed (shuffled) question."""
+        q = self.current_question
+        return str(q.get("question_type", "Subjective")) if q else "Subjective"
 
     @rx.var
     def active_test_key(self) -> str:
@@ -481,34 +569,31 @@ class CandidateState(rx.State):
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Question metadata computed vars (CO / LO / RBT / Marks) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     # Access self.questions directly (cannot chain .get() on an rx.var result)
+
+
+
+
+    # ── Question metadata computed vars (CO / LO / RBT / Marks) ───────────────
     @rx.var
     def current_question_marks(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            v = self.questions[idx].get("marks", "")
-            return str(v) if v != "" else ""
-        return ""
+        q = self.current_question
+        v = q.get("marks", "") if q else ""
+        return str(v) if v != "" else ""
 
     @rx.var
     def current_question_co(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("co", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("co", "")) if q else ""
 
     @rx.var
     def current_question_lo(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("lo", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("lo", "")) if q else ""
 
     @rx.var
     def current_question_rbt(self) -> str:
-        idx = self.current_question_index
-        if 0 <= idx < len(self.questions):
-            return str(self.questions[idx].get("rbt_level", ""))
-        return ""
+        q = self.current_question
+        return str(q.get("rbt_level", "")) if q else ""
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Timer & Actions Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
@@ -541,65 +626,7 @@ class CandidateState(rx.State):
         """
         cand_id = await self._get_current_candidate_id()
 
-        subs: dict[str, dict[str, str]] = {}
-        dqs: dict[str, dict[str, str]] = {}
-
-        # Read the candidate's persisted assessments/tests.
-        try:
-            assessments = AssessmentService().load_assessments()
-        except (ValueError, OSError):
-            assessments = []
-
-        for assessment in assessments:
-            if cand_id not in assessment.get("assigned_candidates", []):
-                continue
-
-            assessment_id = assessment.get("assessment_id", "")
-            assessment_name = assessment.get("name", "")
-
-            if not assessment_id or not assessment_name:
-                continue
-
-            test_ids = assessment.get("test_ids", {})
-
-            if not isinstance(test_ids, dict):
-                continue
-
-            for test_name, test_id in test_ids.items():
-                if not test_id:
-                    continue
-
-                try:
-                    lifecycle_record = ResponseLifecycleService().get_response(
-                        cand_id,
-                        assessment_id,
-                        test_id,
-                    )
-                except (ValueError, OSError):
-                    lifecycle_record = None
-
-                if not lifecycle_record:
-                    continue
-
-                status = lifecycle_record.get("status", "")
-
-                if status == "Submitted":
-                    if assessment_name not in subs:
-                        subs[assessment_name] = {}
-
-                    subs[assessment_name][test_name] = (
-                        lifecycle_record.get("submitted_at", "") or ""
-                    )
-
-                elif status == "Disqualified":
-                    if assessment_name not in dqs:
-                        dqs[assessment_name] = {}
-
-                    dqs[assessment_name][test_name] = (
-                        lifecycle_record.get("terminated_at")
-                        or lifecycle_record.get("submitted_at")
-                        or ""
-                    )
+        subs, dqs = await asyncio.to_thread(_load_dashboard_statuses, cand_id)
 
         # Compatibility fallback for legacy/in-memory records.
         # Canonical backend status always takes priority.
@@ -754,7 +781,7 @@ class CandidateState(rx.State):
         # ------------------------------------------------------------
         if selected is None:
             try:
-                assessments = AssessmentService().load_assessments()
+                assessments = await asyncio.to_thread(AssessmentService().load_assessments)
             except (ValueError, OSError):
                 assessments = []
 
@@ -930,8 +957,13 @@ class CandidateState(rx.State):
             self.max_violations,
         )
 
-        # Start from Question 1 after recovery.
-        self.current_question_index = 0
+        # Preserve the candidate's current question when Reflex merely
+        # reloads/reconnects the active test page. Only fall back to Q1 when
+        # the existing index is no longer valid for the recovered snapshot.
+        if not (
+            0 <= self.current_question_index < len(self.questions)
+        ):
+            self.current_question_index = 0
 
         # Keep the legacy UI cache synchronized.
         self._save_current_test_record(status="In Progress")
@@ -1004,7 +1036,7 @@ class CandidateState(rx.State):
         assessment = next(
             (
                 item
-                for item in AssessmentService().load_assessments()
+                for item in await asyncio.to_thread(AssessmentService().load_assessments)
                 if item.get("name") == assessment_name
                 and cand_id in item.get("assigned_candidates", [])
             ),
@@ -1079,7 +1111,7 @@ class CandidateState(rx.State):
         Called after every question-navigation action."""
         if self.current_question_type == "Objective":
             return None
-        qid_str = str(self.current_question_number)
+        qid_str = self._get_current_original_qid_str()
         saved_html = self.answers.get(qid_str, "")
         # Escape for safe JS string embedding
         safe_html = (
@@ -1110,9 +1142,14 @@ class CandidateState(rx.State):
         return rx.call_script(js)
 
     def set_question_index(self, index: int):
+        """Navigate immediately to an already-loaded question.
+
+        The browser flushes the outgoing editor answer before grid navigation,
+        so navigation itself must stay lightweight and must not rewrite the
+        complete persisted candidate-test snapshot.
+        """
         if 0 <= index < len(self.questions):
             self.current_question_index = index
-            self._save_current_test_record()
             return self._restore_rte_script()
 
     def jump_to_question(self, q_num: int):
@@ -1166,11 +1203,7 @@ class CandidateState(rx.State):
         """Select an MCQ immediately and persist it using the stable question ID."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-
-        # IMPORTANT:
-        # Capture the ORIGINAL question ID before yielding.
-        # Display numbering may be 1,2,3... after shuffling, but saving/evaluation
-        # must always use the stable original question ID.
+        # Use the ORIGINAL question ID because displayed questions are shuffled.
         question_id = self.current_question_number
         qid_str = str(question_id)
 
@@ -1182,16 +1215,17 @@ class CandidateState(rx.State):
             and self.auto_save_status == "Auto-saved"
         ):
             return
-
         new_mcq = dict(self.mcq_answers)
         new_mcq[qid_str] = option
         self.mcq_answers = new_mcq
 
         self.auto_save_status = "Saving..."
-        self._save_current_test_record()
 
         # Release state immediately so the UI reflects the selected option.
         yield
+
+        # Persist the local snapshot after the UI has updated.
+        self._save_current_test_record()
 
         if self.active_assessment_id and self.active_test_id:
             try:
@@ -1211,16 +1245,21 @@ class CandidateState(rx.State):
         """Clear the MCQ answer for the current Objective question."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
+        # Use original question ID because displayed questions are shuffled.
         question_id = self.current_question_number
         qid_str = str(question_id)
         new_mcq = dict(self.mcq_answers)
         new_mcq.pop(qid_str, None)
         self.mcq_answers = new_mcq
         self.auto_save_status = "Saving..."
+
+        # Update the UI immediately.
+        yield
+
+        # Persist the local snapshot after the UI has updated.
         self._save_current_test_record()
 
         # Clear the MCQ answer from the canonical response backend too.
-        yield
 
         if self.active_assessment_id and self.active_test_id:
             try:
@@ -1256,7 +1295,14 @@ class CandidateState(rx.State):
         (prevents navigation/rerender clearing existing answers)."""
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid_str = str(question_id or self.current_question_number)
+        # Prefer the question ID captured by the editor event.
+        # This prevents a delayed editor update from being saved to
+        # a different question after the candidate navigates.
+        qid_str = (
+            str(question_id)
+            if question_id
+            else self._get_current_original_qid_str()
+        )
         # Guard: do not overwrite a non-empty saved answer with empty HTML
         existing = self.answers.get(qid_str, "")
         if html == existing and self.auto_save_status == "Auto-saved":
@@ -1268,11 +1314,14 @@ class CandidateState(rx.State):
             new_answers = dict(self.answers)
             new_answers[qid_str] = html
             self.answers = new_answers
+
+            # Update the browser immediately before persistence work.
+            yield
+
+            # Preserve the local compatibility snapshot after the UI update.
             self._save_current_test_record()
 
             # Persist rich-text answer in the canonical response backend.
-            yield
-
             if self.active_assessment_id and self.active_test_id:
                 await asyncio.to_thread(ResponseLifecycleService().save_answer,
                     self.candidate_id or "CAND-2031",
@@ -1289,20 +1338,28 @@ class CandidateState(rx.State):
     async def toggle_mark_for_review(self):
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        qid = self.current_question_number
+        orig_str = self._get_current_original_qid_str()
+        try:
+            qid = int(orig_str)
+        except (ValueError, TypeError):
+            qid = self.current_question_number
         current_list = list(self.marked_for_review)
-        if qid in current_list:
-            # Unmark: remove only this question
-            self.marked_for_review = [q for q in current_list if q != qid]
+        if qid in current_list or orig_str in current_list:
+            # Unmark: remove this question
+            self.marked_for_review = [q for q in current_list if q != qid and q != orig_str]
         else:
             # Mark: add only if not already present
             if qid not in current_list:
                 self.marked_for_review = current_list + [qid]
         self.auto_save_status = "Saving..."
+
+        # Update the review marker immediately.
+        yield
+
+        # Persist the local snapshot after the UI has updated.
         self._save_current_test_record()
 
         # Persist review status in the canonical response backend.
-        yield
 
         if self.active_assessment_id and self.active_test_id:
             try:
@@ -1318,12 +1375,13 @@ class CandidateState(rx.State):
                 self.auto_save_status = "Save failed"
 
     def save_and_next_question(self):
-        """Explicitly save the current answer then advance to the next question.
-        Used by the 'Save & Next' button. Never deletes existing answers."""
+        """Advance immediately after the outgoing answer has been captured.
+
+        The answer is already updated/persisted through set_answer_html(),
+        so navigation must not perform another synchronous snapshot write.
+        """
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
-        # Persist current answers (already in state via set_answer_html)
-        self._save_current_test_record()
         if self.current_question_index < len(self.questions) - 1:
             self.current_question_index += 1
             return self._restore_rte_script()
@@ -1510,20 +1568,68 @@ class CandidateState(rx.State):
             yield rx.toast.error("Unable to submit because the active test identity is missing.")
             return
 
-        cand_id = self.candidate_id or "CAND-2031"
+        auth = await self.get_state(AuthState)
 
-        # Capture the editor's latest text even if its coalesced autosave has not fired.
+        if not auth.is_candidate_authenticated or not auth.candidate_emp_id:
+            yield rx.toast.error("Your session has expired. Please sign in again.")
+            return
+
+        cand_id = auth.candidate_emp_id
+
+        if self.candidate_id != cand_id:
+            yield rx.toast.error(
+                "This test session does not belong to the signed-in candidate. "
+                "Please reopen your test from the dashboard."
+            )
+            return
+        # Best-effort capture of the currently visible subjective editor.
+        #
+        # A stale/missing editor relay must NEVER block final submission.
+        # Previously, an invalid editor payload returned early here and prevented
+        # ResponseLifecycleService.submit() from running at all.
         if editor_payload:
             try:
                 payload = json.loads(editor_payload)
-                qid, html = int(payload["question_id"]), payload["html"]
-                if not isinstance(html, str) or not any(q['id'] == qid and q.get('question_type') != 'Objective' for q in self.questions):
-                    raise ValueError("Invalid editor question.")
-                if html.strip() or not _strip_html(self.answers.get(str(qid), "")).strip():
-                    self.answers = {**self.answers, str(qid): html}
-            except (ValueError, TypeError, KeyError):
-                yield rx.toast.error("Unable to read the current answer. Please try submitting again.")
-                return
+                qid = int(payload.get("question_id"))
+                html = payload.get("html")
+
+                is_subjective_question = any(
+                    q.get("id") == qid
+                    and q.get("question_type") != "Objective"
+                    for q in self.questions
+                )
+
+                if isinstance(html, str) and is_subjective_question:
+                    if (
+                        html.strip()
+                        or not _strip_html(
+                            self.answers.get(str(qid), "")
+                        ).strip()
+                    ):
+                        self.answers = {
+                            **self.answers,
+                            str(qid): html,
+                        }
+                else:
+                    print(
+                        "SUBMIT: ignoring stale/irrelevant editor payload",
+                        {
+                            "question_id": qid,
+                            "is_subjective": is_subjective_question,
+                        },
+                        flush=True,
+                    )
+
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+                # Existing autosaved answers remain authoritative.
+                # Do not abort the entire assessment submission because the
+                # browser editor relay is stale or unavailable.
+                print(
+                    "SUBMIT: editor payload ignored:",
+                    type(exc).__name__,
+                    str(exc),
+                    flush=True,
+                )
         # Combine subjective/rich-text and MCQ answers.
         final_answers = dict(self.answers)
         final_answers.update(self.mcq_answers)
@@ -1537,9 +1643,20 @@ class CandidateState(rx.State):
                 self.active_test_id,
                 answers=final_answers,
             )
-        except (ValueError, OSError) as exc:
+        except Exception as exc:
+            # Never leave the candidate UI permanently stuck in
+            # "Submitting..." when persistence raises an unexpected error.
             self.is_submitting = False
-            yield rx.toast.error(str(exc))
+            print(
+                "CANDIDATE SUBMIT FAILED:",
+                type(exc).__name__,
+                str(exc),
+                flush=True,
+            )
+            yield rx.toast.error(
+                f"Submission failed: {type(exc).__name__}: {exc}",
+                duration=10000,
+            )
             return
 
         # Only mark the UI submitted after canonical persistence succeeds.
@@ -1570,7 +1687,7 @@ class CandidateState(rx.State):
         # Admin-created Candidate Feedback Form for this assessment.
         try:
             feedback_service = FeedbackService()
-            form = feedback_service.pending_form(
+            form = await asyncio.to_thread(feedback_service.pending_form,
                 "candidate",
                 cand_id,
                 self.active_assessment_id,
@@ -1735,7 +1852,21 @@ class CandidateState(rx.State):
             )
             return
 
-        cand_id = self.candidate_id or "CAND-2031"
+
+        auth = await self.get_state(AuthState)
+
+        if (
+            not auth.is_candidate_authenticated
+            or not auth.candidate_emp_id
+            or self.candidate_id != auth.candidate_emp_id
+        ):
+            self.candidate_feedback_error = (
+                "Your candidate session is invalid. Please sign in again."
+            )
+            yield rx.toast.error(self.candidate_feedback_error)
+            return
+
+        cand_id = auth.candidate_emp_id
 
         if not self.active_assessment_id or not self.active_test_id:
             self.candidate_feedback_error = (
@@ -1746,12 +1877,13 @@ class CandidateState(rx.State):
         try:
             service = FeedbackService()
 
-            form = service.pending_form(
-                "candidate",
-                cand_id,
-                self.active_assessment_id,
-                self.active_test_id,
-            )
+            form = await asyncio.to_thread(
+            service.pending_form,
+            "candidate",
+            cand_id,
+            self.active_assessment_id,
+            self.active_test_id,
+        )
 
             if not form:
                 self.candidate_feedback_error = (
