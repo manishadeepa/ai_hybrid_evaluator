@@ -5589,7 +5589,7 @@ class FacilitatorState(rx.State):
     @rx.var
     def has_ai_evaluated_current_candidate(self) -> bool:
         """True if real AI evaluation has been run for the current candidate."""
-        return self.real_ai_score_display != "â€”"
+        return self.real_ai_score_display not in ("", "\u2014", "\u2013", "â€”", "â€“")
 
     @rx.var
     def current_candidate_ai_total_score_only(self) -> str:
@@ -5626,7 +5626,7 @@ class FacilitatorState(rx.State):
         """Show the saved score or a readable empty-state label."""
         if not self.selected_evaluation_candidate:
             return "Not Completed"
-        if self.real_ai_score_display in ("", "\u2014", "\u2013"):
+        if self.real_ai_score_display in ("", "\u2014", "\u2013", "â€”", "â€“"):
             return "Not Completed"
         return self.real_ai_score_display
 
@@ -5635,7 +5635,7 @@ class FacilitatorState(rx.State):
         """Show the saved percentage or a readable empty-state label."""
         if not self.selected_evaluation_candidate:
             return "Not Completed"
-        if self.real_ai_percentage_display in ("", "\u2014", "\u2013"):
+        if self.real_ai_percentage_display in ("", "\u2014", "\u2013", "â€”", "â€“"):
             return "Not Completed"
         return self.real_ai_percentage_display
 

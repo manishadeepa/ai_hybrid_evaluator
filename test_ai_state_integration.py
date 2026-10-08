@@ -20,7 +20,9 @@ state_class = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.nam
 helper_names = {'_evaluation_candidate_id', '_assessment_result_view', '_saved_evaluation', '_batch_candidate_display'}
 method_names = {'run_ai_evaluation', 'run_all_candidates_ai_evaluation', '_start_ai_run', '_selected_ai_run', '_apply_ai_run', '_restore_selected_ai_run', 'execute_ai_run', 'set_selected_evaluation_candidate',
                 'set_evaluation_selected_test', 'evaluation_candidate_options', 'assessment_evaluation_results',
-                'open_manual_eval_modal', 'save_manual_evaluation', 'results_eval_status'}
+                'open_manual_eval_modal', 'save_manual_evaluation', 'results_eval_status',
+                'has_ai_evaluated_current_candidate', 'current_candidate_ai_score_display',
+                'current_candidate_ai_percentage_display'}
 namespace = {'asyncio': asyncio, 'Path': Path, 'datetime': datetime}
 for node in tree.body:
     if isinstance(node, ast.FunctionDef) and node.name in helper_names:
@@ -47,7 +49,7 @@ class StateHarness:
 
 for name in method_names:
     method = namespace[name]
-    setattr(StateHarness, name, property(method) if name in ('assessment_evaluation_results', 'results_eval_status') else method)
+    setattr(StateHarness, name, property(method) if name in ('assessment_evaluation_results', 'results_eval_status', 'has_ai_evaluated_current_candidate', 'current_candidate_ai_score_display', 'current_candidate_ai_percentage_display') else method)
 
 
 def state():
@@ -84,6 +86,19 @@ def question_result(candidate_id, marks=4, status='completed'):
 
 
 class IntegrationTests(unittest.IsolatedAsyncioTestCase):
+    def test_selected_candidate_without_ai_result_shows_not_completed(self):
+        obj = state()
+        obj.selected_evaluation_candidate = 'Alice (A)'
+
+        # Handle both the intended em dash and values persisted with the prior
+        # mojibake encoding, which previously leaked through to the UI.
+        for placeholder in ('\u2014', '\u00e2\u20ac\u201d'):
+            obj.real_ai_score_display = placeholder
+            obj.real_ai_percentage_display = placeholder
+            self.assertFalse(obj.has_ai_evaluated_current_candidate)
+            self.assertEqual(obj.current_candidate_ai_score_display, 'Not Completed')
+            self.assertEqual(obj.current_candidate_ai_percentage_display, 'Not Completed')
+
     def setUp(self):
         self.messages = []
         toast = SimpleNamespace(**{kind: (lambda message, k=kind: (self.messages.append((k, message)), (k, message))[1])
