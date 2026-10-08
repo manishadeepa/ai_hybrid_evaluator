@@ -196,9 +196,9 @@ class AssessmentTests(unittest.TestCase):
 
     def test_partial_metadata_update_and_invalid_types(self):
         aid=self.create()['assessment_id']
-        self.service.add_test(aid,'Formative 2',date='2026-09-20')
+        self.service.add_test(aid,'Formative 2',date='2099-09-20')
         saved=self.service.update_assessment(aid,{'test_dates':{'Formative 1':'changed'}})
-        self.assertEqual(saved['test_dates']['Formative 2'],'2026-09-20')
+        self.assertEqual(saved['test_dates']['Formative 2'],'2099-09-20')
         before=self.repo.file_path.read_bytes()
         for data in ({'tests':None},{'status':{}},{'test_dates':[]},{'final_test':7},{'description':object()}):
             with self.assertRaises(ValueError): self.service.update_assessment(aid,data)

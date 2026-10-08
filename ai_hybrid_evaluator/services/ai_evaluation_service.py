@@ -3,42 +3,34 @@
 
 from pathlib import Path
 import json
-import os
 import time
 
 import pandas as pd
-from dotenv import load_dotenv
-from openai import AzureOpenAI
+
+from backend.services.ai_connection_service import AIConnectionService
 
 
 def _load_client():
-    """
-    Create the Azure OpenAI client from the project's .env file.
-    """
+    """Load the active AI client and normalize it to (client, deployment)."""
+    connection = AIConnectionService().get_active_client()
 
-    project_dir = Path(__file__).resolve().parents[2]
-    env_file = project_dir / ".env"
+    if connection is None:
+        raise ValueError(
+            "No active AI connection is configured. "
+            "Please configure and activate an AI connection from Admin Settings."
+        )
 
-    load_dotenv(env_file, override=True)
+    if not isinstance(connection, tuple):
+        raise ValueError("The active AI connection returned an invalid value.")
 
-    api_key = os.getenv("AZURE_API_KEY")
-    endpoint = os.getenv("AZURE_ENDPOINT")
-    deployment = os.getenv("AZURE_DEPLOYMENT_NAME")
-
-    if not api_key:
-        raise ValueError("AZURE_API_KEY is missing from .env")
-
-    if not endpoint:
-        raise ValueError("AZURE_ENDPOINT is missing from .env")
-
-    if not deployment:
-        raise ValueError("AZURE_DEPLOYMENT_NAME is missing from .env")
-
-    client = AzureOpenAI(
-        api_key=api_key,
-        azure_endpoint=endpoint,
-        api_version="2024-10-21",
-    )
+    if len(connection) == 3:
+        client, deployment, _http_client = connection
+    elif len(connection) == 2:
+        client, deployment = connection
+    else:
+        raise ValueError(
+            f"The active AI connection returned {len(connection)} values; expected 2 or 3."
+        )
 
     return client, deployment
 

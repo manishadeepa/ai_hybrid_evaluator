@@ -11,7 +11,13 @@ and to enrich it with resolved candidate details.
 import asyncio
 import base64
 import re
-from datetime import datetime
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
+
+
+def today_ist() -> date:
+    return datetime.now(ZoneInfo("Asia/Kolkata")).date()
+
 from backend.services.manual_evaluation_service import ManualEvaluationService
 from backend.services.assessment_service import AssessmentService
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
@@ -2606,6 +2612,7 @@ class FacilitatorState(rx.State):
     new_test_type: str = "Formative"  # "Formative" | "Summative"
     new_test_name: str = ""
     new_test_date: str = ""
+    min_test_date: str = ""
     new_test_description: str = ""
     new_question_type: str = ""  # "" (unset) | "Objective" | "Subjective" | "Hybrid"
     suggested_formative_name: str = ""
@@ -2668,6 +2675,7 @@ class FacilitatorState(rx.State):
         self.suggested_formative_name = formative_name
         self.new_test_type = "Formative"
         self.new_test_name = formative_name
+        self.min_test_date = today_ist().isoformat()
         self.new_test_date = ""
         self.new_test_description = ""
         self.new_question_type = ""
@@ -2692,6 +2700,14 @@ class FacilitatorState(rx.State):
             return rx.toast.error("Please select a Question Type.")
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
+
+        try:
+            selected_date = date.fromisoformat(test_date)
+        except (TypeError, ValueError):
+            return rx.toast.error("Enter a valid test date.")
+
+        if selected_date < today_ist():
+            return rx.toast.error("Test date cannot be earlier than today.")
 
         formatted_date = test_date
         try:
@@ -5607,17 +5623,21 @@ class FacilitatorState(rx.State):
 
     @rx.var
     def current_candidate_ai_score_display(self) -> str:
-        """Returns real AI score if evaluated, else â€”."""
-        if self.real_ai_score_display != "â€”":
-            return self.real_ai_score_display
-        return "â€”"
+        """Show the saved score or a readable empty-state label."""
+        if not self.selected_evaluation_candidate:
+            return "Not Completed"
+        if self.real_ai_score_display in ("", "\u2014", "\u2013"):
+            return "Not Completed"
+        return self.real_ai_score_display
 
     @rx.var
     def current_candidate_ai_percentage_display(self) -> str:
-        """Returns real AI percentage if evaluated, else â€”."""
-        if self.real_ai_percentage_display != "â€”":
-            return self.real_ai_percentage_display
-        return "â€”"
+        """Show the saved percentage or a readable empty-state label."""
+        if not self.selected_evaluation_candidate:
+            return "Not Completed"
+        if self.real_ai_percentage_display in ("", "\u2014", "\u2013"):
+            return "Not Completed"
+        return self.real_ai_percentage_display
 
     @rx.var
     def current_candidate_ai_eval_questions(self) -> list[dict]:
@@ -6276,8 +6296,8 @@ class FacilitatorState(rx.State):
 
 
 class FacilitatorProfileState(rx.State):
-    """State for the Facilitator Profile page (Mock UI)."""
-    emp_id: str = "F001"
+    """State for the authenticated facilitator's JSON-backed profile."""
+    emp_id: str = ""
     full_name: str = ""
     email: str = ""
     phone: str = ""
@@ -6331,19 +6351,17 @@ class FacilitatorProfileState(rx.State):
 
     async def load_profile(self):
         """Load profile for the currently authenticated facilitator from shared store."""
-        try:
-            from ai_hybrid_evaluator.state.auth_state import AuthState
-            auth = await self.get_state(AuthState)
-            if auth.facilitator_emp_id:
-                self.emp_id = auth.facilitator_emp_id
-        except Exception:
-            pass
-
-        fid = self.emp_id or "F001"
+        from ai_hybrid_evaluator.state.auth_state import AuthState
+        auth = await self.get_state(AuthState)
+        if auth.facilitator_emp_id:
+            self.emp_id = auth.facilitator_emp_id
+        fid = self.emp_id
+        if not fid:
+            return
         prof = get_facilitator_profile(
             fid,
-            default_name=self.full_name or "Facilitator",
-            default_email=self.email,
+            default_name=auth.facilitator_name,
+            default_email=auth.facilitator_email,
             default_phone=self.phone,
         )
         self.full_name = prof.get("full_name", "")
@@ -6367,7 +6385,12 @@ class FacilitatorProfileState(rx.State):
         self.availability = prof.get("availability", "")
 
     async def save_profile(self):
-        """Save facilitator profile changes to the shared mock store."""
+        """Save facilitator profile changes to the JSON profile store."""
+        auth = await self.get_state(AuthState)
+        if auth.facilitator_emp_id:
+            self.emp_id = auth.facilitator_emp_id
+        if not self.emp_id:
+            return rx.toast.error("Could not identify the signed-in facilitator.")
         data = {
             "emp_id": self.emp_id,
             "full_name": self.full_name,
@@ -6395,6 +6418,11 @@ class FacilitatorProfileState(rx.State):
 
     async def handle_photo_upload(self, files: list[rx.UploadFile]):
         """Upload and display the selected facilitator profile image immediately."""
+        auth = await self.get_state(AuthState)
+        if auth.facilitator_emp_id:
+            self.emp_id = auth.facilitator_emp_id
+        if not self.emp_id:
+            return rx.toast.error("Could not identify the signed-in facilitator.")
         if not files:
             return rx.toast.error("Please select an image file to upload.")
 

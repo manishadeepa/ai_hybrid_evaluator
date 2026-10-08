@@ -1,6 +1,7 @@
 from copy import deepcopy
 from uuid import uuid4
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from backend.repositories.assessment_repository import AssessmentRepository
 from backend.services.test_dependency_service import TestDependencyService
@@ -68,6 +69,22 @@ class TestService:
             return results
 
     @staticmethod
+    def _validate_not_past_date(raw):
+        """Reject valid calendar dates earlier than today in the app's IST timezone."""
+        if not raw:
+            return
+        parsed = None
+        for fmt in ("%Y-%m-%d", "%d %b %Y"):
+            try:
+                parsed = datetime.strptime(raw, fmt).date()
+                break
+            except ValueError:
+                continue
+        # Keep legacy free-text dates readable through aggregate assessment edits.
+        if parsed is not None and parsed < datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            raise ValueError("Test date cannot be earlier than today.")
+
+    @staticmethod
     def _validate_fields(value):
         if "test_type" in value:
             validate_test_type(value["test_type"])
@@ -94,6 +111,7 @@ class TestService:
                     pass
             else:
                 raise ValueError("Invalid test date; use YYYY-MM-DD or DD Mon YYYY.")
+            TestService._validate_not_past_date(raw)
 
     def _unique(self, value):
         for row in self.get_tests(value["assessment_id"]):
@@ -156,7 +174,7 @@ class TestService:
             value = {**previous, **deepcopy(changes)}
             # Historical free-text dates remain readable; validate only explicitly changed dates.
             checked = dict(value)
-            if "date" not in changes:
+            if "date" not in changes or changes.get("date") == previous.get("date", ""):
                 checked["date"] = ""
             self._validate_fields(checked)
             self._check_type_change(previous, value)
@@ -223,6 +241,8 @@ class TestService:
                            "description": assessment.get("test_descriptions", {}).get(name, ""),
                            "question_paper": assessment.get("question_papers", {}).get(name, "")})
             record.setdefault("status", "Draft")
+            if previous is None or record.get("date", "") != previous.get("date", ""):
+                self._validate_not_past_date(record.get("date", ""))
             types = assessment.get("test_types", {})
             if not isinstance(types, dict):
                 raise ValueError("test_types must be an object.")

@@ -46,13 +46,26 @@ class CandidateManagementTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.create(identity, email)
         self.assertEqual(self.repo.file_path.read_bytes(), before)
 
-    def test_invalid_required_fields_and_credentials_rejected(self):
+    def test_invalid_required_fields_and_password_is_hashed(self):
         base = {"candidate_id": "C1", "name": "One", "email": "one@example.com"}
         for field, value in (("candidate_id", " "), ("candidate_id", 3), ("name", ""), ("name", None),
-                             ("email", "bad"), ("email", ""), ("email", None), ("password", "not-managed")):
+                             ("email", "bad"), ("email", ""), ("email", None)):
             with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                 self.service.create_candidate({**base, field: value})
-        self.assertEqual(self.service.list_candidates(), [])
+
+        with self.assertRaises(ValueError):
+            self.service.create_candidate({**base, "password": "short"})
+
+        value = self.service.create_candidate({**base, "password": "secret123"})
+        self.assertNotIn("password", value)
+        self.assertIn("password_hash", value)
+        self.assertTrue(value["password_hash"].startswith("pbkdf2_sha256$"))
+        self.assertTrue(
+            self.service._verify_password("secret123", value["password_hash"])
+        )
+        self.assertFalse(
+            self.service._verify_password("wrong-password", value["password_hash"])
+        )
 
     def test_update_preserves_identity_and_timestamps(self):
         old = self.create()

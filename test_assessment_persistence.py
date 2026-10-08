@@ -2,7 +2,7 @@
 import ast
 import asyncio
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 import json
 from pathlib import Path
 import tempfile
@@ -126,7 +126,7 @@ class PersistenceTests(unittest.TestCase):
 
     def harnesses(self):
         toast = SimpleNamespace(success=lambda *args, **kw: args, error=lambda *args, **kw: args, info=lambda *args, **kw: args)
-        ns = {'asyncio': asyncio, 'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime}
+        ns = {'asyncio': asyncio, 'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime, 'date': date, 'today_ist': lambda: date(2026, 10, 8)}
         names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', 'load_persisted_assessments_async', '_persist_assessment_record', '_add_assessment_test',
                  'add_assessment', 'save_edit_assessment', 'confirm_delete_assessment',
                  'add_test_to_selected_assessment', 'remove_test_from_selected_assessment', 'set_test_date'}
@@ -210,7 +210,7 @@ class PersistenceTests(unittest.TestCase):
         asyncio.run(fac.load_persisted_assessment_workspace())
         self.assertEqual(fac.question_papers['Quality']['Formative 2'],'second.xlsx')
         fac.new_test_name='Formative 3'
-        fac.new_test_date='2026-09-18'
+        fac.new_test_date='2099-10-09'
         fac.new_test_type='Formative'
         fac.new_test_description='New test'
 
@@ -239,8 +239,8 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(admin.assessments[0]['test_ids']['Formative 1'],survivor)
         self.assertEqual(admin.test_question_papers['Quality__Formative 1'],'second.xlsx')
         admin.add_test_to_selected_assessment()
-        admin.set_test_date('Formative 2','2026-09-21')
-        self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'2026-09-21')
+        admin.set_test_date('Formative 2','2099-09-21')
+        self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'2099-09-21')
 
 
     def test_invalid_form_assignment_is_reported_without_write(self):

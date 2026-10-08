@@ -1,4 +1,7 @@
 from copy import deepcopy
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -59,13 +62,10 @@ class CandidateManagementService:
 
     @staticmethod
     def _fields(details):
-        if not isinstance(details, dict) or set(details) - {
-            "candidate_id",
-            "name",
-            "email",
-        }:
+        allowed = {"candidate_id", "name", "email", "password"}
+        if not isinstance(details, dict) or set(details) - allowed:
             raise ValueError(
-                "Candidate details support only candidate_id, name and email."
+                "Candidate details support candidate_id, name, email, and password."
             )
 
     def list_candidates(self):
@@ -100,16 +100,116 @@ class CandidateManagementService:
         if any(r["candidate_id"] != value["candidate_id"] and r["email"].strip().casefold() == value["email"].casefold() for r in self.list_candidates()):
             raise ValueError("Email already exists for another candidate.")
 
+    @staticmethod
+    def _hash_password(password):
+        iterations = 600_000
+        salt = secrets.token_bytes(16)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iterations
+        )
+        return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+    @staticmethod
+    def _verify_password(password, encoded):
+        try:
+            algorithm, iterations, salt_hex, expected_hex = encoded.split("$")
+            if algorithm != "pbkdf2_sha256":
+                return False
+            digest = hashlib.pbkdf2_hmac(
+                "sha256",
+                password.encode("utf-8"),
+                bytes.fromhex(salt_hex),
+                int(iterations),
+            )
+            return hmac.compare_digest(digest.hex(), expected_hex)
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    def authenticate_candidate(self, login, password):
+        if not isinstance(login, str) or not isinstance(password, str):
+            return None
+
+        login = login.strip().casefold()
+        if not login or not password:
+            return None
+
+        rows = self.repository.get_all(include_deleted=True)
+        stored = next(
+            (
+                row for row in rows
+                if login in (
+                    str(row.get("candidate_id", "")).casefold(),
+                    str(row.get("email", "")).casefold(),
+                )
+            ),
+            None,
+        )
+
+        # A removal marker prevents a seeded account from reappearing at login.
+        if stored and stored.get("deleted_at"):
+            return None
+
+        if stored and stored.get("password_hash"):
+            if not self._verify_password(password, stored["password_hash"]):
+                return None
+            return {
+                "emp_id": stored["candidate_id"],
+                "name": stored["name"],
+                "email": stored["email"],
+            }
+
+        # Keep the existing built-in demo accounts working.
+        from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
+
+        for candidate in SHARED_CANDIDATES:
+            identity = str(candidate.get("emp_id", "")).casefold()
+            email = str(candidate.get("email", "")).casefold()
+            saved_password = str(candidate.get("password", ""))
+            if login in (identity, email) and hmac.compare_digest(saved_password, password):
+                return candidate
+
+        return None
+
     def create_candidate(self, details):
         with _PERSISTENCE_LOCK:
             self._fields(details)
-            value = self._clean(details)
-            identities = {r["candidate_id"] for r in self.list_candidates()} | {r["candidate_id"] for r in self.repository.get_all(include_deleted=True)}
-            if value["candidate_id"].casefold() in {i.casefold() for i in identities}:
+
+            password = details.get("password")
+            if "password" in details and (
+                not isinstance(password, str) or len(password) < 6
+            ):
+                raise ValueError("Password must be at least 6 characters.")
+
+            public_details = {
+                key: value for key, value in details.items()
+                if key != "password"
+            }
+            value = self._clean(public_details)
+
+            identities = (
+                {r["candidate_id"] for r in self.list_candidates()}
+                | {
+                    r["candidate_id"]
+                    for r in self.repository.get_all(include_deleted=True)
+                }
+            )
+            if value["candidate_id"].casefold() in {
+                identity.casefold() for identity in identities
+            }:
                 raise ValueError("Candidate ID already exists.")
+
             self._unique_email(value)
             stamp = datetime.now(timezone.utc).isoformat()
-            return self.repository.save({**value, "created_at": stamp, "updated_at": stamp})
+            record = {
+                **value,
+                "created_at": stamp,
+                "updated_at": stamp,
+            }
+            if password is not None:
+                record["password_hash"] = self._hash_password(password)
+
+            return self.repository.save(record)
+
 
     def update_candidate(self, candidate_id, changes):
         with _PERSISTENCE_LOCK:

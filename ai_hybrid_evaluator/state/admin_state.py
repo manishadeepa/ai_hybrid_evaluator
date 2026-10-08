@@ -8,6 +8,8 @@ shapes kept stable on purpose so that swap is easy later.
 import json
 import asyncio
 import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import re
 import reflex as rx
@@ -592,16 +594,10 @@ class AdminState(rx.State):
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
             "email": saved["email"],
-            "password": self.new_candidate_password,
+            "password": "",
         }
 
         self.candidates.append(new_c)
-
-        if not any(
-            c["emp_id"].casefold() == new_c["emp_id"].casefold()
-            for c in SHARED_CANDIDATES
-        ):
-            SHARED_CANDIDATES.append(new_c)
 
         self.set_show_add_candidate(False)
 
@@ -862,6 +858,10 @@ class AdminState(rx.State):
 
     assessment_status_options: list[str] = ["Draft", "Scheduled", "In Progress", "Pending", "Active", "Completed"]
 
+
+    @rx.var
+    def min_test_date(self) -> str:
+        return datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
 
     @rx.var
     def total_assessments(self) -> int:

@@ -551,6 +551,7 @@ def test_card(item: dict) -> rx.Component:
                 rx.input(
                     type="date",
                     value=test_date,
+                    min=AdminState.min_test_date,
                     on_change=lambda v: AdminState.set_test_date(test_name, v),
                     size="1",
                     width="160px",
@@ -677,6 +678,7 @@ def assessment_tests_dialog() -> rx.Component:
                             rx.input(
                                 type="date",
                                 value=AdminState.current_assessment_final_test_date,
+                                min=AdminState.min_test_date,
                                 on_change=lambda v: AdminState.set_test_date(AdminState.current_assessment_final_test, v),
                                 size="1",
                                 width="160px",

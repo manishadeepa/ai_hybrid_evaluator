@@ -25,7 +25,7 @@ class TestManagementTests(unittest.TestCase):
         return self.service.create_test(self.a, {"test_name": "Formative 1", **details})
 
     def test_crud_and_reload(self):
-        first = self.create(description="keep", date="2026-09-20")
+        first = self.create(description="keep", date="2099-09-20")
         other = self.service.create_test(self.b, {"test_name": "Formative 1"})
         fresh = TestService(TestRepository(self.repo.file_path))
         self.assertEqual(fresh.get_test(first["test_id"]), first)
@@ -40,6 +40,23 @@ class TestManagementTests(unittest.TestCase):
         self.assertEqual(fresh.list_tests(), [other])
         with self.assertRaisesRegex(ValueError, "not found"):
             fresh.get_test(first["test_id"])
+
+    def test_past_dates_rejected_by_all_test_service_write_paths(self):
+        with self.assertRaisesRegex(ValueError, "cannot be earlier than today"):
+            self.create(date="2026-09-20")
+
+        first = self.create()
+        before = self.repo.file_path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "cannot be earlier than today"):
+            self.service.update_test(first["test_id"], {"date": "20 Sep 2026"})
+        self.assertEqual(self.repo.file_path.read_bytes(), before)
+
+        assessment = self.assessments.get_assessment(self.a)
+        assessment["tests"].append("Past Formative")
+        assessment["test_dates"]["Past Formative"] = "2026-09-20"
+        with self.assertRaisesRegex(ValueError, "cannot be earlier than today"):
+            self.assessments.save_assessment(assessment)
+        self.assertEqual(self.repo.file_path.read_bytes(), before)
 
     def test_required_fields_and_missing_records(self):
         for aid in (None, "", "missing"):
@@ -77,14 +94,14 @@ class TestManagementTests(unittest.TestCase):
         first = self.create()
         for status in ("Draft", "Scheduled", "Active", "Completed"):
             self.assertEqual(self.service.update_test(first["test_id"], {"status": status})["status"], status)
-        for changes in ({"status": "bad"}, {"status": None}, {"date": "tomorrow"}, {"date": "2026-02-30"},
+        for changes in ({"status": "bad"}, {"status": None}, {"date": "tomorrow"}, {"date": "2026-02-30"}, {"date": "2026-09-20"},
                         {"date": 2}, {"is_final": "yes"}, {"description": []}, {"availability": "bad"},
                         {"duration": -1}, {"start_date": "2026-09-20", "end_date": "2026-09-19"}):
             before = self.repo.file_path.read_bytes()
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.service.update_test(first["test_id"], changes)
             self.assertEqual(self.repo.file_path.read_bytes(), before)
-        for date in ("", "2026-09-20", "20 Sep 2026"):
+        for date in ("", "2099-09-20", "20 Sep 2099"):
             self.assertEqual(self.service.update_test(first["test_id"], {"date": date})["date"], date)
 
     def test_availability_follows_existing_paper_association(self):
@@ -187,8 +204,11 @@ class TestManagementTests(unittest.TestCase):
         admin.selected_tests_assessment_index = 0
         error = admin.set_test_date("Formative 1", "bad date")
         self.assertIn("Invalid test date", error[0])
-        admin.set_test_date("Formative 1", "2026-09-20")
-        self.assertEqual(self.service.get_test(first["test_id"])["date"], "2026-09-20")
+        past_error = admin.set_test_date("Formative 1", "2026-09-20")
+        self.assertIn("cannot be earlier than today", past_error[0])
+        self.assertEqual(self.service.get_test(first["test_id"])["date"], "")
+        admin.set_test_date("Formative 1", "2099-09-20")
+        self.assertEqual(self.service.get_test(first["test_id"])["date"], "2099-09-20")
         (self.root / "manual_evaluations.json").write_text(json.dumps([{"assessment_name": "First", "test_name": "Formative 1"}]))
         fac.selected_assessment_name = "First"
         import asyncio

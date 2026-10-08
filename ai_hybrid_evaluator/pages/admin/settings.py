@@ -4,6 +4,7 @@ import reflex as rx
 from datetime import datetime
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
+from backend.services.ai_connection_service import AIConnectionService
 
 
 # ─────────────────────────────────────────────────────────────
@@ -21,14 +22,14 @@ class SettingsState(rx.State):
     ai_conn_model: str = ""
     ai_conn_api_version: str = ""
     ai_conn_cert: str = ""
-    ai_conn_api_key: str = ""
+    _ai_conn_api_key: str = ""
     ai_conn_show_key: bool = False   # toggle API key visibility in the form
 
     # ── Saved AI Connection (populated or default active) ────
-    ai_saved_name: str = "Azure-OpenAI (Prod)"
-    ai_saved_endpoint: str = "https://my-resource.openai.azure.com"
-    ai_saved_model: str = "gpt-4o"
-    ai_saved_api_version: str = "2024-02-15-preview"
+    ai_saved_name: str = ""
+    ai_saved_endpoint: str = ""
+    ai_saved_model: str = ""
+    ai_saved_api_version: str = ""
     ai_saved_cert: str = "Not configured"
     ai_saved_last_tested: str = "Aug 31, 2026, 09:15 AM"
     ai_saved_status: str = "success"        # "success" | "error" | ""
@@ -56,44 +57,79 @@ class SettingsState(rx.State):
     def set_ai_conn_model(self, v: str): self.ai_conn_model = v
     def set_ai_conn_api_version(self, v: str): self.ai_conn_api_version = v
     def set_ai_conn_cert(self, v: str): self.ai_conn_cert = v
-    def set_ai_conn_api_key(self, v: str): self.ai_conn_api_key = v
+    def set_ai_conn_api_key(self, value: str): self._ai_conn_api_key = value
     def toggle_ai_conn_show_key(self): self.ai_conn_show_key = not self.ai_conn_show_key
     def toggle_ai_saved_show_key(self): self.ai_saved_show_key = not self.ai_saved_show_key
 
     # ── AI Connection actions ─────────────────────────────────
+
+    def load_active_connection(self):
+        service = AIConnectionService()
+        connection = service.get_active_public()
+
+        if not connection:
+            return
+
+        self.ai_saved_name = connection.get("name", "")
+        self.ai_saved_endpoint = connection.get("endpoint", "") or "OpenAI"
+        self.ai_saved_model = connection.get("model", "") or "Not configured"
+        self.ai_saved_api_version = connection.get("api_version", "") or "Not applicable"
+        self.ai_saved_cert = connection.get("cert_path", "") or "Not configured"
+        self.ai_saved_last_tested = connection.get("last_tested_at", "")
+        self.ai_saved_status = connection.get("status", "")
+
+    def _connection_form(self):
+        return {
+            "name": self.ai_conn_name,
+            "endpoint": self.ai_conn_endpoint,
+            "model": self.ai_conn_model,
+            "api_version": self.ai_conn_api_version,
+            "cert_path": self.ai_conn_cert,
+            "api_key": self._ai_conn_api_key,
+        }
+
     def ai_test_connection(self):
-        """Simulate a connection test."""
-        now_str = datetime.now().strftime("%b %d, %Y, %I:%M %p")
-        self.ai_saved_last_tested = now_str
-        self.ai_saved_status = "success"
-        return rx.toast.success("Connection successful!")
+        try:
+            result = AIConnectionService().test_connection(
+                self._connection_form()
+            )
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+        self.ai_saved_last_tested = result["last_tested_at"]
+        return rx.toast.success("Connection test succeeded.")
 
     def ai_save_and_use(self):
-        """Save the form data as the active AI connection."""
-        if not self.ai_conn_name.strip():
-            return rx.toast.error("Connection Name is required.")
-        if not self.ai_conn_api_key.strip():
-            return rx.toast.error("API Key is required.")
+        try:
+            record = AIConnectionService().save_and_activate(
+                self._connection_form()
+            )
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
 
-        self.ai_saved_name = self.ai_conn_name.strip()
-        self.ai_saved_endpoint = self.ai_conn_endpoint.strip()
-        self.ai_saved_model = self.ai_conn_model.strip()
-        self.ai_saved_api_version = self.ai_conn_api_version.strip()
-        self.ai_saved_cert = self.ai_conn_cert.strip() if self.ai_conn_cert.strip() else "Not configured"
-        self.ai_saved_last_tested = datetime.now().strftime("%b %d, %Y, %I:%M %p")
+        self.ai_saved_name = record["name"]
+        self.ai_saved_endpoint = record["endpoint"] or "OpenAI"
+        self.ai_saved_model = record["model"] or "Not configured"
+        self.ai_saved_api_version = (
+            record["api_version"] or "Not applicable"
+        )
+        self.ai_saved_cert = record["cert_path"] or "Not configured"
+        self.ai_saved_last_tested = record["last_tested_at"]
         self.ai_saved_status = "success"
 
-        # Clear the form and transition to current view
+        self._ai_conn_api_key = ""
         self.ai_conn_name = ""
         self.ai_conn_endpoint = ""
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
-        self.ai_conn_api_key = ""
         self.ai_conn_show_key = False
         self.active_view = "current"
         self.show_selection_dialog = False
-        return rx.toast.success("AI Connection saved and activated!")
+
+        return rx.toast.success(
+            "Connection tested, saved, and activated."
+        )
 
     def ai_cancel_form(self):
         """Clear the new-connection form and return to selection."""
@@ -102,7 +138,7 @@ class SettingsState(rx.State):
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
-        self.ai_conn_api_key = ""
+        self._ai_conn_api_key = ""
         self.ai_conn_show_key = False
         self.active_view = "select"
         self.show_selection_dialog = True
@@ -114,7 +150,7 @@ class SettingsState(rx.State):
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
-        self.ai_conn_api_key = ""
+        self._ai_conn_api_key = ""
         self.ai_conn_show_key = False
         self.active_view = "new"
         self.show_selection_dialog = False
@@ -580,7 +616,7 @@ def _new_connection_card() -> rx.Component:
                 rx.hstack(
                     rx.input(
                         placeholder="Enter API key",
-                        value=SettingsState.ai_conn_api_key,
+
                         on_change=SettingsState.set_ai_conn_api_key,
                         type=rx.cond(SettingsState.ai_conn_show_key, "text", "password"),
                         flex="1", size="3",

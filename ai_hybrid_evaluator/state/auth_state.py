@@ -343,44 +343,18 @@ class AuthState(rx.State):
             self.candidate_signin_error = "Please enter your password."
             return
 
-        cid_lower = cid.lower()
+        from backend.services.candidate_management_service import (
+            CandidateManagementService,
+        )
 
-        # --- Step 1: Search SHARED_CANDIDATES (plain Python list, no Reflex wrapping) ---
-        # These are always correct plain dicts. Password comparison is safe here.
-        match = None
-        for c in SHARED_CANDIDATES:
-            if c["emp_id"].lower() == cid_lower or c.get("email", "").lower() == cid_lower:
-                match = c
-                break
-
-        # --- Step 2: If not in shared list, check admin_state for newly added candidates ---
-        if match is None:
-            admin_state = await self.get_state(AdminState)
-            for c in admin_state.candidates:
-                # Use plain string conversion to avoid Reflex Var comparison issues
-                emp_id = str(c.get("emp_id", "")).lower()
-                email = str(c.get("email", "")).lower()
-                if emp_id == cid_lower or email == cid_lower:
-                    # Re-construct as a plain dict to avoid Var wrapping
-                    match = {
-                        "emp_id": str(c.get("emp_id", "")),
-                        "name": str(c.get("name", "")),
-                        "email": str(c.get("email", "")),
-                        "password": str(c.get("password", "")),
-                    }
-                    break
-
-        if match is None:
-            self.candidate_signin_error = (
-                "Employee ID not found. "
-                "Please check your ID or contact your administrator."
-            )
+        try:
+            match = CandidateManagementService().authenticate_candidate(cid, pwd)
+        except (ValueError, OSError):
+            self.candidate_signin_error = "Candidate account data could not be read."
             return
 
-        # --- Step 3: Password check (plain string comparison) ---
-        stored_pwd = str(match.get("password", ""))
-        if stored_pwd and stored_pwd != pwd:
-            self.candidate_signin_error = "Incorrect password. Please try again."
+        if match is None:
+            self.candidate_signin_error = "Invalid candidate ID or password."
             return
 
         # --- Step 4: Success ---

@@ -42,7 +42,7 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fac.selected_assessment_name,expected['name'])
         await self.fac.open_add_test_modal()
         self.assertTrue(self.fac.show_add_test_modal)
-        self.fac.new_test_name='New test';self.fac.new_test_date='2026-10-01'
+        self.fac.new_test_name='New test';self.fac.new_test_date='2099-10-01'
         self.fac.new_question_type='Subjective'
         result=await self.fac.create_new_test()
         saved=self.service.get_assessment(expected['assessment_id'])
@@ -98,7 +98,7 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('/facilitator/assessment',str(event))
         self.assertEqual(self.fac.selected_assessment_id,'')
         await self.fac.open_add_test_modal();self.assertFalse(self.fac.show_add_test_modal)
-        self.fac.new_test_name='Blocked';self.fac.new_test_date='2026-10-01'
+        self.fac.new_test_name='Blocked';self.fac.new_test_date='2099-10-01'
         await self.fac.create_new_test();self.assertEqual(self.service.tests.repository.get_all(),[])
 
     async def test_workspace_index_is_relative_to_assigned_list(self):
@@ -121,7 +121,7 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.fac.selected_assessment_name=self.first['name']
         await self.fac.load_persisted_assessment_workspace()
         self.assertEqual(self.fac.selected_assessment_id,'');self.assertEqual(self.fac.selected_assessment_name,'')
-        self.fac.new_test_name='Blocked';self.fac.new_test_date='2026-10-01'
+        self.fac.new_test_name='Blocked';self.fac.new_test_date='2099-10-01'
         await self.fac.create_new_test();self.assertEqual(self.service.tests.repository.get_all(),[])
 
     async def test_missing_session_does_not_show_default_facilitator_records(self):
@@ -135,7 +135,8 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         event=await self.fac.load_persisted_assessment_workspace()
         self.assertIn('/signin',str(event))
         self.assertEqual(self.fac.selected_assessment_id,'')
-        self.fac.new_test_name='Blocked';self.fac.new_test_date='2026-10-01'
+        self.fac.new_test_name='Blocked';self.fac.new_test_date='2099-10-01'
+        self.fac.new_question_type='Subjective'
         event=await self.fac.create_new_test()
         self.assertIn('/signin',str(event))
         self.assertEqual(self.service.tests.repository.get_all(),[])
@@ -145,7 +146,7 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('/facilitator/assessment',str(event))
         await self.fac.open_add_test_modal()
         self.assertFalse(self.fac.show_add_test_modal)
-        self.fac.new_test_name='Blocked';self.fac.new_test_date='2026-10-01'
+        self.fac.new_test_name='Blocked';self.fac.new_test_date='2099-10-01'
         await self.fac.create_new_test()
         self.assertEqual(self.service.tests.repository.get_all(),[])
 

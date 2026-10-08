@@ -2019,21 +2019,21 @@ class CandidateProfileState(rx.State):
 
     # 1. Employee Information
     profile_photo_url: str = ""
-    full_name: str = "Priya Sharma"
-    emp_id: str = "CAND-2031"
-    email: str = "priya.sharma@genaievaluator.com"
-    phone: str = "+91 98765 43210"
-    location: str = "Bangalore, India"
-    date_of_joining: str = "2024-06-15"
-    employment_status: str = "Active"
+    full_name: str = ""
+    emp_id: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    date_of_joining: str = ""
+    employment_status: str = ""
 
     # 2. Organization Details
-    company_bu: str = "TVS Motor Company"
-    department: str = "Quality Assurance & Testing"
-    designation: str = "Senior Quality Engineer"
-    grade_level: str = "L3 - Senior Associate"
-    reporting_manager: str = "Ravi Kumar (Lead Evaluator)"
-    work_location: str = "TVS Motor Plant, Hosur Facility, Block C"
+    company_bu: str = ""
+    department: str = ""
+    designation: str = ""
+    grade_level: str = ""
+    reporting_manager: str = ""
+    work_location: str = ""
 
     # Option lists for selects
     employment_status_options: list[str] = ["Active", "On Leave", "Inactive"]
@@ -2084,19 +2084,18 @@ class CandidateProfileState(rx.State):
     def set_work_location(self, v: str): self.work_location = v
 
     async def load_profile(self):
-        """Load candidate profile from shared store."""
-        try:
-            auth = await self.get_state(AuthState)
-            if auth.candidate_emp_id:
-                self.emp_id = auth.candidate_emp_id
-        except Exception:
-            pass
-
-        cid = self.emp_id or "CAND-2031"
+        """Load the signed-in candidate's JSON-backed profile."""
+        auth = await self.get_state(AuthState)
+        if auth.candidate_emp_id:
+            self.emp_id = auth.candidate_emp_id
+        cid = self.emp_id
+        if not cid:
+            return
         prof = get_candidate_profile(
             cid,
-            default_name=self.full_name or "Candidate",
-            default_email=self.email,
+            default_name=auth.candidate_name,
+            default_email=auth.candidate_email,
+            default_phone=self.phone,
         )
         self.full_name = prof.get("full_name", "")
         self.email = prof.get("email", "")
@@ -2114,6 +2113,11 @@ class CandidateProfileState(rx.State):
 
     async def handle_photo_upload(self, files: list[rx.UploadFile]):
         """Upload and display the selected candidate profile image immediately."""
+        auth = await self.get_state(AuthState)
+        if auth.candidate_emp_id:
+            self.emp_id = auth.candidate_emp_id
+        if not self.emp_id:
+            return rx.toast.error("Could not identify the signed-in candidate.")
         if not files:
             return rx.toast.error("Please select an image file to upload.")
 
@@ -2143,7 +2147,12 @@ class CandidateProfileState(rx.State):
         return rx.toast.success(f"Profile photo updated: {file.filename}")
 
     async def save_profile(self):
-        """Save candidate profile changes to shared store."""
+        """Save candidate profile changes to the JSON profile store."""
+        auth = await self.get_state(AuthState)
+        if auth.candidate_emp_id:
+            self.emp_id = auth.candidate_emp_id
+        if not self.emp_id:
+            return rx.toast.error("Could not identify the signed-in candidate.")
         data = {
             "emp_id": self.emp_id,
             "full_name": self.full_name,
