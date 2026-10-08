@@ -1,0 +1,93 @@
+         border=rx.cond(is_formative, f"2px solid {COLORS['primary']}", f"1px solid {COLORS['line']}"),
+                            background=rx.cond(is_formative, "#FAF5FF", "#FFFFFF"),
+                            cursor="pointer",
+                            flex="1",
+                            on_click=FacilitatorState.set_new_test_type("Formative"),
+                            transition="all 0.15s ease",
+                        ),
+
+                        # Summative Option Card
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.cond(
+                                        is_summative,
+                                        rx.box(
+                                            rx.box(width="8px", height="8px", border_radius="50%", background=COLORS["primary"]),
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['primary']}",
+                                            display="flex",
+                                            align_items="center",
+                                            justify_content="center",
+                                        ),
+                                        rx.box(
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['line']}",
+                                        ),
+                                    ),
+                                    flex_shrink=0,
+                                ),
+                                rx.box(
+                                    rx.icon("award", size=18, color="#D97706"),
+                                    background="#FEF3C7",
+                                    padding="0.45em",
+                                    border_radius="8px",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                    flex_shrink=0,
+                                ),
+                                rx.vstack(
+                                    rx.text("Summative", font_family=FONT_BODY, size="2", weight="bold", color=rx.cond(is_summative, COLORS["primary"], COLORS["ink"])),
+                                    rx.text("Final assessment to measure overall learning.", font_family=FONT_BODY, size="1", color=COLORS["slate"], line_height="1.2"),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            padding="0.85em 1em",
+                            border_radius="12px",
+                            border=rx.cond(is_summative, f"2px solid {COLORS['primary']}", f"1px solid {COLORS['line']}"),
+                            background=rx.cond(is_summative, "#FAF5FF", "#FFFFFF"),
+                            cursor="pointer",
+                            flex="1",
+                            on_click=FacilitatorState.set_new_test_type("Summative"),
+                            transition="all 0.15s ease",
+                        ),
+                        spacing="3",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Test Name ───────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Name", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.input(
+                        value=FacilitatorState.new_test_name,
+                        on_change=FacilitatorState.set_new_test_name,
+                        placeholder="e.g. Formative 4",
+                        width="100%",
+                        border_radius="8px",
+                        border=f"1px solid {COLORS['line']}",
+                        font_family=FONT_BODY,
+                        size="2",
+                    ),
+                    rx.text(
+                        "You can edit the test name if needed.",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color=COLORS["slate"],
+   

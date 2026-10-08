@@ -1,0 +1,45 @@
+er=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        cursor="pointer",
+                    ),
+                    rx.button(
+                        "Create Test",
+                        on_click=FacilitatorState.create_new_test,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        border_radius="8px",
+                        _hover={"background": COLORS["primary_hover"]},
+                        cursor="pointer",
+                    ),
+                    spacing="3",
+                    width="100%",
+                    align_items="center",
+                    padding_top="0.5em",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "540px", "width": "92vw", "padding": "1.8em", "borderRadius": "16px"},
+        ),
+        open=FacilitatorState.show_add_test_modal,
+        on_open_change=FacilitatorState.set_show_add_test_modal,
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Workspace page
+# ──────────────────────────────────────────────────────────────────────────────
+
+def qp_upload_dialog() -> rx.Component:
+    """Dialog modal for uploading or replacing question paper for the selected test."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.vstack(
+                        rx.dialog.title(
+                            rx.cond(
+                                FacilitatorState.has_current_

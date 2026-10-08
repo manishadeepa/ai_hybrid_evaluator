@@ -1,0 +1,57 @@
+      pass
+        next_num = max(formative_nums, default=len(current_tests)) + 1
+        formative_name = f"Formative {next_num}"
+
+        self.suggested_formative_name = formative_name
+        self.new_test_type = "Formative"
+        self.new_test_name = formative_name
+        self.new_test_date = ""
+        self.new_test_description = ""
+        self.show_add_test_modal = True
+
+    async def facilitator_add_test(self):
+        """Convenience alias for opening the modal."""
+        return await self.open_add_test_modal()
+
+    async def create_new_test(self):
+        """Validate and add the newly configured test to current assessment."""
+        test_name = self.new_test_name.strip()
+        test_date = self.new_test_date.strip()
+
+        if not test_name:
+            return rx.toast.error("Please enter a Test Name.")
+        if not test_date:
+            return rx.toast.error("Please select a Test Date.")
+
+        formatted_date = test_date
+        try:
+            dt = datetime.strptime(test_date, "%Y-%m-%d")
+            formatted_date = dt.strftime("%d %b %Y")
+        except Exception:
+            pass
+
+        admin_state = await self.get_state(AdminState)
+        name = self.selected_assessment_name
+        found = False
+        for i, a in enumerate(admin_state.assessments):
+            if a["name"] == name:
+                found = True
+                updated = dict(a)
+                dates = dict(updated.get("test_dates", {}))
+                dates[test_name] = formatted_date
+                updated["test_dates"] = dates
+
+                if self.new_test_type == "Summative":
+                    updated["final_test"] = test_name
+                else:
+                    current_tests = list(updated.get("tests", []))
+                    if test_name not in current_tests:
+                        current_tests.append(test_name)
+                    updated["tests"] = current_tests
+
+                if self.new_test_description.strip():
+                    descs = dict(updated.get("test_descriptions", {}))
+                    descs[test_name] = self.new_test_description.strip()
+                    updated["test_descriptions"] = descs
+
+                admin_sta

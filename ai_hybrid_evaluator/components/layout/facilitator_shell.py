@@ -250,56 +250,75 @@ def facilitator_sidebar(active: str) -> rx.Component:
     return rx.box(
         rx.vstack(
             nav_link("My Assessments", "/facilitator/dashboard", "layout-grid", active == "assessments"),
-            # ── Approved assessment quick-links with test sub-items ───────
-            rx.cond(
-                FacilitatorState.approved_assessments.length() > 0,
-                rx.vstack(
-                    rx.text(
-                        "ACTIVE WORKSPACES",
-                        font_family=FONT_BODY,
-                        size="1",
-                        weight="bold",
-                        color=COLORS["slate"],
-                        letter_spacing="0.05em",
-                        padding_left="0.85em",
-                        padding_top="0.6em",
+            # ── Approved assessment quick-links with test sub-items (Scrollable) ───
+            rx.box(
+                rx.cond(
+                    FacilitatorState.approved_assessments.length() > 0,
+                    rx.vstack(
+                        rx.text(
+                            "ACTIVE WORKSPACES",
+                            font_family=FONT_BODY,
+                            size="1",
+                            weight="bold",
+                            color=COLORS["slate"],
+                            letter_spacing="0.05em",
+                            padding_left="0.85em",
+                            padding_top="0.6em",
+                        ),
+                        rx.foreach(
+                            FacilitatorState.approved_assessments,
+                            sidebar_approved_assessment_item,
+                        ),
+                        spacing="1",
+                        width="100%",
+                        align_items="stretch",
                     ),
-                    rx.foreach(
-                        FacilitatorState.approved_assessments,
-                        sidebar_approved_assessment_item,
-                    ),
-                    spacing="1",
-                    width="100%",
-                    align_items="stretch",
                 ),
+                flex="1",
+                min_height="0",
+                width="100%",
+                overflow_y="auto",
+                overflow_x="hidden",
+                padding_right="4px",
+                style={
+                    "scrollbarWidth": "thin",
+                    "scrollbarColor": "#CBD5E1 transparent",
+                },
             ),
 
-            nav_link("Profile", "/facilitator/profile", "user", active == "profile"),
-            rx.spacer(),
-            # Logout
-            rx.box(
-                rx.hstack(
-                    rx.icon("log-out", size=16, color=COLORS["slate"]),
-                    rx.text(
-                        "Logout",
-                        color="#334155",
-                        font_family=FONT_BODY,
-                        size="2",
-                        weight="medium",
+            # Bottom pinned section
+            rx.vstack(
+                nav_link("Profile", "/facilitator/profile", "user", active == "profile"),
+                # Logout
+                rx.box(
+                    rx.hstack(
+                        rx.icon("log-out", size=16, color=COLORS["slate"]),
+                        rx.text(
+                            "Logout",
+                            color="#334155",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="medium",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                        width="100%",
                     ),
-                    spacing="3",
-                    align_items="center",
+                    background=COLORS["surface"],
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="10px",
+                    padding="0.7em 1em",
+                    cursor="pointer",
                     width="100%",
+                    on_click=AuthState.facilitator_logout,
+                    _hover={"background": "#F8FAFC", "border_color": "#D0D5DD"},
+                    transition="all 0.15s ease",
                 ),
-                background=COLORS["surface"],
-                border=f"1px solid {COLORS['line']}",
-                border_radius="10px",
-                padding="0.7em 1em",
-                cursor="pointer",
+                spacing="2",
                 width="100%",
-                on_click=AuthState.facilitator_logout,
-                _hover={"background": "#F8FAFC", "border_color": "#D0D5DD"},
-                transition="all 0.15s ease",
+                padding_top="0.5em",
+                border_top=f"1px solid {COLORS['line']}",
+                flex_shrink=0,
             ),
             spacing="2",
             width="100%",
@@ -311,9 +330,10 @@ def facilitator_sidebar(active: str) -> rx.Component:
         width="240px",
         min_width="240px",
         height="calc(100vh - 64px)",
-        padding="1.5em 1em",
+        padding="1.2em 0.85em",
         display="flex",
         flex_direction="column",
+        overflow="hidden",
     )
 
 

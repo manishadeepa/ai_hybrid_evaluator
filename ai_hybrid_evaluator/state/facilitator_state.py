@@ -2688,6 +2688,8 @@ class FacilitatorState(rx.State):
 
         if not test_name:
             return rx.toast.error("Please enter a Test Name.")
+        if not self.new_question_type:
+            return rx.toast.error("Please select a Question Type.")
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
 
@@ -2732,6 +2734,13 @@ class FacilitatorState(rx.State):
                 if not updated.get("test_ids", {}).get(test_name):
                     return rx.toast.error("Test was created, but its test ID could not be resolved.")
 
+                # Save question type (Objective / Subjective / Hybrid) per test
+                qtypes = dict(updated.get("test_question_types", {}))
+                qtypes[test_name] = self.new_question_type
+                updated["test_question_types"] = qtypes
+
+                admin_state.assessments[i] = updated
+                self.selected_test_name = test_name
                 break
 
         if not found:

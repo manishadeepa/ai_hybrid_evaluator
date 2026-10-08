@@ -1,0 +1,28 @@
+d by original id)
+        count = 0
+        for q in LOADED_TEST_QUESTIONS.get(f"{self.active_assessment_name}::{self.active_test_name}", []):
+            qid_str = str(q["id"])
+            if q.get("question_type") == "Objective":
+                # MCQ: answered if an option has been selected
+                if self.mcq_answers.get(qid_str, "").strip():
+                    count += 1
+            else:
+                if _strip_html(self.answers.get(qid_str, "")).strip():
+                    count += 1
+        return count
+
+    @rx.var
+    def unanswered_count(self) -> int:
+        return self.total_questions - self.answered_count
+
+    @rx.var
+    def marked_count(self) -> int:
+        return len(self.marked_for_review)
+
+    @rx.var
+    def current_guidelines(self) -> list[str]:
+        q = self.current_question
+        return q.get("guidelines", [
+            "Your answer should be structured and clear.",
+            "Support your points with relevant examples.",
+            "Write in

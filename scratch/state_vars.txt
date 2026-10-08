@@ -1,0 +1,27 @@
+orkspace_tab = "tests"
+        return rx.redirect("/facilitator/assessment")
+
+    # ── Facilitator Test Management & Add Test Modal ─────────────────────────
+    show_add_test_modal: bool = False
+    new_test_type: str = "Formative"  # "Formative" | "Summative"
+    new_test_name: str = ""
+    new_test_date: str = ""
+    new_test_description: str = ""
+    suggested_formative_name: str = ""
+
+    def set_show_add_test_modal(self, value: bool):
+        self.show_add_test_modal = value
+
+    def close_add_test_modal(self):
+        self.show_add_test_modal = False
+
+    def set_new_test_type(self, value: str):
+        self.new_test_type = value
+        if value == "Summative":
+            if self.new_test_name.startswith("Formative") or not self.new_test_name:
+                self.new_test_name = "Summative Test"
+        else:
+            if self.new_test_name == "Summative Test" or not self.new_test_name:
+                self.new_test_name = self.suggested_formative_name or "Formative 1"
+
+   

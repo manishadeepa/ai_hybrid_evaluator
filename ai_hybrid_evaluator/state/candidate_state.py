@@ -15,7 +15,6 @@ import pandas as pd
 from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.models.models import get_candidate_profile, save_candidate_profile
-from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response
 from backend.services.assessment_service import AssessmentService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
 from backend.services.feedback_service import FeedbackService

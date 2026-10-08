@@ -246,6 +246,7 @@ class AdminState(rx.State):
     new_facilitator_email: str = ""
     new_facilitator_phone: str = ""
     new_facilitator_password: str = ""
+    new_facilitator_show_password: bool = False
     facilitator_form_error: str = ""
 
     def set_show_add_facilitator(self, value: bool):
@@ -256,7 +257,11 @@ class AdminState(rx.State):
             self.new_facilitator_email = ""
             self.new_facilitator_phone = ""
             self.new_facilitator_password = ""
+            self.new_facilitator_show_password = False
             self.facilitator_form_error = ""
+
+    def toggle_new_facilitator_password(self):
+        self.new_facilitator_show_password = not self.new_facilitator_show_password
 
     def set_new_facilitator_empid(self, value: str):
         self.new_facilitator_empid = value
@@ -330,7 +335,11 @@ class AdminState(rx.State):
     edit_facilitator_email: str = ""
     edit_facilitator_phone: str = ""
     edit_facilitator_password: str = ""
+    edit_facilitator_show_password: bool = False
     edit_facilitator_error: str = ""
+
+    def toggle_edit_facilitator_password(self):
+        self.edit_facilitator_show_password = not self.edit_facilitator_show_password
 
     def open_edit_facilitator(self, index: int):
         f = self.facilitators[index]
@@ -340,6 +349,7 @@ class AdminState(rx.State):
         self.edit_facilitator_email = f["email"]
         self.edit_facilitator_phone = f["phone"]
         self.edit_facilitator_password = f["password"]
+        self.edit_facilitator_show_password = False
         self.edit_facilitator_error = ""
         self.show_edit_facilitator = True
 
@@ -347,6 +357,7 @@ class AdminState(rx.State):
         self.show_edit_facilitator = value
         if not value:
             self.edit_facilitator_index = -1
+            self.edit_facilitator_show_password = False
             self.edit_facilitator_error = ""
 
     def set_edit_facilitator_empid(self, value: str):
@@ -471,6 +482,7 @@ class AdminState(rx.State):
     new_candidate_name: str = ""
     new_candidate_email: str = ""
     new_candidate_password: str = ""
+    new_candidate_show_password: bool = False
     candidate_form_error: str = ""
 
     def set_show_add_candidate(self, value: bool):
@@ -480,7 +492,11 @@ class AdminState(rx.State):
             self.new_candidate_name = ""
             self.new_candidate_email = ""
             self.new_candidate_password = ""
+            self.new_candidate_show_password = False
             self.candidate_form_error = ""
+
+    def toggle_new_candidate_password(self):
+        self.new_candidate_show_password = not self.new_candidate_show_password
 
     def set_new_candidate_id(self, value: str):
         self.new_candidate_id = value
@@ -558,7 +574,11 @@ class AdminState(rx.State):
     edit_candidate_name: str = ""
     edit_candidate_email: str = ""
     edit_candidate_password: str = ""
+    edit_candidate_show_password: bool = False
     edit_candidate_error: str = ""
+
+    def toggle_edit_candidate_password(self):
+        self.edit_candidate_show_password = not self.edit_candidate_show_password
 
     def open_edit_candidate(self, index: int):
         c = self.candidates[index]
@@ -567,6 +587,7 @@ class AdminState(rx.State):
         self.edit_candidate_name = c["name"]
         self.edit_candidate_email = c["email"]
         self.edit_candidate_password = c["password"]
+        self.edit_candidate_show_password = False
         self.edit_candidate_error = ""
         self.show_edit_candidate = True
 
@@ -574,6 +595,7 @@ class AdminState(rx.State):
         self.show_edit_candidate = value
         if not value:
             self.edit_candidate_index = -1
+            self.edit_candidate_show_password = False
             self.edit_candidate_error = ""
 
     def set_edit_candidate_id(self, value: str):

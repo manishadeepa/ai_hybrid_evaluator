@@ -1,0 +1,100 @@
+def add_new_test_dialog() -> rx.Component:
+    is_formative = FacilitatorState.new_test_type == "Formative"
+    is_summative = FacilitatorState.new_test_type == "Summative"
+
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # ── Header ──────────────────────────────────────────────
+                rx.hstack(
+                    rx.vstack(
+                        rx.text(
+                            "Add New Test",
+                            font_family=FONT_DISPLAY,
+                            size="5",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Create a new test for the assessment \"",
+                            FacilitatorState.selected_assessment_name,
+                            "\".",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=18),
+                            size="2",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_add_test_modal,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="start",
+                    padding_bottom="0.5em",
+                ),
+
+                # ── Test Type Selection ─────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Type", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        # Formative Option Card
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.cond(
+                                        is_formative,
+                                        rx.box(
+                                            rx.box(width="8px", height="8px", border_radius="50%", background=COLORS["primary"]),
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['primary']}",
+                                            display="flex",
+                                            align_items="center",
+                                            justify_content="center",
+                                        ),
+                                        rx.box(
+                                            width="18px",
+                                            height="18px",
+                                            border_radius="50%",
+                                            border=f"2px solid {COLORS['line']}",
+                                        ),
+                                    ),
+                                    flex_shrink=0,
+                                ),
+                                rx.box(
+                                    rx.icon("file-text", size=18, color=COLORS["primary"]),
+                                    background="#EDE9FE",
+                                    padding="0.45em",
+                                    border_radius="8px",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                    flex_shrink=0,
+                                ),
+                                rx.vstack(
+                                    rx.text("Formative", font_family=FONT_BODY, size="2", weight="bold", color=rx.cond(is_formative, COLORS["primary"], COLORS["ink"])),
+                                    rx.text("Ongoing assessment during the learning process.", font_family=FONT_BODY, size="1", color=COLORS["slate"], line_height="1.2"),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            padding="0.85em 1em",
+                            border_radius="12px",
+                   

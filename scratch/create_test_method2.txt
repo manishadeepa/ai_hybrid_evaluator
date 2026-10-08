@@ -1,0 +1,27 @@
+   # Reset Overall Report lock — facilitator must re-mark assessment Complete after adding tests
+        self._unmark_assessment_complete(name)
+        await self.sync_assessment_weightage(name)
+        self.show_add_test_modal = False
+        return rx.toast.success(f"Test '{test_name}' created successfully!")
+
+    async def facilitator_remove_test(self, test_name: str):
+        """Remove a test from the currently open assessment."""
+        admin_state = await self.get_state(AdminState)
+        name = self.selected_assessment_name
+        for i, a in enumerate(admin_state.assessments):
+            if a["name"] == name:
+                updated = dict(a)
+                current_tests = list(updated.get("tests", []))
+                final_test = updated.get("final_test", "")
+                if test_name in current_tests:
+                    current_tests.remove(test_name)
+                    updated["tests"] = current_tests
+                elif test_name == final_test:
+                    updated["final_test"] = ""
+
+                old_dates = dict(updated.get("test_dates", {}))
+                old_dates.pop(test_name, None)
+                updated["test_dates"] = old_dates
+                admin_state.assessments[i] = updated
+
+                remaining = list(updated.get("tests", 

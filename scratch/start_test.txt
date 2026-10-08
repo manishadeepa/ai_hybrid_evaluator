@@ -1,0 +1,80 @@
+def start_test(self, assessment_name: str, test_name: str):
+        """Launch the test session and navigate to /candidate/test. Blocks already submitted tests."""
+        cand_id = await self._get_current_candidate_id()
+        key = f"{cand_id}::{assessment_name}::{test_name}"
+        record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
+
+        if record:
+            if record.get("status") == "Submitted":
+                return rx.toast.info("This test has already been submitted and cannot be retaken.")
+            if record.get("status") == "Disqualified":
+                return rx.toast.error("This test was terminated due to proctoring violations and cannot be retaken.")
+
+        self.active_assessment_name = assessment_name
+        self.active_test_name = test_name
+
+        # ── Load questions from the Facilitator-uploaded file ────────────
+        # Import here to avoid circular imports; FacilitatorState lives in the same process.
+        q_key = f"{assessment_name}::{test_name}"
+        if q_key not in LOADED_TEST_QUESTIONS or not LOADED_TEST_QUESTIONS[q_key]:
+            try:
+                from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState as FS
+                fac = await self.get_state(FS)
+                filename = fac.question_papers.get(assessment_name, {}).get(test_name, "")
+                if filename:
+                    upload_dir = _get_upload_dir()
+                    filepath = upload_dir / filename
+                    qs = _load_questions_from_file(filepath)
+                    if qs:
+                        LOADED_TEST_QUESTIONS[q_key] = qs
+                        print(f"[QP] Loaded {len(qs)} questions for {q_key} from {filename}")
+                    else:
+                        print(f"[QP] WARNING: No questions loaded for {q_key} from {filename}")
+                        LOADED_TEST_QUESTIONS[q_key] = []
+                else:
+                    print(f"[QP] WARNING: No QP uploaded for {q_key}")
+                    LOADED_TEST_QUESTIONS[q_key] = []
+            except Exception as e:
+                print(f"[QP] ERROR loading questions for {q_key}: {e}")
+                LOADED_TEST_QUESTIONS[q_key] = []
+
+        cand_key = f"{cand_id}::{assessment_name}::{test_name}"
+        if record and record.get("shuffle_order"):
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = record["shuffle_order"]
+        elif cand_key not in CANDIDATE_SHUFFLE_ORDERS:
+            original_qs = LOADED_TEST_QUESTIONS.get(q_key, [])
+            CANDIDATE_SHUFFLE_ORDERS[cand_key] = _generate_shuffle_order(len(original_qs))
+
+        # Always start at Question 1 (index 0)
+        self.current_question_index = 0
+        self.is_test_submitted = False
+        self.show_candidate_feedback_modal = False
+        self.is_time_expired = False
+        self.show_submit_dialog = False
+        self.show_violation_modal = False
+        self.auto_save_status = "Auto-saved"
+        self.total_time_seconds = 5400  # 01:30:00
+        self.time_display = "01:30:00"
+        self.is_fullscreen = True
+
+        if record:
+            self.violation_count = min(record.get("violation_count", 0), self.max_violations)
+            self.answers = dict(record.get("answers", {}))
+            self.mcq_answers = dict(record.get("mcq_answers", {}))
+            self.marked_for_review = list(record.get("marked_for_review", []))
+        else:
+            self.violation_count = 0
+            self.answers = {}
+            self.mcq_answers = {}
+            self.marked_for_review = []
+            self._save_current_test_record(status="In Progress")
+
+        self.timer_session_id += 1
+        return [rx.redirect("/candidate/test"), CandidateState.run_timer]
+
+
+    def _restore_rte_script(self):
+        """Return a call_script that pushes the currently saved answer HTML
+        into the contenteditable editor AND sets the data-* attributes on the
+        relay input so the localStorage helpers know the current
+        candidate/assessment/test/question c
