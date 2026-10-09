@@ -1332,6 +1332,72 @@ def proctoring_warning_dialog() -> rx.Component:
     )
 
 
+def low_time_warning_dialog() -> rx.Component:
+    """Warning popup shown when remaining time reaches 5 minutes."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("alarm-clock-off", size=24, color="#DC2626"),
+                        background="#FEF2F2",
+                        padding="0.6em",
+                        border_radius="50%",
+                    ),
+                    rx.vstack(
+                        rx.dialog.title(
+                            "Time Is Running Out!",
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Time remaining: " + CandidateState.time_display,
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color="#DC2626",
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                rx.dialog.description(
+                    "Only 5 minutes remain. Please review your answers and submit your test.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                    padding_y="0.8em",
+                ),
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Continue Test",
+                        on_click=CandidateState.dismiss_low_time_warning,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        border_radius="6px",
+                        _hover={"background": COLORS["primary_hover"]},
+                    ),
+                    width="100%",
+                ),
+                spacing="3",
+                align_items="stretch",
+            ),
+            max_width="450px",
+            padding="1.8em",
+            border_radius="14px",
+            background="white",
+        ),
+        open=CandidateState.show_low_time_warning,
+    )
+
+
 def submit_confirmation_dialog() -> rx.Component:
     return rx.dialog.root(
         rx.dialog.content(
@@ -1773,6 +1839,7 @@ def candidate_test_page() -> rx.Component:
         # Browser CSS updates labels immediately, even before the server receives the event.
         rx.el.style("html:not(:fullscreen) .browser-fullscreen-active {display:none!important} html:fullscreen .browser-fullscreen-inactive {display:none!important}"),
         proctoring_warning_dialog(),
+        low_time_warning_dialog(),
         candidate_feedback_modal(),
         rx.cond(
             CandidateState.show_candidate_feedback_modal,

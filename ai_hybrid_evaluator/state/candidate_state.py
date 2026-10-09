@@ -8,7 +8,8 @@ import asyncio
 import base64
 import json
 import re
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import reflex as rx
 import pandas as pd
@@ -16,6 +17,7 @@ from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.models.models import get_candidate_profile, save_candidate_profile
 from backend.services.assessment_service import AssessmentService
+from backend.services.test_service import TestService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
 from backend.services.feedback_service import FeedbackService
 
@@ -236,6 +238,43 @@ def _load_dashboard_statuses(cand_id):
         return subs, dqs
 
 
+def _parse_test_timing_bounds(test_date_str: str, start_time_str: str, end_time_str: str, tz=ZoneInfo("Asia/Kolkata")):
+    """Parse configured date and start/end times into timezone-aware datetimes."""
+    if not test_date_str:
+        return None, None
+    parsed_date = None
+    for dfmt in ("%Y-%m-%d", "%d %b %Y", "%d %B %Y", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+        try:
+            parsed_date = datetime.strptime(test_date_str.strip(), dfmt).date()
+            break
+        except Exception:
+            continue
+    if parsed_date is None:
+        return None, None
+
+    def _parse_time(t_str: str):
+        if not t_str:
+            return None
+        t_clean = t_str.strip()
+        for tfmt in ("%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"):
+            try:
+                return datetime.strptime(t_clean, tfmt).time()
+            except Exception:
+                continue
+        return None
+
+    start_t = _parse_time(start_time_str)
+    end_t = _parse_time(end_time_str)
+
+    start_dt = datetime.combine(parsed_date, start_t, tzinfo=tz) if start_t else None
+    end_dt = datetime.combine(parsed_date, end_t, tzinfo=tz) if end_t else None
+
+    if start_dt and end_dt and end_dt < start_dt:
+        end_dt += timedelta(days=1)
+
+    return start_dt, end_dt
+
+
 class CandidateState(rx.State):
     # Candidate identity (emp_id or email)
     candidate_id: str = "CAND-2031"
@@ -254,6 +293,21 @@ class CandidateState(rx.State):
     is_time_expired: bool = False
     is_submitting: bool = False
     timer_session_id: int = 0
+
+    # ── Test Timing & Expiry Modals ──────────────────────────────────────
+    show_test_timing_modal: bool = False
+    test_timing_modal_title: str = ""
+    test_timing_modal_message: str = ""
+
+    # ── Low-Time Warning State ───────────────────────────────────────────
+    show_low_time_warning: bool = False
+    low_time_warning_shown: bool = False
+
+    def close_test_timing_modal(self):
+        self.show_test_timing_modal = False
+
+    def dismiss_low_time_warning(self):
+        self.show_low_time_warning = False
 
     # Candidate Answers Ã¢â‚¬â€ dictionary mapping question ID (str) to answer
     # HTML (rich-text content from the answer editor) for Subjective questions.
@@ -614,6 +668,9 @@ class CandidateState(rx.State):
                 m = (self.total_time_seconds % 3600) // 60
                 s = self.total_time_seconds % 60
                 self.time_display = f"{h:02d}:{m:02d}:{s:02d}"
+                if 0 < self.total_time_seconds <= 300 and not self.low_time_warning_shown:
+                    self.show_low_time_warning = True
+                    self.low_time_warning_shown = True
 
     async def on_dashboard_load(self):
         """
@@ -967,6 +1024,35 @@ class CandidateState(rx.State):
         # Keep the legacy UI cache synchronized.
         self._save_current_test_record(status="In Progress")
 
+        # Recalculate remaining time against configured test timing so refreshes never reset timer
+        start_time_str = ""
+        end_time_str = ""
+        test_date_str = ""
+        try:
+            t_record = await asyncio.to_thread(TestService().get_test, self.active_test_id)
+            if t_record:
+                start_time_str = t_record.get("start_time", "")
+                end_time_str = t_record.get("end_time", "")
+                test_date_str = t_record.get("date", "")
+        except Exception:
+            pass
+
+        start_dt, end_dt = _parse_test_timing_bounds(test_date_str, start_time_str, end_time_str)
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+        if end_dt:
+            if now >= end_dt:
+                await self.handle_time_expired()
+                return [rx.toast.info("The scheduled time for this test has ended.")]
+            self.total_time_seconds = max(0, int((end_dt - now).total_seconds()))
+            h = self.total_time_seconds // 3600
+            m = (self.total_time_seconds % 3600) // 60
+            s = self.total_time_seconds % 60
+            self.time_display = f"{h:02d}:{m:02d}:{s:02d}"
+            if 0 < self.total_time_seconds <= 300 and not self.low_time_warning_shown:
+                self.show_low_time_warning = True
+                self.low_time_warning_shown = True
+
         # Restart only the currently valid timer session.
         self.timer_session_id += 1
 
@@ -1009,6 +1095,7 @@ class CandidateState(rx.State):
         self.is_time_expired = True
         self.show_submit_dialog = False
         self.show_violation_modal = False
+        self.show_low_time_warning = False
 
         self.submitted_at = lifecycle_record.get("submitted_at", "") or ""
         self.submission_receipt = lifecycle_record.get(
@@ -1027,8 +1114,35 @@ class CandidateState(rx.State):
         self.submitted_tests = subs
         self._save_current_test_record(status="Submitted")
 
+        try:
+            feedback_service = FeedbackService()
+            form = await asyncio.to_thread(feedback_service.pending_form,
+                "candidate",
+                cand_id,
+                self.active_assessment_id,
+                self.active_test_id,
+            )
+
+            if form:
+                self.candidate_feedback_questions = list(
+                    form.get("questions", [])
+                )
+                self.candidate_feedback_answers = {}
+                self.candidate_feedback_error = ""
+                self.show_candidate_feedback_modal = True
+            else:
+                self.candidate_feedback_questions = []
+                self.candidate_feedback_answers = {}
+                self.candidate_feedback_error = ""
+                self.show_candidate_feedback_modal = False
+
+        except (ValueError, OSError):
+            self.show_candidate_feedback_modal = False
+
+        return rx.toast.info("Time has expired. Your test has been automatically submitted.")
+
     async def start_test(self, assessment_name: str, test_name: str):
-        """Launch the test session and navigate to /candidate/test. Blocks already submitted tests."""
+        """Launch the test session and navigate to /candidate/test. Blocks already submitted tests and checks timing."""
         cand_id = await self._get_current_candidate_id()
 
         # Resolve the UI assessment/test names to their canonical persisted IDs.
@@ -1051,6 +1165,55 @@ class CandidateState(rx.State):
         if not assessment_id or not test_id:
             return rx.toast.error("Unable to resolve this test in the persisted assessment.")
 
+        key = f"{cand_id}::{assessment_name}::{test_name}"
+        record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
+
+        if record:
+            if record.get("status") == "Submitted":
+                return rx.toast.info("This test has already been submitted and cannot be retaken.")
+            if record.get("status") == "Disqualified":
+                return rx.toast.error("This test was terminated due to proctoring violations and cannot be retaken.")
+
+        try:
+            existing_resp = await asyncio.to_thread(ResponseLifecycleService().get_response, cand_id, assessment_id, test_id)
+            if existing_resp:
+                if existing_resp.get("status") == "Submitted":
+                    return rx.toast.info("This test has already been submitted and cannot be retaken.")
+                if existing_resp.get("status") == "Disqualified":
+                    return rx.toast.error("This test was terminated due to proctoring violations and cannot be retaken.")
+        except Exception:
+            pass
+
+        # Timing check against configured start time and end time
+        test_timings = assessment.get("test_timings", {}).get(test_name, {})
+        start_time_str = test_timings.get("start_time", "")
+        end_time_str = test_timings.get("end_time", "")
+        test_date_str = assessment.get("test_dates", {}).get(test_name, "")
+
+        try:
+            t_record = await asyncio.to_thread(TestService().get_test, test_id)
+            if t_record:
+                start_time_str = t_record.get("start_time") or start_time_str
+                end_time_str = t_record.get("end_time") or end_time_str
+                test_date_str = t_record.get("date") or test_date_str
+        except Exception:
+            pass
+
+        start_dt, end_dt = _parse_test_timing_bounds(test_date_str, start_time_str, end_time_str)
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
+
+        if start_dt and now < start_dt:
+            self.test_timing_modal_title = "Test Not Started Yet"
+            self.test_timing_modal_message = f"This test is scheduled to start at {start_time_str}. Please return at the scheduled time."
+            self.show_test_timing_modal = True
+            return
+
+        if end_dt and now >= end_dt:
+            self.test_timing_modal_title = "Test Timing Is Over"
+            self.test_timing_modal_message = "The scheduled time for this test has ended. You can no longer start or attempt this test."
+            self.show_test_timing_modal = True
+            return
+
         # Start or recover the canonical backend response session.
         try:
             lifecycle_record = await asyncio.to_thread(ResponseLifecycleService().start_test,
@@ -1060,15 +1223,6 @@ class CandidateState(rx.State):
             )
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
-
-        key = f"{cand_id}::{assessment_name}::{test_name}"
-        record = PERSISTED_CANDIDATE_TEST_DATA.get(key)
-
-        if record:
-            if record.get("status") == "Submitted":
-                return rx.toast.info("This test has already been submitted and cannot be retaken.")
-            if record.get("status") == "Disqualified":
-                return rx.toast.error("This test was terminated due to proctoring violations and cannot be retaken.")
 
         self.active_assessment_name = assessment_name
         self.active_test_name = test_name
@@ -1087,8 +1241,24 @@ class CandidateState(rx.State):
         self.show_submit_dialog = False
         self.show_violation_modal = False
         self.auto_save_status = "Auto-saved"
-        self.total_time_seconds = 5400  # 01:30:00
-        self.time_display = "01:30:00"
+
+        if end_dt:
+            self.total_time_seconds = max(0, int((end_dt - now).total_seconds()))
+        else:
+            self.total_time_seconds = 5400  # 01:30:00
+
+        h = self.total_time_seconds // 3600
+        m = (self.total_time_seconds % 3600) // 60
+        s = self.total_time_seconds % 60
+        self.time_display = f"{h:02d}:{m:02d}:{s:02d}"
+
+        self.low_time_warning_shown = False
+        if 0 < self.total_time_seconds <= 300:
+            self.show_low_time_warning = True
+            self.low_time_warning_shown = True
+        else:
+            self.show_low_time_warning = False
+
         self.is_fullscreen = False
 
         self.violation_count = min(lifecycle_record.get("violation_count", 0), self.max_violations)

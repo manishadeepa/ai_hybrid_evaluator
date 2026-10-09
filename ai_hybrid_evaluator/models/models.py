@@ -167,6 +167,7 @@ class Assessment(TypedDict, total=False):
     approval_status: str
     facilitator_approvals: dict[str, str]
     test_dates: dict[str, str]
+    test_timings: dict[str, dict[str, str]]
     question_papers: dict[str, str]
 
 

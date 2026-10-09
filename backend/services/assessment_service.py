@@ -8,7 +8,7 @@ from backend.services.test_service import TestService
 
 # Serialize assessment/test read-modify-write operations within the Reflex process.
 _PERSISTENCE_LOCK = RLock()
-_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers", "test_types"}
+_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers", "test_types", "test_timings"}
 
 
 class AssessmentService:
@@ -66,7 +66,7 @@ class AssessmentService:
                 raise ValueError("An assessment with this name already exists.")
             value["assessment_id"] = identity
             self._validate_lifecycle(value)
-            for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals", "test_types"):
+            for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals", "test_types", "test_timings"):
                 if field in value and not isinstance(value[field], dict):
                     raise ValueError(f"{field} must be an object.")
             for field in ("tests", "facilitator_ids", "assigned_candidates"):
@@ -298,7 +298,8 @@ class AssessmentService:
                 return test
         raise ValueError("Test does not belong to this assessment or does not exist.")
 
-    def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False, test_type=None):
+    def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False, test_type=None,
+                 start_time="", end_time=""):
         """Existing workflow creates owned tests; it never moves another assessment's test."""
         with _PERSISTENCE_LOCK:
             self.tests._validate_fields({"test_name": test_name, "date": date,
@@ -321,6 +322,12 @@ class AssessmentService:
             record["test_descriptions"][test_name] = description
             if test_type is not None:
                 record.setdefault("test_types", {})[test_name] = test_type
+            # Persist start/end time so the candidate timer can be derived from the wall clock.
+            if start_time or end_time:
+                record.setdefault("test_timings", {})[test_name] = {
+                    "start_time": start_time,
+                    "end_time": end_time,
+                }
             return self.save_assessment(record)
 
     def update_test(self, assessment_id, test_id, changes):

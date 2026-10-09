@@ -848,11 +848,11 @@ class AdminState(rx.State):
         self._apply_assessment_records(service.load_assessments())
         return saved
 
-    def _add_assessment_test(self, record, name, date="", description="", is_final=False, *, test_type=None):
+    def _add_assessment_test(self, record, name, date="", description="", is_final=False, *, test_type=None, start_time="", end_time=""):
         service = AssessmentService()
         if not record.get("assessment_id"):
             record = self._persist_assessment_record(record)
-        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final, test_type=test_type)
+        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final, test_type=test_type, start_time=start_time, end_time=end_time)
         self._apply_assessment_records(service.load_assessments())
         return saved
 

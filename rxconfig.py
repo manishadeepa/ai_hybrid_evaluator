@@ -18,6 +18,7 @@ import reflex as rx
 
 config = rx.Config(
     app_name="ai_hybrid_evaluator",
+    bun_path=Path(r"C:\Program Files\nodejs\npm.cmd"),
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),

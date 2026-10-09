@@ -11,6 +11,7 @@ from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
 from ai_hybrid_evaluator.state.candidate_state import CandidateState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
+from ai_hybrid_evaluator.models.models import Assessment
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -43,15 +44,45 @@ def _status_badge(status: str) -> rx.Component:
 # Test Row — one row per test inside an assessment card
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Component:
-    """A single test row showing availability, submission status, and Start Test / Submitted / Locked button."""
+def _schedule_chip(icon_name: str, label: str, value) -> rx.Component:
+    """Small schedule chip: icon + label + value."""
+    return rx.hstack(
+        rx.icon(icon_name, size=12, color=COLORS["slate"]),
+        rx.text(
+            label,
+            font_family=FONT_BODY,
+            size="1",
+            color=COLORS["slate"],
+            weight="medium",
+        ),
+        rx.text(
+            value,
+            font_family=FONT_BODY,
+            size="1",
+            color=COLORS["ink"],
+            weight="medium",
+        ),
+        spacing="1",
+        align_items="center",
+    )
+
+
+def _test_row(a: Assessment, test_name: str, is_final: bool) -> rx.Component:
+    """A single test row: name/status | schedule chips | action button."""
+    assessment_name = a["name"]
     has_qp = FacilitatorState.question_papers.get(assessment_name, {}).contains(test_name)
     is_submitted = CandidateState.submitted_tests.get(assessment_name, {}).contains(test_name)
     is_disqualified = CandidateState.disqualified_tests.get(assessment_name, {}).contains(test_name)
 
+    # Pull schedule fields from the assessment dict
+    test_date_val = a["test_dates"].get(test_name, "—")
+    timings_val = a["test_timings"].get(test_name, {})
+    start_time_val = timings_val.get("start_time", "—")
+    end_time_val = timings_val.get("end_time", "—")
+
     return rx.box(
         rx.hstack(
-            # Left: icon + test name + availability status
+            # ── Left: icon + test name + availability status ──────────────
             rx.hstack(
                 rx.cond(
                     is_final,
@@ -70,36 +101,32 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                 ),
                 rx.vstack(
                     rx.text(test_name, font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                    # Availability status text
+                    # Availability status row
                     rx.cond(
                         is_submitted,
                         rx.hstack(
                             rx.icon("circle-check", size=12, color="#027A48"),
                             rx.text("Submitted", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
-                            spacing="1",
-                            align_items="center",
+                            spacing="1", align_items="center",
                         ),
                         rx.cond(
                             is_disqualified,
                             rx.hstack(
                                 rx.icon("shield-alert", size=12, color="#DC2626"),
                                 rx.text("Disqualified — Proctoring Policy Violation", font_family=FONT_BODY, size="1", color="#DC2626", weight="medium"),
-                                spacing="1",
-                                align_items="center",
+                                spacing="1", align_items="center",
                             ),
                             rx.cond(
                                 has_qp,
                                 rx.hstack(
                                     rx.icon("circle-check", size=12, color="#027A48"),
                                     rx.text("Available", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
-                                    spacing="1",
-                                    align_items="center",
+                                    spacing="1", align_items="center",
                                 ),
                                 rx.hstack(
                                     rx.icon("lock", size=12, color="#D97706"),
                                     rx.text("Locked — question paper not yet uploaded", font_family=FONT_BODY, size="1", color="#D97706"),
-                                    spacing="1",
-                                    align_items="center",
+                                    spacing="1", align_items="center",
                                 ),
                             ),
                         ),
@@ -109,44 +136,58 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                 ),
                 spacing="2",
                 align_items="center",
-                flex="1",
             ),
+
             rx.spacer(),
-            # Right: Action button
+
+            # ── Centre: schedule chips with vertical separators ────────────
+            rx.hstack(
+                _schedule_chip("calendar", "Test Date:", test_date_val),
+                rx.box(
+                    width="1px",
+                    height="18px",
+                    background=COLORS["line"],
+                    margin_x="0.5em",
+                ),
+                _schedule_chip("clock", "Start Time:", start_time_val),
+                rx.box(
+                    width="1px",
+                    height="18px",
+                    background=COLORS["line"],
+                    margin_x="0.5em",
+                ),
+                _schedule_chip("clock", "End Time:", end_time_val),
+                align_items="center",
+                spacing="0",
+                padding_x="1em",
+                flex_shrink="0",
+            ),
+
+            rx.spacer(),
+
+            # ── Right: Action button ──────────────────────────────────────
             rx.cond(
                 is_submitted,
                 rx.button(
                     rx.icon("check", size=13),
                     "Submitted",
-                    size="1",
-                    disabled=True,
-                    variant="soft",
-                    color_scheme="green",
-                    font_family=FONT_BODY,
-                    border_radius="6px",
-                    cursor="default",
+                    size="1", disabled=True, variant="soft", color_scheme="green",
+                    font_family=FONT_BODY, border_radius="6px", cursor="default",
                 ),
                 rx.cond(
                     is_disqualified,
                     rx.button(
                         rx.icon("shield-alert", size=13),
                         "Disqualified",
-                        size="1",
-                        disabled=True,
-                        variant="soft",
-                        color_scheme="red",
-                        font_family=FONT_BODY,
-                        border_radius="6px",
-                        cursor="default",
+                        size="1", disabled=True, variant="soft", color_scheme="red",
+                        font_family=FONT_BODY, border_radius="6px", cursor="default",
                     ),
                     rx.cond(
                         has_qp,
                         rx.button(
                             rx.icon("play", size=13),
                             "Start Test",
-                            on_click=[
-                                CandidateState.start_test(assessment_name, test_name),
-                            ],
+                            on_click=[CandidateState.start_test(assessment_name, test_name)],
                             size="1",
                             background=COLORS["primary"],
                             color="white",
@@ -157,14 +198,9 @@ def _test_row(assessment_name: str, test_name: str, is_final: bool) -> rx.Compon
                         rx.button(
                             rx.icon("lock", size=13),
                             "Locked",
-                            size="1",
-                            disabled=True,
-                            variant="outline",
-                            color_scheme="gray",
-                            font_family=FONT_BODY,
-                            border_radius="6px",
-                            cursor="not-allowed",
-                            opacity="0.5",
+                            size="1", disabled=True, variant="outline", color_scheme="gray",
+                            font_family=FONT_BODY, border_radius="6px",
+                            cursor="not-allowed", opacity="0.5",
                         ),
                     ),
                 ),
@@ -260,12 +296,12 @@ def candidate_assessment_card(a: dict) -> rx.Component:
             # Test rows — formative tests
             rx.foreach(
                 a["tests"],
-                lambda t: _test_row(a["name"], t, False),
+                lambda t: _test_row(a, t, False),
             ),
             # Summative test row (only when configured)
             rx.cond(
                 a["final_test"] != "",
-                _test_row(a["name"], a["final_test"], True),
+                _test_row(a, a["final_test"], True),
             ),
 
             spacing="0",
@@ -318,11 +354,75 @@ def _maybe_render_assessment_card(a: dict) -> rx.Component:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Test Timing Dialog (Not Started / Expired)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_timing_dialog() -> rx.Component:
+    """Popup modal shown when candidate clicks Start Test on an unstarted or expired test."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("clock", size=22, color="#D97706"),
+                        background="#FEF3C7",
+                        padding="0.6em",
+                        border_radius="50%",
+                    ),
+                    rx.vstack(
+                        rx.dialog.title(
+                            CandidateState.test_timing_modal_title,
+                            font_family=FONT_DISPLAY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                rx.dialog.description(
+                    CandidateState.test_timing_modal_message,
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                    padding_y="0.8em",
+                ),
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "OK",
+                        on_click=CandidateState.close_test_timing_modal,
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        border_radius="6px",
+                        _hover={"background": COLORS["primary_hover"]},
+                    ),
+                    width="100%",
+                ),
+                spacing="3",
+                align_items="stretch",
+            ),
+            max_width="440px",
+            padding="1.8em",
+            border_radius="14px",
+            background="white",
+        ),
+        open=CandidateState.show_test_timing_modal,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Page
 # ─────────────────────────────────────────────────────────────────────────────
 
 def candidate_dashboard_page() -> rx.Component:
     content = rx.vstack(
+        test_timing_dialog(),
         # ── My Assessments List ──────────────────────────────────────────
         rx.vstack(
             _my_assessments_content(),
@@ -341,3 +441,4 @@ def candidate_dashboard_page() -> rx.Component:
         "Your assigned assessments and test stages are listed below.",
         content,
     )
+

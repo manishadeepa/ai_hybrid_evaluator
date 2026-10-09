@@ -12,6 +12,15 @@ from ai_hybrid_evaluator.components.layout.facilitator_shell import facilitator_
 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
 
+# 12-hour minute-level time options (1,440 options covering 00-59 minutes across AM/PM)
+TIME_PICKER_OPTIONS: list[str] = [
+    f"{h:02d}:{m:02d} {p}"
+    for p in ("AM", "PM")
+    for h in [12] + list(range(1, 12))
+    for m in range(60)
+]
+TIME_PICKER_OPTIONS_VAR = rx.Var.create(TIME_PICKER_OPTIONS)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Tab bar
@@ -1620,7 +1629,7 @@ def evaluation_files_card() -> rx.Component:
 
             rx.divider(color_scheme="gray", size="4"),
 
-            # Row 2: Candidate Response
+            # Row 2: Candidate Response / All Candidate Responses
             rx.hstack(
                 rx.box(
                     rx.icon("file-text", size=18, color=COLORS["primary"]),
@@ -1632,9 +1641,23 @@ def evaluation_files_card() -> rx.Component:
                     justify_content="center",
                 ),
                 rx.vstack(
-                    rx.text("Candidate Response", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                     rx.text(
-                        FacilitatorState.current_candidate_excel_file,
+                        rx.cond(
+                            FacilitatorState.is_all_candidates_evaluation,
+                            "All Candidate Responses",
+                            "Candidate Response",
+                        ),
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        rx.cond(
+                            FacilitatorState.is_all_candidates_evaluation,
+                            FacilitatorState.eval_batch_responses_subtitle,
+                            FacilitatorState.current_candidate_excel_file,
+                        ),
                         font_family=FONT_BODY,
                         size="1",
                         color=COLORS["slate"],
@@ -1645,7 +1668,45 @@ def evaluation_files_card() -> rx.Component:
                 rx.spacer(),
                 rx.cond(
                     FacilitatorState.is_all_candidates_evaluation,
-                    rx.badge("All Assigned", color_scheme="indigo", variant="soft", size="1"),
+                    rx.box(
+                        rx.icon(
+                            "users",
+                            size=14,
+                            color=COLORS["slate"],
+                            position="absolute",
+                            left="10px",
+                            top="50%",
+                            transform="translateY(-50%)",
+                            pointer_events="none",
+                            z_index="2",
+                        ),
+                        rx.select(
+                            FacilitatorState.submitted_candidate_options,
+                            value=FacilitatorState.eval_files_selected_candidate,
+                            on_change=FacilitatorState.set_eval_files_selected_candidate,
+                            placeholder="Select Candidate",
+                            color_scheme="purple",
+                            size="1",
+                            radius="medium",
+                            font_family=FONT_BODY,
+                            width="230px",
+                        ),
+                        position="relative",
+                        style={
+                            "& .rt-SelectTrigger": {
+                                "paddingLeft": "32px !important",
+                                "borderRadius": "8px !important",
+                                "border": "1px solid #E2E8F0",
+                                "backgroundColor": "#FFFFFF",
+                                "cursor": "pointer",
+                                "height": "32px",
+                            },
+                            "& .rt-SelectTrigger:focus, & .rt-SelectTrigger[data-state='open']": {
+                                "borderColor": "#7C3AED !important",
+                                "boxShadow": "0 0 0 1px #7C3AED !important",
+                            },
+                        },
+                    ),
                     rx.cond(
                         FacilitatorState.has_submitted_response,
                         rx.badge("Submitted", color_scheme="green", variant="soft", size="1"),
@@ -1654,13 +1715,13 @@ def evaluation_files_card() -> rx.Component:
                 ),
                 rx.button(
                     rx.icon("eye", size=13),
-                    "View Response",
+                    rx.cond(FacilitatorState.is_all_candidates_evaluation, "View Responses", "View Response"),
                     on_click=FacilitatorState.open_candidate_response_modal,
                     size="1",
                     variant="soft",
                     color_scheme="indigo",
                     font_family=FONT_BODY,
-                    disabled=FacilitatorState.is_all_candidates_evaluation,
+                    disabled=FacilitatorState.view_responses_disabled,
                 ),
                 rx.button(
                     rx.icon("download", size=13),
@@ -1670,34 +1731,12 @@ def evaluation_files_card() -> rx.Component:
                     variant="outline",
                     color_scheme="gray",
                     font_family=FONT_BODY,
-                    disabled=FacilitatorState.is_all_candidates_evaluation | ~FacilitatorState.has_submitted_response,
+                    disabled=~FacilitatorState.has_submitted_response,
                 ),
                 spacing="2",
                 align_items="center",
                 width="100%",
                 padding_y="0.6em",
-            ),
-
-            # Information Banner
-            rx.box(
-                rx.hstack(
-                    rx.icon("info", size=16, color="#175CD3"),
-                    rx.text(
-                        "Candidate response is stored in Excel format for easy viewing and evaluation.",
-                        font_family=FONT_BODY,
-                        size="1",
-                        color="#175CD3",
-                        weight="medium",
-                    ),
-                    spacing="2",
-                    align_items="center",
-                ),
-                background="#EFF8FF",
-                border="1px solid #B2DDFF",
-                border_radius="8px",
-                padding="0.7em 1em",
-                width="100%",
-                margin_top="0.8em",
             ),
 
             spacing="1",
@@ -1900,340 +1939,688 @@ def evaluation_ai_results_card() -> rx.Component:
                 padding_bottom="0.8em",
             ),
 
-            # Status Alert Banner
-            rx.cond(
-                FacilitatorState.has_ai_evaluated_current_candidate,
-                rx.box(
-                    rx.hstack(
-                        rx.icon("circle-check", size=16, color="#027A48"),
-                        rx.text(
-                            "AI evaluation completed successfully",
-                            font_family=FONT_BODY,
-                            size="1",
-                            color="#027A48",
-                            weight="medium",
-                        ),
-                        spacing="2",
-                        align_items="center",
-                    ),
-                    background="#ECFDF3",
-                    border="1px solid #A6F4C5",
-                    border_radius="8px",
-                    padding="0.6em 0.9em",
-                    width="100%",
-                    margin_bottom="0.8em",
-                ),
-            ),
-
-            # 3 Score Metric Cards matching Reference UI
-            rx.hstack(
-                # Card 1: Marks Obtained
-                rx.box(
-                    rx.hstack(
-                        rx.box(
-                            rx.icon("file-text", size=18, color="#7C3AED"),
-                            background="#F4F3FF",
-                            border_radius="8px",
-                            padding="0.65em",
-                            display="flex",
-                            align_items="center",
-                            justify_content="center",
-                        ),
-                        rx.vstack(
-                            rx.text("Marks Obtained", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
-                            rx.text(
-                                FacilitatorState.current_candidate_ai_score_display,
-                                font_family=FONT_DISPLAY,
-                                size="4",
-                                weight="bold",
-                                color=COLORS["ink"],
-                            ),
-                            spacing="0",
-                            align_items="start",
-                        ),
-                        spacing="3",
-                        align_items="center",
-                    ),
-                    background=COLORS["canvas"],
-                    border=f"1px solid {COLORS['line']}",
-                    border_radius="10px",
-                    padding="0.85em 1em",
-                    flex="1",
-                ),
-                # Card 2: Normalized Score
-                rx.box(
-                    rx.hstack(
-                        rx.box(
-                            rx.icon("shield-check", size=18, color="#2563EB"),
-                            background="#EFF8FF",
-                            border_radius="8px",
-                            padding="0.65em",
-                            display="flex",
-                            align_items="center",
-                            justify_content="center",
-                        ),
-                        rx.vstack(
-                            rx.text("Normalized Score", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
-                            rx.text(
-                                FacilitatorState.current_candidate_ai_percentage_display,
-                                font_family=FONT_DISPLAY,
-                                size="4",
-                                weight="bold",
-                                color=COLORS["ink"],
-                            ),
-                            rx.cond(
-                                FacilitatorState.has_ai_evaluated_current_candidate,
-                                rx.text("(Out of 100)", font_family=FONT_BODY, size="1", color=COLORS["placeholder"]),
-                            ),
-                            spacing="0",
-                            align_items="start",
-                        ),
-                        spacing="3",
-                        align_items="center",
-                    ),
-                    background=COLORS["canvas"],
-                    border=f"1px solid {COLORS['line']}",
-                    border_radius="10px",
-                    padding="0.85em 1em",
-                    flex="1",
-                ),
-                # Card 3: Status
-                rx.box(
-                    rx.hstack(
-                        rx.box(
-                            rx.icon(
-                                rx.cond(
-                                    FacilitatorState.has_ai_evaluated_current_candidate,
-                                    "circle-check",
-                                    "clock",
-                                ),
-                                size=18,
-                                color=rx.cond(
-                                    FacilitatorState.has_ai_evaluated_current_candidate,
-                                    "#027A48",
-                                    COLORS["slate"],
-                                ),
-                            ),
-                            background=rx.cond(
-                                FacilitatorState.has_ai_evaluated_current_candidate,
-                                "#ECFDF3",
-                                "#F2F4F7",
-                            ),
-                            border_radius="8px",
-                            padding="0.65em",
-                            display="flex",
-                            align_items="center",
-                            justify_content="center",
-                        ),
-                        rx.vstack(
-                            rx.text("Status", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
-                            rx.text(
-                                rx.cond(
-                                    FacilitatorState.is_all_candidates_evaluation,
-                                    "Ready for Batch Eval",
-                                    rx.cond(
-                                        FacilitatorState.has_ai_evaluated_current_candidate,
-                                        rx.cond(
-                                            FacilitatorState.current_candidate_ai_score_display == "Incomplete",
-                                            "Incomplete",
-                                            "Completed",
-                                        ),
-                                        rx.cond(
-                                            FacilitatorState.selected_evaluation_candidate == "",
-                                            "Not Completed",
-                                            "Pending",
-                                        ),
-                                    ),
-                                ),
-                                font_family=FONT_DISPLAY,
-                                size="4",
-                                weight="bold",
-                                color=rx.cond(
-                                    FacilitatorState.is_all_candidates_evaluation,
-                                    "#2563EB",
-                                    rx.cond(
-                                        FacilitatorState.has_ai_evaluated_current_candidate,
-                                        "#027A48",
-                                        COLORS["slate"],
-                                    ),
-                                ),
-                            ),
-                            rx.cond(
-                                FacilitatorState.has_ai_evaluated_current_candidate & ~FacilitatorState.is_all_candidates_evaluation,
-                                rx.text(
-                                    FacilitatorState.current_candidate_ai_eval_date,
-                                    font_family=FONT_BODY,
-                                    size="1",
-                                    color=COLORS["placeholder"],
-                                ),
-                            ),
-                            spacing="0",
-                            align_items="start",
-                        ),
-                        spacing="3",
-                        align_items="center",
-                    ),
-                    background=COLORS["canvas"],
-                    border=f"1px solid {COLORS['line']}",
-                    border_radius="10px",
-                    padding="0.85em 1em",
-                    flex="1",
-                ),
-                spacing="3",
-                width="100%",
-                margin_bottom="1em",
-            ),
-
-            # Question-wise Results Heading
-            rx.text(
-                "Question-wise Results",
-                font_family=FONT_BODY,
-                size="2",
-                weight="bold",
-                color=COLORS["ink"],
-                padding_top="0.4em",
-                padding_bottom="0.5em",
-            ),
-
-            # Question-wise Breakdown Table
             rx.cond(
                 FacilitatorState.is_all_candidates_evaluation,
-                rx.box(
-                    rx.vstack(
+                # ── ALL CANDIDATES (BATCH) EVALUATION VIEW ───────────────────────────
+                rx.vstack(
+                    # Status Alert Banner
+                    rx.cond(
+                        FacilitatorState.eval_batch_has_results,
                         rx.box(
-                            rx.icon("sparkles", size=22, color="#027A48"),
+                            rx.hstack(
+                                rx.icon("circle-check", size=18, color="#027A48"),
+                                rx.vstack(
+                                    rx.text(
+                                        "AI evaluation completed successfully",
+                                        font_family=FONT_BODY,
+                                        size="2",
+                                        color="#027A48",
+                                        weight="bold",
+                                    ),
+                                    rx.text(
+                                        "All assigned candidates have been evaluated.",
+                                        font_family=FONT_BODY,
+                                        size="1",
+                                        color="#027A48",
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
                             background="#ECFDF3",
-                            padding="0.65em",
-                            border_radius="50%",
-                            display="flex",
-                            align_items="center",
-                            justify_content="center",
-                        ),
-                        rx.text(
-                            "All Candidates Selected",
-                            font_family=FONT_BODY,
-                            size="3",
-                            weight="bold",
-                            color=COLORS["ink"],
-                        ),
-                        rx.text(
-                            "Ready to trigger AI evaluation engine for all assigned candidates.",
-                            font_family=FONT_BODY,
-                            size="2",
-                            color=COLORS["slate"],
-                            text_align="center",
-                        ),
-                        spacing="2",
-                        align_items="center",
-                        justify_content="center",
-                        padding="2.5em 1.5em",
-                        width="100%",
-                    ),
-                    border=f"1px dashed {COLORS['line']}",
-                    border_radius="8px",
-                    width="100%",
-                    background="#F8FAFC",
-                ),
-                rx.cond(
-                    FacilitatorState.has_ai_evaluated_current_candidate,
-                    rx.box(
-                        rx.table.root(
-                            rx.table.header(
-                                rx.table.row(
-                                    rx.table.column_header_cell(
-                                        rx.text("Q No.", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                        width="80px",
-                                    ),
-                                    rx.table.column_header_cell(
-                                        rx.text("Marks Obtained", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                        width="120px",
-                                    ),
-                                    rx.table.column_header_cell(
-                                        rx.text("Max Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                        width="90px",
-                                    ),
-                                    rx.table.column_header_cell(
-                                        rx.text("Score (Out of 100)", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                        width="140px",
-                                    ),
-                                    rx.table.column_header_cell(
-                                        rx.text("Remarks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
-                                    ),
-                                ),
-                            ),
-                            rx.table.body(
-                                rx.foreach(
-                                    FacilitatorState.current_candidate_ai_eval_questions,
-                                    lambda q: rx.table.row(
-                                        rx.table.cell(
-                                            rx.text(q["q_no"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
-                                            vertical_align="top",
-                                        ),
-                                        rx.table.cell(
-                                            rx.text(q["ai_score"], font_family=FONT_BODY, size="1", color=COLORS["ink"]),
-                                            vertical_align="top",
-                                        ),
-                                        rx.table.cell(
-                                            rx.text(q["max_marks"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                                            vertical_align="top",
-                                        ),
-                                        rx.table.cell(
-                                            rx.text(q["score_pct"], font_family=FONT_BODY, size="1", weight="medium", color="#2563EB"),
-                                            vertical_align="top",
-                                        ),
-                                        rx.table.cell(
-                                            rx.text(q["justification"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                                            vertical_align="top",
-                                        ),
-                                    ),
-                                ),
-                                # Total Summary Row
-                                rx.table.row(
-                                    rx.table.cell(rx.text("Total", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                                    rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_total_score_only, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                                    rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_max_val, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
-                                    rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_percentage_display, font_family=FONT_BODY, size="1", weight="bold", color="#2563EB")),
-                                    rx.table.cell(rx.text("", font_family=FONT_BODY, size="1")),
-                                    background="#F9FAFB",
-                                ),
-                            ),
+                            border="1px solid #A6F4C5",
+                            border_radius="8px",
+                            padding="0.7em 1em",
                             width="100%",
+                            margin_bottom="0.8em",
                         ),
-                        border=f"1px solid {COLORS['line']}",
-                        border_radius="8px",
-                        overflow="hidden",
-                        width="100%",
                     ),
-                    rx.box(
-                        rx.vstack(
-                            rx.icon("sparkles", size=24, color=COLORS["slate"]),
-                            rx.text("No AI evaluation results yet", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
-                            rx.text(
-                                rx.cond(
-                                    FacilitatorState.selected_evaluation_candidate == "",
-                                    "Select a candidate to view evaluation results.",
+
+                    # 3 Score Metric Cards for Batch Evaluation
+                    rx.hstack(
+                        # Card 1: Candidates Evaluated
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon("user", size=18, color="#7C3AED"),
+                                    background="#F4F3FF",
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Candidates Evaluated", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        FacilitatorState.eval_batch_candidates_evaluated_count_str,
+                                        font_family=FONT_DISPLAY,
+                                        size="5",
+                                        weight="bold",
+                                        color=COLORS["ink"],
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        # Card 2: Questions Evaluated
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon("shield-check", size=18, color="#2563EB"),
+                                    background="#EFF8FF",
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Questions Evaluated", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        FacilitatorState.eval_batch_questions_evaluated_count_str,
+                                        font_family=FONT_DISPLAY,
+                                        size="5",
+                                        weight="bold",
+                                        color=COLORS["ink"],
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        # Card 3: Status
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon("circle-check", size=18, color="#027A48"),
+                                    background="#ECFDF3",
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Status", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        FacilitatorState.eval_batch_status_str,
+                                        font_family=FONT_DISPLAY,
+                                        size="4",
+                                        weight="bold",
+                                        color="#027A48",
+                                    ),
                                     rx.cond(
-                                        FacilitatorState.has_submitted_response,
-                                        "Click 'Start AI Evaluation' above to run real AI evaluation for this candidate.",
-                                        "Candidate has not submitted a response for evaluation.",
+                                        FacilitatorState.eval_batch_has_results,
+                                        rx.text(
+                                            FacilitatorState.eval_batch_date_str,
+                                            font_family=FONT_BODY,
+                                            size="1",
+                                            color=COLORS["placeholder"],
+                                        ),
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        spacing="3",
+                        width="100%",
+                        margin_bottom="1em",
+                    ),
+
+                    rx.cond(
+                        FacilitatorState.eval_batch_has_results,
+                        rx.vstack(
+                            # Candidate-wise Results Table
+                            rx.text(
+                                "Candidate-wise Results",
+                                font_family=FONT_BODY,
+                                size="2",
+                                weight="bold",
+                                color=COLORS["ink"],
+                                padding_top="0.4em",
+                                padding_bottom="0.5em",
+                            ),
+                            rx.box(
+                                rx.table.root(
+                                    rx.table.header(
+                                        rx.table.row(
+                                            rx.table.column_header_cell(rx.text("#", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="60px"),
+                                            rx.table.column_header_cell(rx.text("Candidate Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="220px"),
+                                            rx.table.column_header_cell(rx.text("Candidate ID", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="160px"),
+                                            rx.table.column_header_cell(rx.text("Status", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="150px"),
+                                            rx.table.column_header_cell(rx.text("Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="130px"),
+                                            rx.table.column_header_cell(rx.text("Score", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="120px"),
+                                        ),
+                                    ),
+                                    rx.table.body(
+                                        rx.foreach(
+                                            FacilitatorState.eval_batch_candidate_rows,
+                                            lambda row: rx.table.row(
+                                                rx.table.cell(rx.text(row["index"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
+                                                rx.table.cell(rx.text(row["name"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                                rx.table.cell(rx.text(row["emp_id"], font_family=FONT_BODY, size="1", color="#2563EB", weight="medium")),
+                                                rx.table.cell(
+                                                    rx.hstack(
+                                                        rx.icon("circle-check", size=14, color="#027A48"),
+                                                        rx.text(row["status"], font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
+                                                        spacing="1",
+                                                        align_items="center",
+                                                    )
+                                                ),
+                                                rx.table.cell(rx.text(row["marks"], font_family=FONT_BODY, size="1", color=COLORS["ink"], weight="medium")),
+                                                rx.table.cell(rx.text(row["score"], font_family=FONT_BODY, size="1", color=COLORS["ink"], weight="bold")),
+                                            ),
+                                        ),
+                                    ),
+                                    width="100%",
+                                ),
+                                border=f"1px solid {COLORS['line']}",
+                                border_radius="8px",
+                                overflow="hidden",
+                                width="100%",
+                                margin_bottom="1.5em",
+                            ),
+
+                            # Question-wise AI Evaluation Section
+                            rx.hstack(
+                                rx.hstack(
+                                    rx.box(
+                                        rx.icon("file-text", size=18, color="#7C3AED"),
+                                        background="#F4F3FF",
+                                        border_radius="6px",
+                                        padding="0.35em",
+                                        display="flex",
+                                        align_items="center",
+                                        justify_content="center",
+                                    ),
+                                    rx.vstack(
+                                        rx.text(
+                                            "Question-wise AI Evaluation",
+                                            font_family=FONT_BODY,
+                                            size="2",
+                                            weight="bold",
+                                            color=COLORS["ink"],
+                                        ),
+                                        rx.text(
+                                            "Select a question to view all candidates' marks, scores and AI justification.",
+                                            font_family=FONT_BODY,
+                                            size="1",
+                                            color=COLORS["slate"],
+                                        ),
+                                        spacing="0",
+                                        align_items="start",
+                                    ),
+                                    spacing="2",
+                                    align_items="center",
+                                ),
+                                rx.spacer(),
+                                rx.hstack(
+                                    rx.text("Select Question", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                    rx.select(
+                                        FacilitatorState.eval_batch_question_options,
+                                        value=FacilitatorState.eval_batch_selected_question_label,
+                                        on_change=FacilitatorState.set_eval_batch_question_by_name,
+                                        size="1",
+                                    ),
+                                    rx.button(
+                                        rx.icon("chevron-left", size=13),
+                                        "Previous",
+                                        on_click=FacilitatorState.eval_batch_prev_question,
+                                        size="1",
+                                        variant="outline",
+                                        color_scheme="gray",
+                                        font_family=FONT_BODY,
+                                    ),
+                                    rx.button(
+                                        "Next",
+                                        rx.icon("chevron-right", size=13),
+                                        on_click=FacilitatorState.eval_batch_next_question,
+                                        size="1",
+                                        variant="outline",
+                                        color_scheme="indigo",
+                                        font_family=FONT_BODY,
+                                    ),
+                                    spacing="2",
+                                    align_items="center",
+                                ),
+                                width="100%",
+                                align_items="center",
+                                padding_bottom="0.8em",
+                            ),
+
+                            # Question Title Banner
+                            rx.box(
+                                rx.text(
+                                    FacilitatorState.eval_batch_selected_question_title,
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    weight="bold",
+                                    color="#4F46E5",
+                                ),
+                                background="#F5F3FF",
+                                border="1px solid #EDE9FE",
+                                border_radius="6px",
+                                padding="0.7em 1em",
+                                width="100%",
+                                margin_bottom="0.8em",
+                            ),
+
+                            # Table under question
+                            rx.box(
+                                rx.table.root(
+                                    rx.table.header(
+                                        rx.table.row(
+                                            rx.table.column_header_cell(rx.text("#", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="50px"),
+                                            rx.table.column_header_cell(rx.text("Candidate Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="180px"),
+                                            rx.table.column_header_cell(rx.text("Candidate ID", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="140px"),
+                                            rx.table.column_header_cell(rx.text("Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="100px"),
+                                            rx.table.column_header_cell(rx.text("Score", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="90px"),
+                                            rx.table.column_header_cell(rx.text("AI Justification", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
+                                        ),
+                                    ),
+                                    rx.table.body(
+                                        rx.foreach(
+                                            FacilitatorState.eval_batch_question_candidate_rows,
+                                            lambda row: rx.table.row(
+                                                rx.table.cell(rx.text(row["index"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), vertical_align="top"),
+                                                rx.table.cell(rx.text(row["name"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]), vertical_align="top"),
+                                                rx.table.cell(rx.text(row["emp_id"], font_family=FONT_BODY, size="1", color=COLORS["slate"]), vertical_align="top"),
+                                                rx.table.cell(rx.text(row["marks"], font_family=FONT_BODY, size="1", color=COLORS["ink"], weight="bold"), vertical_align="top"),
+                                                rx.table.cell(rx.text(row["score"], font_family=FONT_BODY, size="1", color="#2563EB", weight="bold"), vertical_align="top"),
+                                                rx.table.cell(
+                                                    rx.text(
+                                                        row["justification"],
+                                                        font_family=FONT_BODY,
+                                                        size="1",
+                                                        color=COLORS["slate"],
+                                                        line_height="1.5",
+                                                    ),
+                                                    vertical_align="top",
+                                                ),
+                                            ),
+                                        ),
+                                    ),
+                                    width="100%",
+                                ),
+                                border=f"1px solid {COLORS['line']}",
+                                border_radius="8px",
+                                overflow="hidden",
+                                width="100%",
+                            ),
+                            spacing="0",
+                            width="100%",
+                            align_items="stretch",
+                        ),
+                        # Empty state for batch when no results yet
+                        rx.box(
+                            rx.vstack(
+                                rx.box(
+                                    rx.icon("sparkles", size=22, color="#027A48"),
+                                    background="#ECFDF3",
+                                    padding="0.65em",
+                                    border_radius="50%",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.text(
+                                    "All Candidates Selected",
+                                    font_family=FONT_BODY,
+                                    size="3",
+                                    weight="bold",
+                                    color=COLORS["ink"],
+                                ),
+                                rx.text(
+                                    "Ready to trigger AI evaluation engine for all assigned candidates.",
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    color=COLORS["slate"],
+                                    text_align="center",
+                                ),
+                                rx.text(
+                                    "Click 'Start AI Evaluation (All Candidates)' above to run real AI evaluation.",
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color=COLORS["slate"],
+                                    text_align="center",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                                justify_content="center",
+                                padding="2.5em 1.5em",
+                                width="100%",
+                            ),
+                            border=f"1px dashed {COLORS['line']}",
+                            border_radius="8px",
+                            width="100%",
+                            background="#F8FAFC",
+                        ),
+                    ),
+                    spacing="0",
+                    width="100%",
+                    align_items="stretch",
+                ),
+
+                # ── SINGLE CANDIDATE EVALUATION VIEW ───────────────────────────────
+                rx.vstack(
+                    # Status Alert Banner
+                    rx.cond(
+                        FacilitatorState.has_ai_evaluated_current_candidate,
+                        rx.box(
+                            rx.hstack(
+                                rx.icon("circle-check", size=16, color="#027A48"),
+                                rx.text(
+                                    "AI evaluation completed successfully",
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color="#027A48",
+                                    weight="medium",
+                                ),
+                                spacing="2",
+                                align_items="center",
+                            ),
+                            background="#ECFDF3",
+                            border="1px solid #A6F4C5",
+                            border_radius="8px",
+                            padding="0.6em 0.9em",
+                            width="100%",
+                            margin_bottom="0.8em",
+                        ),
+                    ),
+
+                    # 3 Score Metric Cards
+                    rx.hstack(
+                        # Card 1: Marks Obtained
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon("file-text", size=18, color="#7C3AED"),
+                                    background="#F4F3FF",
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Marks Obtained", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        FacilitatorState.current_candidate_ai_score_display,
+                                        font_family=FONT_DISPLAY,
+                                        size="4",
+                                        weight="bold",
+                                        color=COLORS["ink"],
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        # Card 2: Normalized Score
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon("shield-check", size=18, color="#2563EB"),
+                                    background="#EFF8FF",
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Normalized Score", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        FacilitatorState.current_candidate_ai_percentage_display,
+                                        font_family=FONT_DISPLAY,
+                                        size="4",
+                                        weight="bold",
+                                        color=COLORS["ink"],
+                                    ),
+                                    rx.cond(
+                                        FacilitatorState.has_ai_evaluated_current_candidate,
+                                        rx.text("(Out of 100)", font_family=FONT_BODY, size="1", color=COLORS["placeholder"]),
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        # Card 3: Status
+                        rx.box(
+                            rx.hstack(
+                                rx.box(
+                                    rx.icon(
+                                        rx.cond(
+                                            FacilitatorState.has_ai_evaluated_current_candidate,
+                                            "circle-check",
+                                            "clock",
+                                        ),
+                                        size=18,
+                                        color=rx.cond(
+                                            FacilitatorState.has_ai_evaluated_current_candidate,
+                                            "#027A48",
+                                            COLORS["slate"],
+                                        ),
+                                    ),
+                                    background=rx.cond(
+                                        FacilitatorState.has_ai_evaluated_current_candidate,
+                                        "#ECFDF3",
+                                        "#F2F4F7",
+                                    ),
+                                    border_radius="8px",
+                                    padding="0.65em",
+                                    display="flex",
+                                    align_items="center",
+                                    justify_content="center",
+                                ),
+                                rx.vstack(
+                                    rx.text("Status", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    rx.text(
+                                        rx.cond(
+                                            FacilitatorState.has_ai_evaluated_current_candidate,
+                                            rx.cond(
+                                                FacilitatorState.current_candidate_ai_score_display == "Incomplete",
+                                                "Incomplete",
+                                                "Completed",
+                                            ),
+                                            rx.cond(
+                                                FacilitatorState.selected_evaluation_candidate == "",
+                                                "Not Completed",
+                                                "Pending",
+                                            ),
+                                        ),
+                                        font_family=FONT_DISPLAY,
+                                        size="4",
+                                        weight="bold",
+                                        color=rx.cond(
+                                            FacilitatorState.has_ai_evaluated_current_candidate,
+                                            "#027A48",
+                                            COLORS["slate"],
+                                        ),
+                                    ),
+                                    rx.cond(
+                                        FacilitatorState.has_ai_evaluated_current_candidate,
+                                        rx.text(
+                                            FacilitatorState.current_candidate_ai_eval_date,
+                                            font_family=FONT_BODY,
+                                            size="1",
+                                            color=COLORS["placeholder"],
+                                        ),
+                                    ),
+                                    spacing="0",
+                                    align_items="start",
+                                ),
+                                spacing="3",
+                                align_items="center",
+                            ),
+                            background=COLORS["canvas"],
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="10px",
+                            padding="0.85em 1em",
+                            flex="1",
+                        ),
+                        spacing="3",
+                        width="100%",
+                        margin_bottom="1em",
+                    ),
+
+                    # Question-wise Results Heading
+                    rx.text(
+                        "Question-wise Results",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color=COLORS["ink"],
+                        padding_top="0.4em",
+                        padding_bottom="0.5em",
+                    ),
+
+                    # Question-wise Breakdown Table
+                    rx.cond(
+                        FacilitatorState.has_ai_evaluated_current_candidate,
+                        rx.box(
+                            rx.table.root(
+                                rx.table.header(
+                                    rx.table.row(
+                                        rx.table.column_header_cell(
+                                            rx.text("Q No.", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                            width="80px",
+                                        ),
+                                        rx.table.column_header_cell(
+                                            rx.text("Marks Obtained", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                            width="120px",
+                                        ),
+                                        rx.table.column_header_cell(
+                                            rx.text("Max Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                            width="90px",
+                                        ),
+                                        rx.table.column_header_cell(
+                                            rx.text("Score (Out of 100)", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                            width="140px",
+                                        ),
+                                        rx.table.column_header_cell(
+                                            rx.text("Remarks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]),
+                                        ),
                                     ),
                                 ),
-                                font_family=FONT_BODY,
-                                size="1",
-                                color=COLORS["slate"],
-                                text_align="center",
+                                rx.table.body(
+                                    rx.foreach(
+                                        FacilitatorState.current_candidate_ai_eval_questions,
+                                        lambda q: rx.table.row(
+                                            rx.table.cell(
+                                                rx.text(q["q_no"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
+                                                vertical_align="top",
+                                            ),
+                                            rx.table.cell(
+                                                rx.text(q["ai_score"], font_family=FONT_BODY, size="1", color=COLORS["ink"]),
+                                                vertical_align="top",
+                                            ),
+                                            rx.table.cell(
+                                                rx.text(q["max_marks"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                                vertical_align="top",
+                                            ),
+                                            rx.table.cell(
+                                                rx.text(q["score_pct"], font_family=FONT_BODY, size="1", weight="medium", color="#2563EB"),
+                                                vertical_align="top",
+                                            ),
+                                            rx.table.cell(
+                                                rx.text(q["justification"], font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                                                vertical_align="top",
+                                            ),
+                                        ),
+                                    ),
+                                    # Total Summary Row
+                                    rx.table.row(
+                                        rx.table.cell(rx.text("Total", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                        rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_total_score_only, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                        rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_max_val, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"])),
+                                        rx.table.cell(rx.text(FacilitatorState.current_candidate_ai_percentage_display, font_family=FONT_BODY, size="1", weight="bold", color="#2563EB")),
+                                        rx.table.cell(rx.text("", font_family=FONT_BODY, size="1")),
+                                        background="#F9FAFB",
+                                    ),
+                                ),
+                                width="100%",
                             ),
-                            spacing="1",
-                            align_items="center",
-                            justify_content="center",
-                            padding="2.5em 1em",
+                            border=f"1px solid {COLORS['line']}",
+                            border_radius="8px",
+                            overflow="hidden",
                             width="100%",
                         ),
-                        border=f"1px dashed {COLORS['line']}",
-                        border_radius="8px",
-                        width="100%",
-                        background=COLORS["canvas"],
+                        rx.box(
+                            rx.vstack(
+                                rx.icon("sparkles", size=24, color=COLORS["slate"]),
+                                rx.text("No AI evaluation results yet", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                                rx.text(
+                                    rx.cond(
+                                        FacilitatorState.selected_evaluation_candidate == "",
+                                        "Select a candidate to view evaluation results.",
+                                        rx.cond(
+                                            FacilitatorState.has_submitted_response,
+                                            "Click 'Start AI Evaluation' above to run real AI evaluation for this candidate.",
+                                            "Candidate has not submitted a response for evaluation.",
+                                        ),
+                                    ),
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color=COLORS["slate"],
+                                    text_align="center",
+                                ),
+                                spacing="1",
+                                align_items="center",
+                                justify_content="center",
+                                padding="2.5em 1em",
+                                width="100%",
+                            ),
+                            border=f"1px dashed {COLORS['line']}",
+                            border_radius="8px",
+                            width="100%",
+                            background=COLORS["canvas"],
+                        ),
                     ),
+                    spacing="0",
+                    width="100%",
+                    align_items="stretch",
                 ),
             ),
 
@@ -2272,7 +2659,7 @@ def candidate_response_modal() -> rx.Component:
                 # Header
                 rx.hstack(
                     rx.text(
-                        "Candidate Response - " + FacilitatorState.selected_evaluation_candidate,
+                        "Candidate Response - " + FacilitatorState.active_response_candidate_label,
                         font_family=FONT_BODY,
                         size="4",
                         weight="bold",
@@ -2296,7 +2683,7 @@ def candidate_response_modal() -> rx.Component:
 
                 # Content: Table if submitted, else Empty State
                 rx.cond(
-                    FacilitatorState.has_submitted_response,
+                    FacilitatorState.active_response_has_submitted,
                     rx.box(
                         rx.table.root(
                             rx.table.header(
@@ -2318,7 +2705,7 @@ def candidate_response_modal() -> rx.Component:
                             ),
                             rx.table.body(
                                 rx.foreach(
-                                    FacilitatorState.current_candidate_responses,
+                                    FacilitatorState.active_candidate_responses_list,
                                     lambda item: rx.table.row(
                                         rx.table.cell(
                                             rx.text(item["q_no"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
@@ -2387,7 +2774,7 @@ def candidate_response_modal() -> rx.Component:
                         ),
                     ),
                     rx.cond(
-                        FacilitatorState.has_submitted_response,
+                        FacilitatorState.active_response_has_submitted,
                         rx.button(
                             rx.icon("download", size=14),
                             "Download Excel",
@@ -7386,6 +7773,126 @@ def add_new_test_dialog() -> rx.Component:
                         font_family=FONT_BODY,
                     ),
                     spacing="1",
+                    width="100%",
+                    align_items="start",
+                ),
+
+                # ── Test Timing ─────────────────────────────────────────
+                rx.vstack(
+                    rx.hstack(
+                        rx.text("Test Timing", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        # Start Time
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("Start Time", font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
+                                rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            rx.box(
+                                rx.icon(
+                                    "clock",
+                                    size=16,
+                                    color=COLORS["slate"],
+                                    position="absolute",
+                                    left="12px",
+                                    top="50%",
+                                    transform="translateY(-50%)",
+                                    pointer_events="none",
+                                    z_index="2",
+                                ),
+                                rx.select(
+                                    TIME_PICKER_OPTIONS_VAR,
+                                    placeholder="Select Time",
+                                    value=FacilitatorState.new_test_start_time,
+                                    on_change=FacilitatorState.set_new_test_start_time,
+                                    color_scheme="purple",
+                                    width="100%",
+                                    size="2",
+                                    radius="medium",
+                                    font_family=FONT_BODY,
+                                ),
+                                position="relative",
+                                width="100%",
+                                style={
+                                    "& .rt-SelectTrigger": {
+                                        "paddingLeft": "36px !important",
+                                        "borderRadius": "8px !important",
+                                        "border": "1px solid #E2E8F0",
+                                        "backgroundColor": "#FFFFFF",
+                                        "cursor": "pointer",
+                                    },
+                                    "& .rt-SelectTrigger:focus, & .rt-SelectTrigger[data-state='open']": {
+                                        "borderColor": "#7C3AED !important",
+                                        "boxShadow": "0 0 0 1px #7C3AED !important",
+                                    },
+                                },
+                            ),
+                            spacing="1",
+                            width="50%",
+                            align_items="start",
+                        ),
+                        # End Time
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("End Time", font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
+                                rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
+                                spacing="1",
+                                align_items="center",
+                            ),
+                            rx.box(
+                                rx.icon(
+                                    "clock",
+                                    size=16,
+                                    color=COLORS["slate"],
+                                    position="absolute",
+                                    left="12px",
+                                    top="50%",
+                                    transform="translateY(-50%)",
+                                    pointer_events="none",
+                                    z_index="2",
+                                ),
+                                rx.select(
+                                    TIME_PICKER_OPTIONS_VAR,
+                                    placeholder="Select Time",
+                                    value=FacilitatorState.new_test_end_time,
+                                    on_change=FacilitatorState.set_new_test_end_time,
+                                    color_scheme="purple",
+                                    width="100%",
+                                    size="2",
+                                    radius="medium",
+                                    font_family=FONT_BODY,
+                                ),
+                                position="relative",
+                                width="100%",
+                                style={
+                                    "& .rt-SelectTrigger": {
+                                        "paddingLeft": "36px !important",
+                                        "borderRadius": "8px !important",
+                                        "border": "1px solid #E2E8F0",
+                                        "backgroundColor": "#FFFFFF",
+                                        "cursor": "pointer",
+                                    },
+                                    "& .rt-SelectTrigger:focus, & .rt-SelectTrigger[data-state='open']": {
+                                        "borderColor": "#7C3AED !important",
+                                        "boxShadow": "0 0 0 1px #7C3AED !important",
+                                    },
+                                },
+                            ),
+                            spacing="1",
+                            width="50%",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        width="100%",
+                        align_items="start",
+                    ),
+                    spacing="2",
                     width="100%",
                     align_items="start",
                 ),

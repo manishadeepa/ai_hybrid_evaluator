@@ -160,7 +160,7 @@ class TestService:
 
     @staticmethod
     def _allowed(details):
-        if set(details) - {"test_id", "assessment_id", "test_name", "description", "date", "status", "is_final", "question_paper", "test_type"}:
+        if set(details) - {"test_id", "assessment_id", "test_name", "description", "date", "status", "is_final", "question_paper", "test_type", "start_time", "end_time"}:
             raise ValueError("Unsupported test settings; availability is derived from the question paper and duration is fixed.")
 
     def update_test(self, test_id, changes):
@@ -240,6 +240,12 @@ class TestService:
                            "date": assessment.get("test_dates", {}).get(name, ""),
                            "description": assessment.get("test_descriptions", {}).get(name, ""),
                            "question_paper": assessment.get("question_papers", {}).get(name, "")})
+            timings = assessment.get("test_timings", {}).get(name, {})
+            if isinstance(timings, dict):
+                if "start_time" in timings:
+                    record["start_time"] = timings.get("start_time", "")
+                if "end_time" in timings:
+                    record["end_time"] = timings.get("end_time", "")
             record.setdefault("status", "Draft")
             if previous is None or record.get("date", "") != previous.get("date", ""):
                 self._validate_not_past_date(record.get("date", ""))
@@ -337,7 +343,15 @@ class TestService:
                        "test_types": {r["test_name"]: r["test_type"] for r in records if "test_type" in r},
                        "test_dates": {r["test_name"]: r.get("date", "") for r in records},
                        "test_descriptions": {r["test_name"]: r.get("description", "") for r in records},
-                       "question_papers": {r["test_name"]: r["question_paper"] for r in records if r.get("question_paper")}})
+                       "question_papers": {r["test_name"]: r["question_paper"] for r in records if r.get("question_paper")},
+                       "test_timings": {
+                           r["test_name"]: {
+                               "start_time": r.get("start_time", ""),
+                               "end_time": r.get("end_time", ""),
+                           }
+                           for r in records
+                           if r.get("start_time") or r.get("end_time")
+                       }})
         return result
 
 

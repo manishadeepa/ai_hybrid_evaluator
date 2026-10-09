@@ -2612,6 +2612,8 @@ class FacilitatorState(rx.State):
     new_test_type: str = "Formative"  # "Formative" | "Summative"
     new_test_name: str = ""
     new_test_date: str = ""
+    new_test_start_time: str = ""
+    new_test_end_time: str = ""
     min_test_date: str = ""
     new_test_description: str = ""
     new_question_type: str = ""  # "" (unset) | "Objective" | "Subjective" | "Hybrid"
@@ -2637,6 +2639,12 @@ class FacilitatorState(rx.State):
 
     def set_new_test_date(self, value: str):
         self.new_test_date = value
+
+    def set_new_test_start_time(self, value: str):
+        self.new_test_start_time = value
+
+    def set_new_test_end_time(self, value: str):
+        self.new_test_end_time = value
 
     def set_new_question_type(self, value: str):
         self.new_question_type = value
@@ -2677,6 +2685,8 @@ class FacilitatorState(rx.State):
         self.new_test_name = formative_name
         self.min_test_date = today_ist().isoformat()
         self.new_test_date = ""
+        self.new_test_start_time = ""
+        self.new_test_end_time = ""
         self.new_test_description = ""
         self.new_question_type = ""
         self.show_add_test_modal = True
@@ -2700,6 +2710,10 @@ class FacilitatorState(rx.State):
             return rx.toast.error("Please select a Question Type.")
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
+        if not self.new_test_start_time:
+            return rx.toast.error("Please select a Start Time.")
+        if not self.new_test_end_time:
+            return rx.toast.error("Please select an End Time.")
 
         try:
             selected_date = date.fromisoformat(test_date)
@@ -2740,7 +2754,9 @@ class FacilitatorState(rx.State):
                     updated = admin_state._add_assessment_test(
                         dict(a), test_name, formatted_date, self.new_test_description.strip(),
                         self.new_test_type == "Summative",
-                        test_type={"Objective": "objective", "Subjective": "subjective", "Hybrid": "mixed"}[self.new_question_type])
+                        test_type={"Objective": "objective", "Subjective": "subjective", "Hybrid": "mixed"}[self.new_question_type],
+                        start_time=self.new_test_start_time,
+                        end_time=self.new_test_end_time)
                     print(f"[CREATE TEST TIMING] _add_assessment_test: {time.perf_counter() - _step:.3f}s", flush=True)
                 except (ValueError, OSError) as exc:
                     return rx.toast.error(str(exc))
@@ -3057,6 +3073,7 @@ class FacilitatorState(rx.State):
         self.ai_evaluation_done = run['status'] == 'completed' and not run['skipped']
         self.eval_progress_current = run['completed_questions']
         def _progress_question_number(question):
+            import re
             question_no = str(
                 question.get('record', {}).get('question_no', '')
             ).strip()
@@ -5438,6 +5455,7 @@ class FacilitatorState(rx.State):
 
     # Format: "Candidate Name (EMP-ID)"
     selected_evaluation_candidate: str = ""
+    eval_files_selected_candidate: str = ""
     # Currently selected test in the Evaluation page dropdown
     selected_evaluation_test: str = ""
     show_candidate_response_modal: bool = False
@@ -5446,6 +5464,7 @@ class FacilitatorState(rx.State):
     show_ai_eval_modal: bool = False
 
     manual_eval_q_index: int = 0
+    eval_batch_selected_question_index: int = 0
     # Manual evaluation must start empty.
     # Marks and justifications must be entered deliberately by the facilitator.
     manual_marks: dict[str, str] = {}
@@ -5459,6 +5478,7 @@ class FacilitatorState(rx.State):
 
     def set_selected_evaluation_candidate(self, candidate_name: str, sync_run: bool = True):
         self.selected_evaluation_candidate = candidate_name
+        self.eval_batch_selected_question_index = 0
         # Reset real AI display vars when switching candidates so stale data is cleared
         self.real_ai_score_display = "\u2014"
         self.real_ai_max_score_display = "\u2014"
@@ -5520,6 +5540,9 @@ class FacilitatorState(rx.State):
             self._restore_selected_ai_run()
             return FacilitatorState.refresh_workspace_snapshot(False)
 
+    def set_eval_files_selected_candidate(self, candidate_name: str):
+        self.eval_files_selected_candidate = candidate_name
+
     @rx.var
     def is_all_candidates_evaluation(self) -> bool:
         """True when 'All Candidates' is selected in the Evaluation page candidate dropdown."""
@@ -5550,8 +5573,10 @@ class FacilitatorState(rx.State):
     def set_evaluation_selected_test(self, test_name: str):
         """Select a test from the Evaluation page dropdown and sync state so all evaluation data updates."""
         self.selected_evaluation_test = test_name
+        self.eval_files_selected_candidate = ""
         # Keep the workspace-level selected_test_name in sync so all evaluation queries use this test
         self.selected_test_name = test_name
+        self.eval_batch_selected_question_index = 0
         # Reset AI result display so stale results from the previous test are cleared
         self.real_ai_score_display = "â€”"
         self.real_ai_max_score_display = "â€”"
@@ -5606,8 +5631,13 @@ class FacilitatorState(rx.State):
         return self.real_ai_max_score_display if self.real_ai_max_score_display != "â€”" else "0"
 
     @rx.var
-    def current_candidate_submitted_on(self) -> str:
+    async def current_candidate_submitted_on(self) -> str:
         if self.selected_evaluation_candidate == "All Candidates":
+            mine = await self.my_assessments
+            for a in mine:
+                if a["name"] == self.selected_assessment_name:
+                    count = len(a.get("candidate_details", []))
+                    return f"All Assigned Candidates ({count})"
             return "All Assigned Candidates"
         return self.current_candidate_eval_data.get("submitted_on", "Not Submitted")
 
@@ -5620,6 +5650,77 @@ class FacilitatorState(rx.State):
     @rx.var
     def current_candidate_responses(self) -> list[dict]:
         return self.current_candidate_eval_data.get("responses", [])
+
+    @rx.var
+    async def submitted_candidate_options(self) -> list[str]:
+        """Populate dropdown dynamically with candidates who have submitted responses for currently selected assessment and test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        options = []
+        seen = set()
+        if match:
+            for c in match.get("candidate_details", []):
+                cand_id = str(c.get("emp_id", "")).strip()
+                cand_name = str(c.get("name", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                resp = _find_candidate_response(label, test_name, asmn)
+                if resp and resp.get("responses"):
+                    options.append(label)
+                    seen.add(cand_id.casefold())
+                    seen.add(cand_name.casefold())
+        try:
+            from backend.repositories.response_repository import ResponseRepository
+            for r in ResponseRepository().get_all():
+                if r.get("status") == "Submitted":
+                    if str(r.get("assessment_name", "")).casefold() == asmn.casefold() and str(r.get("test_name", "")).casefold() == test_name.casefold():
+                        cid = str(r.get("candidate_id", "")).strip()
+                        cname = str(r.get("candidate_name", "")).strip()
+                        if cid.casefold() not in seen and cname.casefold() not in seen:
+                            label = f"{cname} ({cid})" if cname and cid else (cname or cid)
+                            options.append(label)
+                            seen.add(cid.casefold())
+                            seen.add(cname.casefold())
+        except Exception:
+            pass
+        return options
+
+    @rx.var
+    def active_response_candidate_label(self) -> str:
+        """Modal title identifying the selected candidate and ID."""
+        if self.is_all_candidates_evaluation and self.eval_files_selected_candidate:
+            return self.eval_files_selected_candidate
+        return self.selected_evaluation_candidate
+
+    @rx.var
+    def active_candidate_responses_list(self) -> list[dict]:
+        """Submitted responses of the selected candidate to show in response modal."""
+        if self.is_all_candidates_evaluation and self.eval_files_selected_candidate:
+            test_name = self.selected_evaluation_test or self.selected_test_name
+            resp = _find_candidate_response(
+                self.eval_files_selected_candidate,
+                test_name,
+                self.selected_assessment_name,
+            )
+            return resp.get("responses", []) if resp else []
+        return self.current_candidate_responses
+
+    @rx.var
+    def active_response_has_submitted(self) -> bool:
+        """True if the active modal candidate has submitted responses."""
+        if self.is_all_candidates_evaluation and self.eval_files_selected_candidate:
+            return bool(self.active_candidate_responses_list)
+        return self.has_submitted_response
+
+    @rx.var
+    def view_responses_disabled(self) -> bool:
+        """Disable View Responses in All Candidates mode if no candidate is selected."""
+        if self.is_all_candidates_evaluation:
+            return not bool(self.eval_files_selected_candidate)
+        return False
 
     @rx.var
     def current_candidate_ai_score_display(self) -> str:
@@ -5650,6 +5751,241 @@ class FacilitatorState(rx.State):
     def current_candidate_ai_eval_date(self) -> str:
         """Returns the real AI evaluation date if available."""
         return self.real_ai_evaluation_date
+
+    # ── Batch AI Evaluation Methods & Computed Vars ───────────────────────────
+
+    def set_eval_batch_question_index(self, index: int):
+        self.eval_batch_selected_question_index = max(0, index)
+
+    def set_eval_batch_question_by_name(self, q_name: str):
+        import re
+        m = re.search(r"\d+", str(q_name))
+        if m:
+            num = int(m.group()) - 1
+            self.eval_batch_selected_question_index = max(0, num)
+
+    def eval_batch_prev_question(self):
+        if self.eval_batch_selected_question_index > 0:
+            self.eval_batch_selected_question_index -= 1
+
+    def eval_batch_next_question(self):
+        self.eval_batch_selected_question_index += 1
+
+    @rx.var
+    async def eval_batch_responses_subtitle(self) -> str:
+        mine = await self.my_assessments
+        c_count = 0
+        for a in mine:
+            if a["name"] == self.selected_assessment_name:
+                c_count = len(a.get("candidate_details", []))
+                break
+        t_name = self.selected_evaluation_test or self.selected_test_name or "Test"
+        return f"{c_count} submitted candidate responses • {t_name} • Batch file"
+
+    @rx.var
+    async def eval_batch_candidates_badge(self) -> str:
+        mine = await self.my_assessments
+        for a in mine:
+            if a["name"] == self.selected_assessment_name:
+                return f"{len(a.get('candidate_details', []))} Candidates"
+        return "0 Candidates"
+
+    @rx.var(cache=True)
+    async def _eval_batch_saved_records(self) -> list[dict]:
+        """Collect all saved evaluation records for all candidates in current assessment and test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return []
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        cands = match.get("candidate_details", [])
+        records = []
+        for c in cands:
+            cand_name = c.get("name", "")
+            cand_id = c.get("emp_id", "")
+            cand_label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+            saved = _saved_evaluation(self.assessment_evaluation_results, cand_label, asmn, test_name)
+            if not saved:
+                saved = _saved_evaluation(self.real_ai_results_per_candidate, cand_label, asmn, test_name)
+            if not saved and cand_id:
+                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if not saved and cand_id:
+                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if saved:
+                records.append({"candidate": c, "evaluation": saved})
+        return records
+
+    @rx.var
+    async def eval_batch_has_results(self) -> bool:
+        records = await self._eval_batch_saved_records
+        return len(records) > 0
+
+    @rx.var
+    async def eval_batch_candidates_evaluated_count_str(self) -> str:
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == self.selected_assessment_name), None)
+        total_cands = len(match.get("candidate_details", [])) if match else 0
+        records = await self._eval_batch_saved_records
+        return f"{len(records)} / {total_cands}" if total_cands > 0 else f"{len(records)} / {len(records)}"
+
+    @rx.var
+    async def eval_batch_questions_evaluated_count_str(self) -> str:
+        records = await self._eval_batch_saved_records
+        if records:
+            first_eval = records[0]["evaluation"]
+            qs = first_eval.get("questions", [])
+            q_count = len(qs)
+            return f"{q_count} / {q_count}"
+        return "0 / 0"
+
+    @rx.var
+    async def eval_batch_status_str(self) -> str:
+        records = await self._eval_batch_saved_records
+        if records:
+            return "Completed"
+        return "Ready for Batch Eval"
+
+    @rx.var
+    async def eval_batch_date_str(self) -> str:
+        records = await self._eval_batch_saved_records
+        if records:
+            for r in records:
+                d = r["evaluation"].get("eval_date")
+                if d and d != "Not evaluated":
+                    return d
+        return ""
+
+    @rx.var
+    async def eval_batch_candidate_rows(self) -> list[dict]:
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+        cands = match.get("candidate_details", [])
+        rows = []
+        for i, c in enumerate(cands, 1):
+            cand_name = c.get("name", "")
+            cand_id = c.get("emp_id", "")
+            cand_label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+            saved = _saved_evaluation(self.assessment_evaluation_results, cand_label, asmn, test_name)
+            if not saved:
+                saved = _saved_evaluation(self.real_ai_results_per_candidate, cand_label, asmn, test_name)
+            if not saved and cand_id:
+                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if not saved and cand_id:
+                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
+            
+            if saved:
+                rows.append({
+                    "index": str(i),
+                    "name": cand_name,
+                    "emp_id": cand_id,
+                    "status": "Completed",
+                    "marks": saved.get("score", "—"),
+                    "score": saved.get("percentage", "—"),
+                })
+            else:
+                rows.append({
+                    "index": str(i),
+                    "name": cand_name,
+                    "emp_id": cand_id,
+                    "status": "Pending",
+                    "marks": "—",
+                    "score": "—",
+                })
+        return rows
+
+    @rx.var
+    async def eval_batch_question_options(self) -> list[str]:
+        records = await self._eval_batch_saved_records
+        if not records:
+            return ["Q1"]
+        first_eval = records[0]["evaluation"]
+        qs = first_eval.get("questions", [])
+        options = []
+        for q in qs:
+            q_no = str(q.get("q_no") or q.get("question_no") or "")
+            label = q_no if q_no.upper().startswith("Q") else f"Q{q_no}"
+            options.append(label)
+        return options if options else ["Q1"]
+
+    @rx.var
+    async def eval_batch_selected_question_label(self) -> str:
+        options = await self.eval_batch_question_options
+        idx = max(0, min(self.eval_batch_selected_question_index, len(options) - 1))
+        return options[idx] if options else "Q1"
+
+    @rx.var
+    async def eval_batch_selected_question_max_marks(self) -> str:
+        records = await self._eval_batch_saved_records
+        if not records:
+            return "(Max Marks: 0)"
+        first_eval = records[0]["evaluation"]
+        qs = first_eval.get("questions", [])
+        idx = max(0, min(self.eval_batch_selected_question_index, len(qs) - 1))
+        if qs and 0 <= idx < len(qs):
+            q = qs[idx]
+            max_m = q.get("max_marks") or q.get("maximum_marks") or "0"
+            return f"(Max Marks: {max_m})"
+        return "(Max Marks: 0)"
+
+    @rx.var
+    async def eval_batch_selected_question_title(self) -> str:
+        records = await self._eval_batch_saved_records
+        options = await self.eval_batch_question_options
+        idx = max(0, min(self.eval_batch_selected_question_index, len(options) - 1))
+        label = options[idx] if options else "Q1"
+        if not records:
+            return f"{label}. Question Details"
+        first_eval = records[0]["evaluation"]
+        qs = first_eval.get("questions", [])
+        if qs and 0 <= idx < len(qs):
+            q = qs[idx]
+            text = q.get("question") or q.get("question_text") or ""
+            if not text and isinstance(q.get("record"), dict):
+                text = q["record"].get("question", "")
+            if text:
+                if text.strip().startswith(label):
+                    return text.strip()
+                return f"{label}. {text.strip()}"
+        return f"{label}. Question Details"
+
+    @rx.var
+    async def eval_batch_question_candidate_rows(self) -> list[dict]:
+        records = await self._eval_batch_saved_records
+        options = await self.eval_batch_question_options
+        idx = max(0, min(self.eval_batch_selected_question_index, len(options) - 1))
+        target_label = options[idx] if options else "Q1"
+        rows = []
+        for i, r in enumerate(records, 1):
+            cand = r["candidate"]
+            eval_data = r["evaluation"]
+            qs = eval_data.get("questions", [])
+            q = next(
+                (item for item in qs if (
+                    str(item.get("q_no") or item.get("question_no") or "") == target_label or
+                    f"Q{item.get('q_no') or item.get('question_no') or ''}".upper() == target_label.upper()
+                )),
+                qs[idx] if idx < len(qs) else {}
+            )
+            awarded = q.get("ai_score") or q.get("awarded_marks", "0")
+            maximum = q.get("max_marks") or q.get("maximum_marks", "0")
+            pct = q.get("score_pct") or (f"{q.get('percentage')}%" if "percentage" in q else "0%")
+            just = q.get("justification") or q.get("error") or ""
+            rows.append({
+                "index": str(i),
+                "name": cand.get("name", ""),
+                "emp_id": cand.get("emp_id", ""),
+                "marks": f"{awarded} / {maximum}",
+                "score": pct,
+                "justification": just,
+            })
+        return rows
 
     @rx.var
     def eval_qp_filename(self) -> str:
@@ -5699,6 +6035,8 @@ class FacilitatorState(rx.State):
         self.manual_justifications = new_just
 
     def open_candidate_response_modal(self):
+        if self.is_all_candidates_evaluation and not self.eval_files_selected_candidate:
+            return rx.toast.warning("Please select a candidate first.")
         self.show_candidate_response_modal = True
         return FacilitatorState.refresh_workspace_snapshot(False)
 
@@ -5978,9 +6316,12 @@ class FacilitatorState(rx.State):
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font
 
-        candidate_id = _evaluation_candidate_id(
-            self.selected_evaluation_candidate
+        target_cand = (
+            self.eval_files_selected_candidate
+            if (self.is_all_candidates_evaluation and self.eval_files_selected_candidate)
+            else self.selected_evaluation_candidate
         )
+        candidate_id = _evaluation_candidate_id(target_cand)
 
         if not candidate_id:
             return rx.toast.error(
