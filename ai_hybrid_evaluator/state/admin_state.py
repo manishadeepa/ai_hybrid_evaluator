@@ -609,12 +609,7 @@ class AdminState(rx.State):
     edit_candidate_id: str = ""
     edit_candidate_name: str = ""
     edit_candidate_email: str = ""
-    edit_candidate_password: str = ""
-    edit_candidate_show_password: bool = False
     edit_candidate_error: str = ""
-
-    def toggle_edit_candidate_password(self):
-        self.edit_candidate_show_password = not self.edit_candidate_show_password
 
     def open_edit_candidate(self, index: int):
         c = self.candidates[index]
@@ -622,8 +617,6 @@ class AdminState(rx.State):
         self.edit_candidate_id = c["emp_id"]
         self.edit_candidate_name = c["name"]
         self.edit_candidate_email = c["email"]
-        self.edit_candidate_password = c["password"]
-        self.edit_candidate_show_password = False
         self.edit_candidate_error = ""
         self.show_edit_candidate = True
 
@@ -631,7 +624,6 @@ class AdminState(rx.State):
         self.show_edit_candidate = value
         if not value:
             self.edit_candidate_index = -1
-            self.edit_candidate_show_password = False
             self.edit_candidate_error = ""
 
     def set_edit_candidate_id(self, value: str):
@@ -643,25 +635,17 @@ class AdminState(rx.State):
     def set_edit_candidate_email(self, value: str):
         self.edit_candidate_email = value
 
-    def set_edit_candidate_password(self, value: str):
-        self.edit_candidate_password = value
-
     def save_edit_candidate(self):
         if not all([
             self.edit_candidate_id,
             self.edit_candidate_name,
             self.edit_candidate_email,
-            self.edit_candidate_password,
         ]):
             self.edit_candidate_error = "Please fill in all fields."
             return
 
         if not re.match(EMAIL_REGEX, self.edit_candidate_email):
             self.edit_candidate_error = "Enter a valid email address."
-            return
-
-        if len(self.edit_candidate_password) < 6:
-            self.edit_candidate_error = "Password must be at least 6 characters."
             return
 
         if not (0 <= self.edit_candidate_index < len(self.candidates)):
@@ -684,7 +668,6 @@ class AdminState(rx.State):
                     "candidate_id": original_id,
                     "name": self.edit_candidate_name.strip(),
                     "email": self.edit_candidate_email.strip().lower(),
-                    "password": self.edit_candidate_password,
                 },
             )
 
@@ -696,15 +679,12 @@ class AdminState(rx.State):
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
             "email": saved["email"],
-            "password": self.edit_candidate_password,
+            "password": self.candidates[self.edit_candidate_index].get("password", ""),
         }
 
         self.candidates[self.edit_candidate_index] = updated_candidate
 
-        # Keep the candidate password only in the shared in-memory mock list.
-        # If the candidate was loaded from the backend and is not yet present
-        # in SHARED_CANDIDATES, add it now so Candidate Login can authenticate
-        # against the password entered by the Admin.
+        # Keep shared identity details in sync without changing credentials.
         shared_candidate_found = False
 
         for i, candidate in enumerate(SHARED_CANDIDATES):
