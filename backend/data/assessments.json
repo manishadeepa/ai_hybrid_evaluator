@@ -453,5 +453,27 @@
             "F001": "approved"
         },
         "assessment_id": "b29bc70d9a284489ba51ef3fb5f59d7e"
+    },
+    {
+        "name": "AI",
+        "assessment_date": "",
+        "facilitator_ids": [
+            "F001"
+        ],
+        "facilitator_names": [
+            "Ravi Kumar"
+        ],
+        "facilitator_id": "F001",
+        "facilitator_name": "Ravi Kumar",
+        "assigned_candidates": [
+            "CAND-2031",
+            "CAND-2054"
+        ],
+        "status": "Scheduled",
+        "approval_status": "approved",
+        "facilitator_approvals": {
+            "F001": "approved"
+        },
+        "assessment_id": "50c1ac2d422f460fa53146ac2f816606"
     }
 ]

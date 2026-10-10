@@ -1450,5 +1450,27 @@
         "updated_at": "2026-10-09T18:17:11.880406+00:00",
         "started_at": null,
         "submitted_at": null
+    },
+    {
+        "candidate_id": "CAND-2031",
+        "assessment_id": "50c1ac2d422f460fa53146ac2f816606",
+        "test_id": "b04b124bae5f4287b6228c2c730ce5cd",
+        "status": "Submitted",
+        "assigned_at": "2026-10-10T13:36:38.668167+00:00",
+        "created_at": "2026-10-10T13:36:38.668167+00:00",
+        "updated_at": "2026-10-10T13:41:39.788273+00:00",
+        "started_at": "2026-10-10T13:40:07.774391+00:00",
+        "submitted_at": "2026-10-10T13:41:39.788273+00:00"
+    },
+    {
+        "candidate_id": "CAND-2054",
+        "assessment_id": "50c1ac2d422f460fa53146ac2f816606",
+        "test_id": "b04b124bae5f4287b6228c2c730ce5cd",
+        "status": "Submitted",
+        "assigned_at": "2026-10-10T13:36:38.668167+00:00",
+        "created_at": "2026-10-10T13:36:38.668167+00:00",
+        "updated_at": "2026-10-10T13:43:03.696297+00:00",
+        "started_at": "2026-10-10T13:42:22.587456+00:00",
+        "submitted_at": "2026-10-10T13:43:03.696297+00:00"
     }
 ]

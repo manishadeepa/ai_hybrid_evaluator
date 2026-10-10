@@ -7527,6 +7527,190 @@ def qp_preview_dialog() -> rx.Component:
     )
 
 
+def time_picker_combobox(
+    label: str,
+    value: rx.Var[str],
+    on_change,
+    is_open: rx.Var[bool],
+    on_toggle,
+    on_open,
+    search_value: rx.Var[str],
+    on_search_change,
+    options: rx.Var[list[str]],
+    on_select,
+    on_clear,
+    on_clear_search,
+    on_blur,
+    error: rx.Var[str],
+    close_all,
+) -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.text(label, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
+            rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
+            spacing="1",
+            align_items="center",
+        ),
+        rx.box(
+            # Input with clock icon on left and clear/chevron on right
+            rx.input(
+                rx.input.slot(
+                    rx.icon("clock", size=16, color=COLORS["slate"]),
+                ),
+                rx.input.slot(
+                    rx.hstack(
+                        rx.cond(
+                            value != "",
+                            rx.box(
+                                rx.icon("x", size=14, color=COLORS["slate"]),
+                                cursor="pointer",
+                                on_click=on_clear,
+                                padding="2px",
+                                _hover={"color": COLORS["ink"]},
+                            ),
+                        ),
+                        rx.box(
+                            rx.icon("chevron-down", size=16, color=COLORS["slate"]),
+                            cursor="pointer",
+                            on_click=on_toggle,
+                            padding="2px",
+                            _hover={"color": COLORS["ink"]},
+                        ),
+                        spacing="1",
+                        align_items="center",
+                    ),
+                ),
+                value=value,
+                on_change=on_change,
+                on_focus=on_open,
+                on_blur=on_blur,
+                placeholder="Select Time",
+                width="100%",
+                size="2",
+                radius="medium",
+                font_family=FONT_BODY,
+                style={
+                    "backgroundColor": "#FFFFFF",
+                    "border": rx.cond(error != "", "1px solid #EF4444", "1px solid #E2E8F0"),
+                    "borderRadius": "8px",
+                    "cursor": "text",
+                    "&:focus-within": {
+                        "borderColor": rx.cond(error != "", "#EF4444 !important", "#7C3AED !important"),
+                        "boxShadow": rx.cond(error != "", "0 0 0 1px #EF4444 !important", "0 0 0 1px #7C3AED !important"),
+                    },
+                },
+            ),
+            # Transparent backdrop to dismiss dropdown on outside click
+            rx.cond(
+                is_open,
+                rx.box(
+                    position="fixed",
+                    top="0",
+                    left="0",
+                    right="0",
+                    bottom="0",
+                    z_index="40",
+                    on_click=close_all,
+                ),
+            ),
+            # Dropdown suggestions panel
+            rx.cond(
+                is_open,
+                rx.box(
+                    # Search bar matching user screenshot
+                    rx.box(
+                        rx.input(
+                            rx.input.slot(
+                                rx.icon("search", size=14, color=COLORS["slate"]),
+                            ),
+                            rx.input.slot(
+                                rx.cond(
+                                    search_value != "",
+                                    rx.box(
+                                        rx.icon("x", size=12, color=COLORS["slate"]),
+                                        cursor="pointer",
+                                        on_click=on_clear_search,
+                                        _hover={"color": COLORS["ink"]},
+                                    ),
+                                ),
+                            ),
+                            placeholder="Search time...",
+                            value=search_value,
+                            on_change=on_search_change,
+                            size="1",
+                            width="100%",
+                            font_family=FONT_BODY,
+                            style={
+                                "borderRadius": "6px",
+                                "backgroundColor": "#F8FAFC",
+                                "border": "1px solid #E2E8F0",
+                            },
+                        ),
+                        padding="8px 8px 6px 8px",
+                        background="#FFFFFF",
+                        border_bottom="1px solid #F1F5F9",
+                        position="sticky",
+                        top="0",
+                        z_index="2",
+                    ),
+                    # Options list
+                    rx.vstack(
+                        rx.foreach(
+                            options,
+                            lambda opt: rx.box(
+                                rx.text(
+                                    opt,
+                                    font_family=FONT_BODY,
+                                    size="2",
+                                    color=rx.cond(value == opt, "#7C3AED", COLORS["ink"]),
+                                    weight=rx.cond(value == opt, "medium", "regular"),
+                                ),
+                                width="100%",
+                                padding="8px 12px",
+                                border_radius="6px",
+                                cursor="pointer",
+                                background=rx.cond(value == opt, "#F3E8FF", "transparent"),
+                                _hover={"background": rx.cond(value == opt, "#EDE9FE", "#F8FAFC")},
+                                on_click=on_select(opt),
+                            ),
+                        ),
+                        spacing="0",
+                        width="100%",
+                        padding="4px",
+                    ),
+                    position="absolute",
+                    top="calc(100% + 4px)",
+                    left="0",
+                    width="100%",
+                    max_height="220px",
+                    overflow_y="auto",
+                    background="#FFFFFF",
+                    border="1px solid #E2E8F0",
+                    border_radius="8px",
+                    box_shadow="0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+                    z_index="50",
+                ),
+            ),
+            # Inline error text
+            rx.cond(
+                error != "",
+                rx.text(
+                    error,
+                    font_family=FONT_BODY,
+                    size="1",
+                    color="#EF4444",
+                    margin_top="3px",
+                ),
+            ),
+            position="relative",
+            width="100%",
+        ),
+        spacing="1",
+        width="50%",
+        align_items="start",
+    )
+
+
 def add_new_test_dialog() -> rx.Component:
     is_formative = FacilitatorState.new_test_type == "Formative"
     is_summative = FacilitatorState.new_test_type == "Summative"
@@ -7787,106 +7971,40 @@ def add_new_test_dialog() -> rx.Component:
                     ),
                     rx.hstack(
                         # Start Time
-                        rx.vstack(
-                            rx.hstack(
-                                rx.text("Start Time", font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
-                                rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
-                                spacing="1",
-                                align_items="center",
-                            ),
-                            rx.box(
-                                rx.icon(
-                                    "clock",
-                                    size=16,
-                                    color=COLORS["slate"],
-                                    position="absolute",
-                                    left="12px",
-                                    top="50%",
-                                    transform="translateY(-50%)",
-                                    pointer_events="none",
-                                    z_index="2",
-                                ),
-                                rx.select(
-                                    TIME_PICKER_OPTIONS_VAR,
-                                    placeholder="Select Time",
-                                    value=FacilitatorState.new_test_start_time,
-                                    on_change=FacilitatorState.set_new_test_start_time,
-                                    color_scheme="purple",
-                                    width="100%",
-                                    size="2",
-                                    radius="medium",
-                                    font_family=FONT_BODY,
-                                ),
-                                position="relative",
-                                width="100%",
-                                style={
-                                    "& .rt-SelectTrigger": {
-                                        "paddingLeft": "36px !important",
-                                        "borderRadius": "8px !important",
-                                        "border": "1px solid #E2E8F0",
-                                        "backgroundColor": "#FFFFFF",
-                                        "cursor": "pointer",
-                                    },
-                                    "& .rt-SelectTrigger:focus, & .rt-SelectTrigger[data-state='open']": {
-                                        "borderColor": "#7C3AED !important",
-                                        "boxShadow": "0 0 0 1px #7C3AED !important",
-                                    },
-                                },
-                            ),
-                            spacing="1",
-                            width="50%",
-                            align_items="start",
+                        time_picker_combobox(
+                            label="Start Time",
+                            value=FacilitatorState.new_test_start_time,
+                            on_change=FacilitatorState.set_new_test_start_time,
+                            is_open=FacilitatorState.start_time_dropdown_open,
+                            on_toggle=FacilitatorState.toggle_start_time_dropdown,
+                            on_open=FacilitatorState.open_start_time_dropdown,
+                            search_value=FacilitatorState.start_time_search,
+                            on_search_change=FacilitatorState.set_start_time_search,
+                            options=FacilitatorState.filtered_start_time_options,
+                            on_select=FacilitatorState.select_start_time,
+                            on_clear=FacilitatorState.clear_start_time,
+                            on_clear_search=FacilitatorState.clear_start_time_search,
+                            on_blur=FacilitatorState.validate_start_time,
+                            error=FacilitatorState.start_time_error,
+                            close_all=FacilitatorState.close_time_dropdowns,
                         ),
                         # End Time
-                        rx.vstack(
-                            rx.hstack(
-                                rx.text("End Time", font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
-                                rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
-                                spacing="1",
-                                align_items="center",
-                            ),
-                            rx.box(
-                                rx.icon(
-                                    "clock",
-                                    size=16,
-                                    color=COLORS["slate"],
-                                    position="absolute",
-                                    left="12px",
-                                    top="50%",
-                                    transform="translateY(-50%)",
-                                    pointer_events="none",
-                                    z_index="2",
-                                ),
-                                rx.select(
-                                    TIME_PICKER_OPTIONS_VAR,
-                                    placeholder="Select Time",
-                                    value=FacilitatorState.new_test_end_time,
-                                    on_change=FacilitatorState.set_new_test_end_time,
-                                    color_scheme="purple",
-                                    width="100%",
-                                    size="2",
-                                    radius="medium",
-                                    font_family=FONT_BODY,
-                                ),
-                                position="relative",
-                                width="100%",
-                                style={
-                                    "& .rt-SelectTrigger": {
-                                        "paddingLeft": "36px !important",
-                                        "borderRadius": "8px !important",
-                                        "border": "1px solid #E2E8F0",
-                                        "backgroundColor": "#FFFFFF",
-                                        "cursor": "pointer",
-                                    },
-                                    "& .rt-SelectTrigger:focus, & .rt-SelectTrigger[data-state='open']": {
-                                        "borderColor": "#7C3AED !important",
-                                        "boxShadow": "0 0 0 1px #7C3AED !important",
-                                    },
-                                },
-                            ),
-                            spacing="1",
-                            width="50%",
-                            align_items="start",
+                        time_picker_combobox(
+                            label="End Time",
+                            value=FacilitatorState.new_test_end_time,
+                            on_change=FacilitatorState.set_new_test_end_time,
+                            is_open=FacilitatorState.end_time_dropdown_open,
+                            on_toggle=FacilitatorState.toggle_end_time_dropdown,
+                            on_open=FacilitatorState.open_end_time_dropdown,
+                            search_value=FacilitatorState.end_time_search,
+                            on_search_change=FacilitatorState.set_end_time_search,
+                            options=FacilitatorState.filtered_end_time_options,
+                            on_select=FacilitatorState.select_end_time,
+                            on_clear=FacilitatorState.clear_end_time,
+                            on_clear_search=FacilitatorState.clear_end_time_search,
+                            on_blur=FacilitatorState.validate_end_time,
+                            error=FacilitatorState.end_time_error,
+                            close_all=FacilitatorState.close_time_dropdowns,
                         ),
                         spacing="3",
                         width="100%",

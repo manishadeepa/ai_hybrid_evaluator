@@ -2618,6 +2618,160 @@ class FacilitatorState(rx.State):
     new_test_description: str = ""
     new_question_type: str = ""  # "" (unset) | "Objective" | "Subjective" | "Hybrid"
     suggested_formative_name: str = ""
+    start_time_error: str = ""
+    end_time_error: str = ""
+    start_time_dropdown_open: bool = False
+    end_time_dropdown_open: bool = False
+    start_time_search: str = ""
+    end_time_search: str = ""
+
+    @staticmethod
+    def parse_time_12h(time_str: str) -> tuple[bool, str, int]:
+        """Validate and parse standard 12-hour format with AM/PM.
+        Accepts e.g.: '10:05 AM', '10:17 AM', '9:30 AM', '09:30 AM', '12:00 PM', '1:00 pm'.
+        Returns: (is_valid, formatted_canonical_time, minutes_from_midnight).
+        """
+        import re
+        if not time_str or not time_str.strip():
+            return False, "", -1
+        s = time_str.strip()
+        match = re.match(r"^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)$", s)
+        if not match:
+            return False, "", -1
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        period = match.group(3).upper()
+        if hour < 1 or hour > 12 or minute < 0 or minute > 59:
+            return False, "", -1
+        h_24 = hour % 12
+        if period == "PM":
+            h_24 += 12
+        total_minutes = h_24 * 60 + minute
+        return True, f"{hour:02d}:{minute:02d} {period}", total_minutes
+
+    def set_new_test_start_time(self, value: str):
+        self.new_test_start_time = value
+        self.start_time_search = value
+        self.start_time_error = ""
+
+    def set_start_time_search(self, value: str):
+        self.start_time_search = value
+
+    def open_start_time_dropdown(self):
+        self.start_time_dropdown_open = True
+        self.end_time_dropdown_open = False
+        self.start_time_search = ""
+
+    def toggle_start_time_dropdown(self):
+        self.start_time_dropdown_open = not self.start_time_dropdown_open
+        if self.start_time_dropdown_open:
+            self.end_time_dropdown_open = False
+            self.start_time_search = ""
+
+    def select_start_time(self, value: str):
+        self.new_test_start_time = value
+        self.start_time_search = ""
+        self.start_time_error = ""
+        self.start_time_dropdown_open = False
+
+    def clear_start_time(self):
+        self.new_test_start_time = ""
+        self.start_time_search = ""
+        self.start_time_error = ""
+
+    def clear_start_time_search(self):
+        self.start_time_search = ""
+
+    def validate_start_time(self):
+        if not self.new_test_start_time or not self.new_test_start_time.strip():
+            return
+        valid, formatted, _ = self.parse_time_12h(self.new_test_start_time)
+        if valid:
+            self.new_test_start_time = formatted
+            self.start_time_error = ""
+        else:
+            self.start_time_error = "Invalid format. Use e.g. 10:05 AM"
+
+    def set_new_test_end_time(self, value: str):
+        self.new_test_end_time = value
+        self.end_time_search = value
+        self.end_time_error = ""
+
+    def set_end_time_search(self, value: str):
+        self.end_time_search = value
+
+    def open_end_time_dropdown(self):
+        self.end_time_dropdown_open = True
+        self.start_time_dropdown_open = False
+        self.end_time_search = ""
+
+    def toggle_end_time_dropdown(self):
+        self.end_time_dropdown_open = not self.end_time_dropdown_open
+        if self.end_time_dropdown_open:
+            self.start_time_dropdown_open = False
+            self.end_time_search = ""
+
+    def select_end_time(self, value: str):
+        self.new_test_end_time = value
+        self.end_time_search = ""
+        self.end_time_error = ""
+        self.end_time_dropdown_open = False
+
+    def clear_end_time(self):
+        self.new_test_end_time = ""
+        self.end_time_search = ""
+        self.end_time_error = ""
+
+    def clear_end_time_search(self):
+        self.end_time_search = ""
+
+    def validate_end_time(self):
+        if not self.new_test_end_time or not self.new_test_end_time.strip():
+            return
+        valid, formatted, _ = self.parse_time_12h(self.new_test_end_time)
+        if valid:
+            self.new_test_end_time = formatted
+            self.end_time_error = ""
+        else:
+            self.end_time_error = "Invalid format. Use e.g. 10:05 AM"
+
+    def close_time_dropdowns(self):
+        self.start_time_dropdown_open = False
+        self.end_time_dropdown_open = False
+
+    @rx.var
+    def filtered_start_time_options(self) -> list[str]:
+        base = [
+            f"{h:02d}:{m:02d} {p}"
+            for p in ("AM", "PM")
+            for h in [12] + list(range(1, 12))
+            for m in range(0, 60, 5)
+        ]
+        q = (self.start_time_search or "").strip().upper()
+        if not q:
+            return base
+        matches = [opt for opt in base if q in opt.upper()]
+        valid, formatted, _ = self.parse_time_12h(q)
+        if valid and formatted not in matches:
+            matches.insert(0, formatted)
+        return matches[:60]
+
+    @rx.var
+    def filtered_end_time_options(self) -> list[str]:
+        base = [
+            f"{h:02d}:{m:02d} {p}"
+            for p in ("AM", "PM")
+            for h in [12] + list(range(1, 12))
+            for m in range(0, 60, 5)
+        ]
+        q = (self.end_time_search or "").strip().upper()
+        if not q:
+            return base
+        matches = [opt for opt in base if q in opt.upper()]
+        valid, formatted, _ = self.parse_time_12h(q)
+        if valid and formatted not in matches:
+            matches.insert(0, formatted)
+        return matches[:60]
 
     def set_show_add_test_modal(self, value: bool):
         self.show_add_test_modal = value
@@ -2639,12 +2793,6 @@ class FacilitatorState(rx.State):
 
     def set_new_test_date(self, value: str):
         self.new_test_date = value
-
-    def set_new_test_start_time(self, value: str):
-        self.new_test_start_time = value
-
-    def set_new_test_end_time(self, value: str):
-        self.new_test_end_time = value
 
     def set_new_question_type(self, value: str):
         self.new_question_type = value
@@ -2687,6 +2835,12 @@ class FacilitatorState(rx.State):
         self.new_test_date = ""
         self.new_test_start_time = ""
         self.new_test_end_time = ""
+        self.start_time_error = ""
+        self.end_time_error = ""
+        self.start_time_dropdown_open = False
+        self.end_time_dropdown_open = False
+        self.start_time_search = ""
+        self.end_time_search = ""
         self.new_test_description = ""
         self.new_question_type = ""
         self.show_add_test_modal = True
@@ -2710,10 +2864,42 @@ class FacilitatorState(rx.State):
             return rx.toast.error("Please select a Question Type.")
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
-        if not self.new_test_start_time:
-            return rx.toast.error("Please select a Start Time.")
-        if not self.new_test_end_time:
-            return rx.toast.error("Please select an End Time.")
+
+        start_time_val = getattr(self, "new_test_start_time", None)
+        end_time_val = getattr(self, "new_test_end_time", None)
+        if start_time_val is not None or end_time_val is not None:
+            if not start_time_val or not str(start_time_val).strip():
+                if hasattr(self, "start_time_error"):
+                    self.start_time_error = "Start Time is required."
+                return rx.toast.error("Please select a Start Time.")
+            if not end_time_val or not str(end_time_val).strip():
+                if hasattr(self, "end_time_error"):
+                    self.end_time_error = "End Time is required."
+                return rx.toast.error("Please select an End Time.")
+
+            st_valid, st_formatted, st_min = self.parse_time_12h(str(start_time_val))
+            if not st_valid:
+                if hasattr(self, "start_time_error"):
+                    self.start_time_error = "Invalid format. Use e.g. 10:05 AM"
+                return rx.toast.error("Invalid Start Time format. Use standard 12-hour format like 10:05 AM.")
+
+            et_valid, et_formatted, et_min = self.parse_time_12h(str(end_time_val))
+            if not et_valid:
+                if hasattr(self, "end_time_error"):
+                    self.end_time_error = "Invalid format. Use e.g. 10:05 AM"
+                return rx.toast.error("Invalid End Time format. Use standard 12-hour format like 10:05 AM.")
+
+            if et_min <= st_min:
+                if hasattr(self, "end_time_error"):
+                    self.end_time_error = "End Time must be later than Start Time."
+                return rx.toast.error("End Time must be later than Start Time.")
+
+            self.new_test_start_time = st_formatted
+            self.new_test_end_time = et_formatted
+            if hasattr(self, "start_time_error"):
+                self.start_time_error = ""
+            if hasattr(self, "end_time_error"):
+                self.end_time_error = ""
 
         try:
             selected_date = date.fromisoformat(test_date)
@@ -2755,8 +2941,8 @@ class FacilitatorState(rx.State):
                         dict(a), test_name, formatted_date, self.new_test_description.strip(),
                         self.new_test_type == "Summative",
                         test_type={"Objective": "objective", "Subjective": "subjective", "Hybrid": "mixed"}[self.new_question_type],
-                        start_time=self.new_test_start_time,
-                        end_time=self.new_test_end_time)
+                        start_time=getattr(self, "new_test_start_time", "") or "",
+                        end_time=getattr(self, "new_test_end_time", "") or "")
                     print(f"[CREATE TEST TIMING] _add_assessment_test: {time.perf_counter() - _step:.3f}s", flush=True)
                 except (ValueError, OSError) as exc:
                     return rx.toast.error(str(exc))

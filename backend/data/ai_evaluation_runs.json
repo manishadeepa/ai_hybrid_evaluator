@@ -9646,5 +9646,798 @@
         "failed_questions": 0,
         "pending_questions": 0,
         "percentage": 100.0
+    },
+    {
+        "run_id": "fb177340c8db410bac9fd2eb50beb96e",
+        "candidate_ids": [
+            "CAND-2031",
+            "CAND-2054"
+        ],
+        "candidate_id": null,
+        "candidate_scope": "all",
+        "candidate_labels": {
+            "CAND-2031": "Priya Sharma (CAND-2031)",
+            "CAND-2054": "Arjun Rao (CAND-2054)"
+        },
+        "assessment_name": "AI",
+        "test_name": "Formative 1",
+        "assessment_id": "50c1ac2d422f460fa53146ac2f816606",
+        "test_id": "b04b124bae5f4287b6228c2c730ce5cd",
+        "evaluation_type": "ai",
+        "status": "failed",
+        "questions": [
+            {
+                "pair_id": "9d808922726a4b07ae9270eb48af58f2",
+                "record": {
+                    "response_id": "b184df6aa8f14332a058af5a8d210ddc",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q1",
+                    "question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) To translate customer requirements into technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "1fb33130ac044d7c896a2a11ec351d9c",
+                "record": {
+                    "response_id": "a73eb2523e12440cb8300d88c82a4db3",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q1",
+                    "question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) To translate customer requirements into technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "7ddf4fde8330497083ef341fb3569bb2",
+                "record": {
+                    "response_id": "c3a226d053e943fdb77e1c74eca46842",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q2",
+                    "question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "candidate_answer": "D",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Customer Requirements (WHATs)",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "427ddd301b6e469d9f85eb9e9c18b9c9",
+                "record": {
+                    "response_id": "1b56413a2bb9447898f297d23f23807c",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q2",
+                    "question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Customer Requirements (WHATs)",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "b4134cd03f62411b83c6ba3277f177df",
+                "record": {
+                    "response_id": "376a76ce83df4842a123684eef7a8a0e",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q3",
+                    "question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "a3dc56e7e93648b5894b49529548d3a8",
+                "record": {
+                    "response_id": "3c99d417b993459ab1c94c98fa73e1fe",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q3",
+                    "question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "b4ecee1db18a418382dd91b5eb8fd751",
+                "record": {
+                    "response_id": "04173a3d167e42509164487dc48836c4",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q4",
+                    "question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) WHATs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.1",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "40cdc6ac018c4e8dac9ac5219a7ddfe3",
+                "record": {
+                    "response_id": "fa3f6f493f854f76a265159c28ae7c0e",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q4",
+                    "question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) WHATs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.1",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "c8a2ed2429bf4ae4a9f69c0fee485403",
+                "record": {
+                    "response_id": "5e80cfca57d749689acb3fcaee5b9062",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q5",
+                    "question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Relationship Matrix",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "47d59ddc2187418d941e0f2d269c0d77",
+                "record": {
+                    "response_id": "7a7e9049ee3048c39f7bb1b334a78419",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q5",
+                    "question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "candidate_answer": "D",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Relationship Matrix",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "713b97d4323e41bfb9a8bbea1e61fbd3",
+                "record": {
+                    "response_id": "2ca308ccdd2e4dc59b6aaed4bfadec43",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q6",
+                    "question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) To show correlations among technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "e826fd7647494d9eb7a71585ec9a9b69",
+                "record": {
+                    "response_id": "8e2e831e86b94dd286d9813718453042",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q6",
+                    "question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) To show correlations among technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "f7961cd6f7544ca18157569dc203ab67",
+                "record": {
+                    "response_id": "e4a6589c97ee49b9ae413d583127b425",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q7",
+                    "question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Importance rating",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.1",
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "71107a0e8a6a4b99ad3c2a731dbc6bf3",
+                "record": {
+                    "response_id": "1d6d9e00342445558b111299d3cd68a8",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q7",
+                    "question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "candidate_answer": "D",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Importance rating",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.1",
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "d2ce6facc4dc45c4b4a62e83bfdb5777",
+                "record": {
+                    "response_id": "313e88b2a4a444ccb7eaefc124b97f5c",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q8",
+                    "question": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) The technical requirement deserves greater attention",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "d5999ecf4c704baf930594ba7d76cd3f",
+                "record": {
+                    "response_id": "f75368b3edd24b73aa0fee0e28d77eb6",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q8",
+                    "question": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) The technical requirement deserves greater attention",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "94981a8098c646d2822b164fdaf9d229",
+                "record": {
+                    "response_id": "8ecebae253bc40dcb4ad45d7c3028930",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q9",
+                    "question": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "C) 9",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.3",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "78f6df4631264978b66b9e2ca799e1c8",
+                "record": {
+                    "response_id": "49c0160a8e6742d8ba079701609d6570",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q9",
+                    "question": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "C) 9",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.3",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "b564e59139814ff89c5e7473c1580c3b",
+                "record": {
+                    "response_id": "66e84c60e7be42c28d5701ada21c3f0b",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q10",
+                    "question": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) To compare how the product performs against competitors from the customer's perspective",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "452d4bbdc2bd4e30a5c012bf62442d30",
+                "record": {
+                    "response_id": "f4ef11a0e92949bea23e6d60ba5b2133",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q10",
+                    "question": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) To compare how the product performs against competitors from the customer's perspective",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "da41a5cf2ba14aaa8b9cf1491ae5eb51",
+                "record": {
+                    "response_id": "387a41fd75314b3d811b46f530451779",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q11",
+                    "question": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "C) Braking distance in meters",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "da4864351b924edf9df8665e202f541b",
+                "record": {
+                    "response_id": "d032aa1066d34651bf995b1b702f782f",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q11",
+                    "question": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "C) Braking distance in meters",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "3574453c956a40e09528e7882620629a",
+                "record": {
+                    "response_id": "dcc8adb3f6ff4ad384c08f5d5ae48662",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q12",
+                    "question": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) Improving one may adversely affect the other",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Analyse"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "ad296f4eba9a497eaaabae7f5165205f",
+                "record": {
+                    "response_id": "9ba1e52b5cfa4d549c0a5ff780697701",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q12",
+                    "question": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) Improving one may adversely affect the other",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "4",
+                        "lo": "4.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Analyse"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "b54e8508ed784a0e89c0de15fac20a39",
+                "record": {
+                    "response_id": "b9b24a9e05804ea485655a0fd6040020",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q13",
+                    "question": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                    "candidate_answer": "C",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) It connects customer needs with engineering decisions",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "5",
+                        "lo": "5.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "a2fa067a5f6445f7a92a018dd016039a",
+                "record": {
+                    "response_id": "65b5544faee248d8813456d55f0249af",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q13",
+                    "question": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                    "candidate_answer": "D",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) It connects customer needs with engineering decisions",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "5",
+                        "lo": "5.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "cde439c3658d40e7af99024a28bc6c58",
+                "record": {
+                    "response_id": "70305161292b49678bc70ee5e2cd8817",
+                    "candidate_id": "CAND-2031",
+                    "candidate_name": "Priya Sharma",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q14",
+                    "question": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) Quality Function Deployment (QFD)",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "5",
+                        "lo": "5.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            },
+            {
+                "pair_id": "ff7b314fb1c3413a9c1c40ecaf12c587",
+                "record": {
+                    "response_id": "43d2715b6f6845ac860c613459067c37",
+                    "candidate_id": "CAND-2054",
+                    "candidate_name": "Arjun Rao",
+                    "assessment_name": "AI",
+                    "test_name": "Formative 1",
+                    "question_no": "Q14",
+                    "question": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 5.0,
+                    "answer_key": "A) Quality Function Deployment (QFD)",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "5",
+                        "lo": "5.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "No active AI connection is configured. Please configure and activate an AI connection from Admin Settings."
+            }
+        ],
+        "current_question": null,
+        "created_at": "2026-10-10T13:43:39.956851+00:00",
+        "updated_at": "2026-10-10T13:43:45.530102+00:00",
+        "stop_requested": false,
+        "restarted_from_run_id": null,
+        "superseded_by_run_id": null,
+        "execution_token": "a11d525ec2f04c2b95ad853e8e9a5792",
+        "owner_process": "a3fe7397dd2a466f88391ee00b471736",
+        "owner_pid": 95096,
+        "skipped": [],
+        "error": "",
+        "total_questions": 28,
+        "completed_questions": 0,
+        "failed_questions": 28,
+        "pending_questions": 0,
+        "percentage": 0.0
     }
 ]
