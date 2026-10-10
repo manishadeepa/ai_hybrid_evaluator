@@ -609,7 +609,12 @@ class AdminState(rx.State):
     edit_candidate_id: str = ""
     edit_candidate_name: str = ""
     edit_candidate_email: str = ""
+    edit_candidate_password: str = ""
+    edit_candidate_show_password: bool = False
     edit_candidate_error: str = ""
+
+    def toggle_edit_candidate_password(self):
+        self.edit_candidate_show_password = not self.edit_candidate_show_password
 
     def open_edit_candidate(self, index: int):
         c = self.candidates[index]
@@ -617,6 +622,10 @@ class AdminState(rx.State):
         self.edit_candidate_id = c["emp_id"]
         self.edit_candidate_name = c["name"]
         self.edit_candidate_email = c["email"]
+        # Never display a stored password. A blank field means keep the current
+        # credential; the admin may enter a replacement password if needed.
+        self.edit_candidate_password = ""
+        self.edit_candidate_show_password = False
         self.edit_candidate_error = ""
         self.show_edit_candidate = True
 
@@ -624,6 +633,8 @@ class AdminState(rx.State):
         self.show_edit_candidate = value
         if not value:
             self.edit_candidate_index = -1
+            self.edit_candidate_password = ""
+            self.edit_candidate_show_password = False
             self.edit_candidate_error = ""
 
     def set_edit_candidate_id(self, value: str):
@@ -634,6 +645,9 @@ class AdminState(rx.State):
 
     def set_edit_candidate_email(self, value: str):
         self.edit_candidate_email = value
+
+    def set_edit_candidate_password(self, value: str):
+        self.edit_candidate_password = value
 
     def save_edit_candidate(self):
         if not all([
@@ -646,6 +660,10 @@ class AdminState(rx.State):
 
         if not re.match(EMAIL_REGEX, self.edit_candidate_email):
             self.edit_candidate_error = "Enter a valid email address."
+            return
+
+        if self.edit_candidate_password and len(self.edit_candidate_password) < 6:
+            self.edit_candidate_error = "Password must be at least 6 characters."
             return
 
         if not (0 <= self.edit_candidate_index < len(self.candidates)):
@@ -662,14 +680,14 @@ class AdminState(rx.State):
         try:
             service = CandidateManagementService()
 
-            saved = service.update_candidate(
-                original_id,
-                {
-                    "candidate_id": original_id,
-                    "name": self.edit_candidate_name.strip(),
-                    "email": self.edit_candidate_email.strip().lower(),
-                },
-            )
+            changes = {
+                "candidate_id": original_id,
+                "name": self.edit_candidate_name.strip(),
+                "email": self.edit_candidate_email.strip().lower(),
+            }
+            if self.edit_candidate_password:
+                changes["password"] = self.edit_candidate_password
+            saved = service.update_candidate(original_id, changes)
 
         except (ValueError, OSError) as exc:
             self.edit_candidate_error = str(exc)

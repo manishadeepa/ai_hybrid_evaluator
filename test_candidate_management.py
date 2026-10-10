@@ -77,6 +77,26 @@ class CandidateManagementTests(unittest.TestCase):
         self.assertGreaterEqual(changed["updated_at"], old["updated_at"])
         with self.assertRaises(ValueError): self.service.update_candidate("C1", {"candidate_id": "C2"})
 
+    def test_update_preserves_existing_password_and_can_change_it(self):
+        self.service.create_candidate({
+            "candidate_id": "C1",
+            "name": "Candidate One",
+            "email": "one@example.com",
+            "password": "initial123",
+        })
+
+        self.service.update_candidate("C1", {"name": "Updated Candidate"})
+        self.assertIsNotNone(self.service.authenticate_candidate("C1", "initial123"))
+
+        with self.assertRaisesRegex(ValueError, "at least 6 characters"):
+            self.service.update_candidate("C1", {"password": "short"})
+
+        updated = self.service.update_candidate("C1", {"password": "changed123"})
+        self.assertNotIn("password", updated)
+        self.assertNotIn("changed123", self.repo.file_path.read_text())
+        self.assertIsNone(self.service.authenticate_candidate("C1", "initial123"))
+        self.assertIsNotNone(self.service.authenticate_candidate("C1", "changed123"))
+
     def test_update_duplicate_email_and_missing(self):
         self.create(); self.create("C2", "two@example.com")
         with self.assertRaises(ValueError): self.service.update_candidate("C2", {"email": "ONE@EXAMPLE.COM"})

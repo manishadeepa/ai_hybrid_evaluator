@@ -176,6 +176,38 @@ def edit_candidate_dialog() -> rx.Component:
                     on_change=AdminState.set_edit_candidate_email,
                     width="100%",
                 ),
+                rx.text("New Password", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    rx.input.slot(
+                        rx.icon_button(
+                            rx.cond(
+                                AdminState.edit_candidate_show_password,
+                                rx.icon("eye-off", size=16),
+                                rx.icon("eye", size=16),
+                            ),
+                            size="1",
+                            variant="ghost",
+                            color=COLORS["slate"],
+                            cursor="pointer",
+                            type="button",
+                            tab_index=-1,
+                            on_click=AdminState.toggle_edit_candidate_password,
+                            _hover={"color": COLORS["ink"], "background": "transparent"},
+                            style={
+                                "background": "transparent",
+                                "border": "none",
+                                "box_shadow": "none",
+                                "padding": "0",
+                            },
+                        ),
+                        side="right",
+                    ),
+                    type=rx.cond(AdminState.edit_candidate_show_password, "text", "password"),
+                    placeholder="Leave blank to keep the current password",
+                    value=AdminState.edit_candidate_password,
+                    on_change=AdminState.set_edit_candidate_password,
+                    width="100%",
+                ),
                 rx.cond(
                     AdminState.edit_candidate_error != "",
                     rx.text(AdminState.edit_candidate_error, color=COLORS["danger"], size="2", font_family=FONT_BODY, padding_top="0.7em"),

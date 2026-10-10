@@ -217,12 +217,33 @@ class CandidateManagementService:
             old = self.get_candidate(candidate_id)
             if "candidate_id" in changes and self._identity(changes["candidate_id"]) != old["candidate_id"]:
                 raise ValueError("Candidate ID cannot be changed.")
-            value = self._clean({**old, **changes})
+            password = changes.get("password")
+            if password is not None and not isinstance(password, str):
+                raise ValueError("Password must be at least 6 characters.")
+            if password and len(password) < 6:
+                raise ValueError("Password must be at least 6 characters.")
+
+            # Credentials are persisted separately from the public identity
+            # fields. Preserve an existing hash on profile edits, and replace it
+            # only when the admin supplies a non-empty new password.
+            public_changes = {key: value for key, value in changes.items() if key != "password"}
+            value = self._clean({**old, **public_changes})
             self._unique_email(value)
             stamp = datetime.now(timezone.utc).isoformat()
-            value.setdefault("created_at", stamp)
-            value["updated_at"] = stamp
-            return self.repository.save(value)
+            existing = next(
+                (
+                    row
+                    for row in self.repository.get_all(include_deleted=True)
+                    if row["candidate_id"].casefold() == old["candidate_id"].casefold()
+                ),
+                {},
+            )
+            record = {**existing, **value}
+            record.setdefault("created_at", stamp)
+            record["updated_at"] = stamp
+            if password:
+                record["password_hash"] = self._hash_password(password)
+            return self.repository.save(record)
 
     def delete_candidate(self, candidate_id):
         with _PERSISTENCE_LOCK:
