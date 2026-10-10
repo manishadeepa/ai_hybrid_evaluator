@@ -109,50 +109,38 @@ def generate_assessment_donut_svg(
         + "".join(labels)
         + f'<text x="{cx}" y="{cy-9}" text-anchor="middle" dominant-baseline="central" fill="#0F172A" font-size="28" font-weight="700" font-family="Plus Jakarta Sans, system-ui, sans-serif">{total}</text>'
         + f'<text x="{cx}" y="{cy+11}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Total</text>'
-        + f'<text x="{cx}" y="{cy+25}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Tests</text>'
+        + f'<text x="{cx}" y="{cy+25}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="10" font-weight="500" font-family="Inter, system-ui, sans-serif">Assessments</text>'
         f'</g>'
         f'</svg>'
     )
     return svg
 
 
-def count_assessment_tests_by_status(assessments: list[dict]) -> dict[str, int]:
-    """Count tests by facilitator approval and assessment closure for the admin donut."""
+def count_assessments_by_status(assessments: list[dict]) -> dict[str, int]:
+    """Count assessment assignments by facilitator approval and closure."""
     counts = {"in_progress": 0, "pending": 0, "completed": 0}
     for assessment in assessments:
-        test_names = assessment.get("tests", [])
-        if not isinstance(test_names, list):
-            test_names = []
-        names = [str(name).strip() for name in test_names if str(name).strip()]
-
-        # Include a final test and support older assessment records that only
-        # expose the persisted test-ID map.
-        final_test = assessment.get("final_test", "")
-        if isinstance(final_test, str) and final_test.strip():
-            names.append(final_test.strip())
-        if not names and isinstance(assessment.get("test_ids"), dict):
-            names.extend(str(name).strip() for name in assessment["test_ids"] if str(name).strip())
-        test_count = len(set(names))
-        if not test_count:
-            continue
-
         lifecycle = str(assessment.get("status", "")).strip().casefold()
         if lifecycle in {"completed", "done", "finished"}:
-            # Closed assessments take precedence so each test appears in one slice.
-            counts["completed"] += test_count
+            counts["completed"] += 1
             continue
 
         approval = str(assessment.get("approval_status", "")).strip().casefold()
         facilitator_approvals = assessment.get("facilitator_approvals", {})
-        any_facilitator_approved = (
-            isinstance(facilitator_approvals, dict)
-            and any(str(value).strip().casefold() == "approved" for value in facilitator_approvals.values())
-        )
-        if approval == "approved" or any_facilitator_approved:
-            counts["in_progress"] += test_count
+        # The aggregate approval state is authoritative when present. A
+        # pending aggregate must not become approved just because one of
+        # several assigned facilitators has responded.
+        if approval:
+            is_approved = approval == "approved"
         else:
-            # Pending includes any test whose assessment has not been approved.
-            counts["pending"] += test_count
+            is_approved = (
+                isinstance(facilitator_approvals, dict)
+                and any(
+                    str(value).strip().casefold() == "approved"
+                    for value in facilitator_approvals.values()
+                )
+            )
+        counts["in_progress" if is_approved else "pending"] += 1
     return counts
 
 
@@ -926,39 +914,39 @@ class AdminState(rx.State):
         return "assessment" if count == 1 else "assessments"
 
     @rx.var
-    def dashboard_test_status_counts(self) -> dict[str, int]:
-        return count_assessment_tests_by_status(self.assessments)
+    def dashboard_assessment_status_counts(self) -> dict[str, int]:
+        return count_assessments_by_status(self.assessments)
 
     @rx.var
-    def dashboard_tests_in_progress_count(self) -> int:
-        return self.dashboard_test_status_counts.get("in_progress", 0)
+    def dashboard_assessments_in_progress_count(self) -> int:
+        return self.dashboard_assessment_status_counts.get("in_progress", 0)
 
     @rx.var
-    def dashboard_tests_pending_count(self) -> int:
-        return self.dashboard_test_status_counts.get("pending", 0)
+    def dashboard_assessments_pending_count(self) -> int:
+        return self.dashboard_assessment_status_counts.get("pending", 0)
 
     @rx.var
-    def dashboard_tests_completed_count(self) -> int:
-        return self.dashboard_test_status_counts.get("completed", 0)
+    def dashboard_assessments_completed_count(self) -> int:
+        return self.dashboard_assessment_status_counts.get("completed", 0)
 
     @rx.var
-    def dashboard_tests_in_progress_subtitle(self) -> str:
-        return "test" if self.dashboard_tests_in_progress_count == 1 else "tests"
+    def dashboard_assessments_in_progress_subtitle(self) -> str:
+        return "assessment" if self.dashboard_assessments_in_progress_count == 1 else "assessments"
 
     @rx.var
-    def dashboard_tests_pending_subtitle(self) -> str:
-        return "test" if self.dashboard_tests_pending_count == 1 else "tests"
+    def dashboard_assessments_pending_subtitle(self) -> str:
+        return "assessment" if self.dashboard_assessments_pending_count == 1 else "assessments"
 
     @rx.var
-    def dashboard_tests_completed_subtitle(self) -> str:
-        return "test" if self.dashboard_tests_completed_count == 1 else "tests"
+    def dashboard_assessments_completed_subtitle(self) -> str:
+        return "assessment" if self.dashboard_assessments_completed_count == 1 else "assessments"
 
     @rx.var
     def assessment_donut_svg_html(self) -> str:
         return generate_assessment_donut_svg(
-            self.dashboard_tests_in_progress_count,
-            self.dashboard_tests_pending_count,
-            self.dashboard_tests_completed_count,
+            self.dashboard_assessments_in_progress_count,
+            self.dashboard_assessments_pending_count,
+            self.dashboard_assessments_completed_count,
         )
 
     # =========================================================

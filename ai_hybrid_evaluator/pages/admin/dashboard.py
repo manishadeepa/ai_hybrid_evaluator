@@ -146,8 +146,8 @@ def assessments_overview_card() -> rx.Component:
         rx.vstack(
             # Header
             rx.vstack(
-                rx.text("Test Overview", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
-                rx.text("Current test approval and completion status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                rx.text("Assessment Overview", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
+                rx.text("Current facilitator approval and assessment closure status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                 spacing="0",
                 align_items="start",
             ),
@@ -169,24 +169,24 @@ def assessments_overview_card() -> rx.Component:
                     status_overview_card(
                         dot_color="#10B981",
                         title="In Progress",
-                        count=AdminState.dashboard_tests_in_progress_count.to_string(),
-                        subtitle=AdminState.dashboard_tests_in_progress_subtitle,
+                        count=AdminState.dashboard_assessments_in_progress_count.to_string(),
+                        subtitle=AdminState.dashboard_assessments_in_progress_subtitle,
                         card_bg="#ECFDF5",
                         card_border="#D1FAE5",
                     ),
                     status_overview_card(
                         dot_color="#F59E0B",
                         title="Pending",
-                        count=AdminState.dashboard_tests_pending_count.to_string(),
-                        subtitle=AdminState.dashboard_tests_pending_subtitle,
+                        count=AdminState.dashboard_assessments_pending_count.to_string(),
+                        subtitle=AdminState.dashboard_assessments_pending_subtitle,
                         card_bg="#FFFBEB",
                         card_border="#FEF3C7",
                     ),
                     status_overview_card(
                         dot_color="#2563EB",
                         title="Completed",
-                        count=AdminState.dashboard_tests_completed_count.to_string(),
-                        subtitle=AdminState.dashboard_tests_completed_subtitle,
+                        count=AdminState.dashboard_assessments_completed_count.to_string(),
+                        subtitle=AdminState.dashboard_assessments_completed_subtitle,
                         card_bg="#EFF6FF",
                         card_border="#DBEAFE",
                     ),
