@@ -176,7 +176,7 @@ def edit_candidate_dialog() -> rx.Component:
                     on_change=AdminState.set_edit_candidate_email,
                     width="100%",
                 ),
-                rx.text("New Password", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.text("Password", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
                 rx.input(
                     rx.input.slot(
                         rx.icon_button(
@@ -203,7 +203,7 @@ def edit_candidate_dialog() -> rx.Component:
                         side="right",
                     ),
                     type=rx.cond(AdminState.edit_candidate_show_password, "text", "password"),
-                    placeholder="Leave blank to keep the current password",
+                    placeholder="Enter a password (leave blank to keep current)",
                     value=AdminState.edit_candidate_password,
                     on_change=AdminState.set_edit_candidate_password,
                     width="100%",
