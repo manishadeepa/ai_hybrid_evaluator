@@ -6199,9 +6199,18 @@ class FacilitatorState(rx.State):
         return self.current_manual_question_obj.get("response", "")
 
     @rx.var
+    def current_manual_question_max_marks(self) -> float:
+        obj = self.current_manual_question_obj
+        raw = obj.get("max_marks") or obj.get("marks") or 0
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @rx.var
     def current_manual_mark_val(self) -> str:
         key = str(self.manual_eval_q_index)
-        return self.manual_marks.get(key, "4")
+        return self.manual_marks.get(key, "")
 
     @rx.var
     def current_manual_justification_val(self) -> str:
@@ -6348,6 +6357,25 @@ class FacilitatorState(rx.State):
 
         for i, r in enumerate(resps):
             key = str(i)
+            raw_max = r.get("max_marks") or r.get("marks") or 0
+            try:
+                max_m = float(raw_max)
+            except (ValueError, TypeError):
+                max_m = 0.0
+
+            val_str = str(self.manual_marks.get(key, "")).strip()
+            if val_str:
+                try:
+                    awarded = float(val_str)
+                    if awarded < 0:
+                        return rx.toast.error(f"Marks awarded for question {r.get('q_no', f'Q{i+1}')} cannot be negative.")
+                    if max_m > 0 and awarded > max_m:
+                        disp_max = int(max_m) if max_m == int(max_m) else max_m
+                        return rx.toast.error(
+                            f"Marks awarded for question {r.get('q_no', f'Q{i+1}')} cannot exceed maximum marks ({disp_max})."
+                        )
+                except (ValueError, TypeError):
+                    return rx.toast.error(f"Invalid marks awarded for question {r.get('q_no', f'Q{i+1}')}.")
 
             responses.append(
                 {
@@ -6363,10 +6391,7 @@ class FacilitatorState(rx.State):
                         r.get("response")
                         or ""
                     ),
-                    "max_marks": r.get(
-                        "max_marks",
-                        0,
-                    ),
+                    "max_marks": max_m,
                     "awarded_marks": self.manual_marks.get(key, "0"),
                     "justification": self.manual_justifications.get(key, ""),
                     "CO": r.get("CO", ""),

@@ -2880,11 +2880,11 @@ def manual_evaluation_modal() -> rx.Component:
                 # Marks Input
                 rx.hstack(
                     rx.vstack(
-                        rx.text("Award Marks (Max 5)", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
+                        rx.text("Award Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
                         rx.input(
                             value=FacilitatorState.current_manual_mark_val,
                             on_change=FacilitatorState.set_current_manual_mark,
-                            placeholder="e.g. 4",
+                            placeholder="Enter marks",
                             type="number",
                             size="2",
                             width="140px",
