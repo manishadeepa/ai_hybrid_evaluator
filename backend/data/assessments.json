@@ -475,5 +475,55 @@
             "F001": "approved"
         },
         "assessment_id": "50c1ac2d422f460fa53146ac2f816606"
+    },
+    {
+        "name": "AI 2",
+        "assessment_date": "",
+        "facilitator_ids": [
+            "F001",
+            "F002"
+        ],
+        "facilitator_names": [
+            "Ravi Kumar",
+            "Meena Iyer"
+        ],
+        "facilitator_id": "F001",
+        "facilitator_name": "Ravi Kumar",
+        "assigned_candidates": [
+            "CAND-1234",
+            "CAND-5678"
+        ],
+        "status": "Scheduled",
+        "approval_status": "pending",
+        "facilitator_approvals": {
+            "F001": "approved",
+            "F002": "approved"
+        },
+        "assessment_id": "f65bfe55654440b58b7577c4b13c9a94"
+    },
+    {
+        "name": "AI 3",
+        "assessment_date": "",
+        "facilitator_ids": [
+            "F001",
+            "F002"
+        ],
+        "facilitator_names": [
+            "Ravi Kumar",
+            "Meena Iyer"
+        ],
+        "facilitator_id": "F001",
+        "facilitator_name": "Ravi Kumar",
+        "assigned_candidates": [
+            "CAND-1234",
+            "CAND-5678"
+        ],
+        "status": "Completed",
+        "approval_status": "approved",
+        "facilitator_approvals": {
+            "F001": "approved",
+            "F002": "pending"
+        },
+        "assessment_id": "174ae93088ab4934b3a8a88a465d6ed8"
     }
 ]

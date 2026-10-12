@@ -8948,5 +8948,593 @@
             }
         ],
         "submission_reason": "submitted"
+    },
+    {
+        "candidate_id": "CAND-1234",
+        "candidate_name": "Shivani R",
+        "assessment_id": "174ae93088ab4934b3a8a88a465d6ed8",
+        "test_id": "8639bfcd8f6c41b1a08b85283777ff92",
+        "assessment_name": "AI 3",
+        "test_name": "Formative 1",
+        "status": "Submitted",
+        "answers": {
+            "9": "C",
+            "4": "B",
+            "6": "B",
+            "5": "A",
+            "3": "B",
+            "11": "A",
+            "13": "A"
+        },
+        "marked_for_review": [],
+        "violation_count": 0,
+        "submission_receipt": "SUB-5ea7e9ff7b7841168813cc0ba1992e38",
+        "started_at": "2026-10-10T20:07:47.615911+00:00",
+        "submitted_at": "2026-10-10T20:08:42.192225+00:00",
+        "created_at": "2026-10-10T20:07:47.586091+00:00",
+        "updated_at": "2026-10-10T20:08:42.200909+00:00",
+        "response_file": "C:\\Users\\Shivani Rajagopalan\\OneDrive\\Desktop\\Gen_AI_Hybrid_Eval\\ai_hybrid_evaluator\\uploaded_files\\candidate_responses\\Shivani_R_Formative_1_20261011_013842_027445_Response.xlsx",
+        "test_type": "objective",
+        "questions": [
+            {
+                "co": 3,
+                "id": 9,
+                "lo": 3.3,
+                "rbt_level": "C-Remember",
+                "text": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q9",
+                "category": "Cognitive",
+                "options": {
+                    "A": "0",
+                    "B": "1",
+                    "C": "9",
+                    "D": "100"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?"
+            },
+            {
+                "co": 2,
+                "id": 4,
+                "lo": 2.1,
+                "rbt_level": "C-Remember",
+                "text": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q4",
+                "category": "Cognitive",
+                "options": {
+                    "A": "HOWs",
+                    "B": "WHATs",
+                    "C": "ROIs",
+                    "D": "KPIs"
+                },
+                "question_type": "Objective",
+                "question_stem": "In HoQ terminology, what are the customer requirements commonly called?"
+            },
+            {
+                "co": 2,
+                "id": 6,
+                "lo": 2.3,
+                "rbt_level": "C-Understand",
+                "text": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q6",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To list customer complaints",
+                    "B": "To show correlations among technical requirements",
+                    "C": "To calculate employee performance",
+                    "D": "To display product advertisements"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the primary purpose of the roof of the House of Quality?"
+            },
+            {
+                "co": 2,
+                "id": 5,
+                "lo": 2.2,
+                "rbt_level": "C-Understand",
+                "text": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q5",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Relationship Matrix",
+                    "B": "Roof Matrix",
+                    "C": "Competitive Analysis",
+                    "D": "Target Value Table"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?"
+            },
+            {
+                "co": 1,
+                "id": 3,
+                "lo": 1.3,
+                "rbt_level": "C-Understand",
+                "text": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q3",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Customer complaints only",
+                    "B": "Measurable engineering characteristics that address customer needs",
+                    "C": "Marketing slogans",
+                    "D": "Production employee details"
+                },
+                "question_type": "Objective",
+                "question_stem": "What do the technical requirements in an HoQ represent?"
+            },
+            {
+                "co": 4,
+                "id": 11,
+                "lo": 4.2,
+                "rbt_level": "C-Apply",
+                "text": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                "knowledge_type": "Fact",
+                "marks": 5.0,
+                "title": "Q11",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Comfortable ride",
+                    "B": "High customer satisfaction",
+                    "C": "Braking distance in meters",
+                    "D": "Attractive appearance"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which of the following is an example of a technical requirement for a vehicle?"
+            },
+            {
+                "co": 5,
+                "id": 13,
+                "lo": 5.1,
+                "rbt_level": "C-Understand",
+                "text": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                "knowledge_type": "Concept",
+                "marks": 5.0,
+                "title": "Q13",
+                "category": "Cognitive",
+                "options": {
+                    "A": "It connects customer needs with engineering decisions",
+                    "B": "It eliminates all product testing",
+                    "C": "It replaces every engineering drawing",
+                    "D": "It guarantees zero production defects"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the main benefit of using an HoQ during product development?"
+            },
+            {
+                "co": 5,
+                "id": 14,
+                "lo": 5.2,
+                "rbt_level": "C-Remember",
+                "text": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                "knowledge_type": "Fact",
+                "marks": 5.0,
+                "title": "Q14",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Quality Function Deployment (QFD)",
+                    "B": "Six Sigma DMAIC only",
+                    "C": "Just-in-Time inventory only",
+                    "D": "Statistical Process Control only"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which methodology is the House of Quality most closely associated with?"
+            },
+            {
+                "co": 3,
+                "id": 8,
+                "lo": 3.2,
+                "rbt_level": "C-Understand",
+                "text": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q8",
+                "category": "Cognitive",
+                "options": {
+                    "A": "The technical requirement deserves greater attention",
+                    "B": "The requirement should be removed",
+                    "C": "The customer requirement is irrelevant",
+                    "D": "The product should be discontinued"
+                },
+                "question_type": "Objective",
+                "question_stem": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?"
+            },
+            {
+                "co": 3,
+                "id": 7,
+                "lo": 3.1,
+                "rbt_level": "C-Apply",
+                "text": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                "knowledge_type": "Procedure",
+                "marks": 2.0,
+                "title": "Q7",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Importance rating",
+                    "B": "Machine utilization",
+                    "C": "Inventory turnover",
+                    "D": "Cycle time only"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which of the following is typically used to rate the importance of customer requirements?"
+            },
+            {
+                "co": 1,
+                "id": 1,
+                "lo": 1.1,
+                "rbt_level": "C-Remember",
+                "text": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q1",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To translate customer requirements into technical requirements",
+                    "B": "To calculate product cost only",
+                    "C": "To schedule production activities",
+                    "D": "To select suppliers only"
+                },
+                "question_type": "Objective",
+                "question_stem": "In a House of Quality (HoQ), what is the main purpose of the matrix?"
+            },
+            {
+                "co": 4,
+                "id": 10,
+                "lo": 4.1,
+                "rbt_level": "C-Understand",
+                "text": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q10",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To compare how the product performs against competitors from the customer's perspective",
+                    "B": "To calculate employee salaries",
+                    "C": "To determine factory rent",
+                    "D": "To select software tools"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the purpose of competitive assessment in an HoQ?"
+            },
+            {
+                "co": 1,
+                "id": 2,
+                "lo": 1.2,
+                "rbt_level": "C-Remember",
+                "text": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q2",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Technical Correlation",
+                    "B": "Customer Requirements (WHATs)",
+                    "C": "Technical Requirements (HOWs)",
+                    "D": "Roof"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which section of the HoQ contains the customer's needs?"
+            },
+            {
+                "co": 4,
+                "id": 12,
+                "lo": 4.3,
+                "rbt_level": "C-Analyse",
+                "text": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                "knowledge_type": "Concept",
+                "marks": 5.0,
+                "title": "Q12",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Improving one may adversely affect the other",
+                    "B": "Both requirements are identical",
+                    "C": "Neither requirement is important",
+                    "D": "Both requirements must always increase together"
+                },
+                "question_type": "Objective",
+                "question_stem": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?"
+            }
+        ],
+        "submission_reason": "submitted"
+    },
+    {
+        "candidate_id": "CAND-5678",
+        "candidate_name": "Manisha N",
+        "assessment_id": "174ae93088ab4934b3a8a88a465d6ed8",
+        "test_id": "8639bfcd8f6c41b1a08b85283777ff92",
+        "assessment_name": "AI 3",
+        "test_name": "Formative 1",
+        "status": "Submitted",
+        "answers": {
+            "2": "B",
+            "7": "A",
+            "10": "A"
+        },
+        "marked_for_review": [],
+        "violation_count": 0,
+        "submission_receipt": "SUB-3f6f74e8c28047ed8d20ae22a3548f70",
+        "started_at": "2026-10-10T20:09:09.323311+00:00",
+        "submitted_at": "2026-10-10T20:09:25.724373+00:00",
+        "created_at": "2026-10-10T20:09:09.290322+00:00",
+        "updated_at": "2026-10-10T20:09:25.731755+00:00",
+        "response_file": "C:\\Users\\Shivani Rajagopalan\\OneDrive\\Desktop\\Gen_AI_Hybrid_Eval\\ai_hybrid_evaluator\\uploaded_files\\candidate_responses\\Manisha_N_Formative_1_20261011_013925_593266_Response.xlsx",
+        "test_type": "objective",
+        "questions": [
+            {
+                "co": 1,
+                "id": 2,
+                "lo": 1.2,
+                "rbt_level": "C-Remember",
+                "text": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q2",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Technical Correlation",
+                    "B": "Customer Requirements (WHATs)",
+                    "C": "Technical Requirements (HOWs)",
+                    "D": "Roof"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which section of the HoQ contains the customer's needs?"
+            },
+            {
+                "co": 3,
+                "id": 7,
+                "lo": 3.1,
+                "rbt_level": "C-Apply",
+                "text": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                "knowledge_type": "Procedure",
+                "marks": 2.0,
+                "title": "Q7",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Importance rating",
+                    "B": "Machine utilization",
+                    "C": "Inventory turnover",
+                    "D": "Cycle time only"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which of the following is typically used to rate the importance of customer requirements?"
+            },
+            {
+                "co": 4,
+                "id": 10,
+                "lo": 4.1,
+                "rbt_level": "C-Understand",
+                "text": "What is the purpose of competitive assessment in an HoQ?\nA) To compare how the product performs against competitors from the customer's perspective\nB) To calculate employee salaries\nC) To determine factory rent\nD) To select software tools",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q10",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To compare how the product performs against competitors from the customer's perspective",
+                    "B": "To calculate employee salaries",
+                    "C": "To determine factory rent",
+                    "D": "To select software tools"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the purpose of competitive assessment in an HoQ?"
+            },
+            {
+                "co": 2,
+                "id": 4,
+                "lo": 2.1,
+                "rbt_level": "C-Remember",
+                "text": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q4",
+                "category": "Cognitive",
+                "options": {
+                    "A": "HOWs",
+                    "B": "WHATs",
+                    "C": "ROIs",
+                    "D": "KPIs"
+                },
+                "question_type": "Objective",
+                "question_stem": "In HoQ terminology, what are the customer requirements commonly called?"
+            },
+            {
+                "co": 5,
+                "id": 13,
+                "lo": 5.1,
+                "rbt_level": "C-Understand",
+                "text": "What is the main benefit of using an HoQ during product development?\nA) It connects customer needs with engineering decisions\nB) It eliminates all product testing\nC) It replaces every engineering drawing\nD) It guarantees zero production defects",
+                "knowledge_type": "Concept",
+                "marks": 5.0,
+                "title": "Q13",
+                "category": "Cognitive",
+                "options": {
+                    "A": "It connects customer needs with engineering decisions",
+                    "B": "It eliminates all product testing",
+                    "C": "It replaces every engineering drawing",
+                    "D": "It guarantees zero production defects"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the main benefit of using an HoQ during product development?"
+            },
+            {
+                "co": 3,
+                "id": 9,
+                "lo": 3.3,
+                "rbt_level": "C-Remember",
+                "text": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?\nA) 0\nB) 1\nC) 9\nD) 100",
+                "knowledge_type": "Fact",
+                "marks": 2.0,
+                "title": "Q9",
+                "category": "Cognitive",
+                "options": {
+                    "A": "0",
+                    "B": "1",
+                    "C": "9",
+                    "D": "100"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which symbol or value is commonly used to represent a strong relationship in an HoQ relationship matrix?"
+            },
+            {
+                "co": 5,
+                "id": 14,
+                "lo": 5.2,
+                "rbt_level": "C-Remember",
+                "text": "Which methodology is the House of Quality most closely associated with?\nA) Quality Function Deployment (QFD)\nB) Six Sigma DMAIC only\nC) Just-in-Time inventory only\nD) Statistical Process Control only",
+                "knowledge_type": "Fact",
+                "marks": 5.0,
+                "title": "Q14",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Quality Function Deployment (QFD)",
+                    "B": "Six Sigma DMAIC only",
+                    "C": "Just-in-Time inventory only",
+                    "D": "Statistical Process Control only"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which methodology is the House of Quality most closely associated with?"
+            },
+            {
+                "co": 3,
+                "id": 8,
+                "lo": 3.2,
+                "rbt_level": "C-Understand",
+                "text": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?\nA) The technical requirement deserves greater attention\nB) The requirement should be removed\nC) The customer requirement is irrelevant\nD) The product should be discontinued",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q8",
+                "category": "Cognitive",
+                "options": {
+                    "A": "The technical requirement deserves greater attention",
+                    "B": "The requirement should be removed",
+                    "C": "The customer requirement is irrelevant",
+                    "D": "The product should be discontinued"
+                },
+                "question_type": "Objective",
+                "question_stem": "If a customer requirement has a high importance rating and a strong relationship with a technical requirement, what does this indicate?"
+            },
+            {
+                "co": 4,
+                "id": 12,
+                "lo": 4.3,
+                "rbt_level": "C-Analyse",
+                "text": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?\nA) Improving one may adversely affect the other\nB) Both requirements are identical\nC) Neither requirement is important\nD) Both requirements must always increase together",
+                "knowledge_type": "Concept",
+                "marks": 5.0,
+                "title": "Q12",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Improving one may adversely affect the other",
+                    "B": "Both requirements are identical",
+                    "C": "Neither requirement is important",
+                    "D": "Both requirements must always increase together"
+                },
+                "question_type": "Objective",
+                "question_stem": "If two technical requirements have a negative correlation in the HoQ roof, what does it mean?"
+            },
+            {
+                "co": 2,
+                "id": 6,
+                "lo": 2.3,
+                "rbt_level": "C-Understand",
+                "text": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q6",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To list customer complaints",
+                    "B": "To show correlations among technical requirements",
+                    "C": "To calculate employee performance",
+                    "D": "To display product advertisements"
+                },
+                "question_type": "Objective",
+                "question_stem": "What is the primary purpose of the roof of the House of Quality?"
+            },
+            {
+                "co": 2,
+                "id": 5,
+                "lo": 2.2,
+                "rbt_level": "C-Understand",
+                "text": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q5",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Relationship Matrix",
+                    "B": "Roof Matrix",
+                    "C": "Competitive Analysis",
+                    "D": "Target Value Table"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?"
+            },
+            {
+                "co": 4,
+                "id": 11,
+                "lo": 4.2,
+                "rbt_level": "C-Apply",
+                "text": "Which of the following is an example of a technical requirement for a vehicle?\nA) Comfortable ride\nB) High customer satisfaction\nC) Braking distance in meters\nD) Attractive appearance",
+                "knowledge_type": "Fact",
+                "marks": 5.0,
+                "title": "Q11",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Comfortable ride",
+                    "B": "High customer satisfaction",
+                    "C": "Braking distance in meters",
+                    "D": "Attractive appearance"
+                },
+                "question_type": "Objective",
+                "question_stem": "Which of the following is an example of a technical requirement for a vehicle?"
+            },
+            {
+                "co": 1,
+                "id": 1,
+                "lo": 1.1,
+                "rbt_level": "C-Remember",
+                "text": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q1",
+                "category": "Cognitive",
+                "options": {
+                    "A": "To translate customer requirements into technical requirements",
+                    "B": "To calculate product cost only",
+                    "C": "To schedule production activities",
+                    "D": "To select suppliers only"
+                },
+                "question_type": "Objective",
+                "question_stem": "In a House of Quality (HoQ), what is the main purpose of the matrix?"
+            },
+            {
+                "co": 1,
+                "id": 3,
+                "lo": 1.3,
+                "rbt_level": "C-Understand",
+                "text": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                "knowledge_type": "Concept",
+                "marks": 2.0,
+                "title": "Q3",
+                "category": "Cognitive",
+                "options": {
+                    "A": "Customer complaints only",
+                    "B": "Measurable engineering characteristics that address customer needs",
+                    "C": "Marketing slogans",
+                    "D": "Production employee details"
+                },
+                "question_type": "Objective",
+                "question_stem": "What do the technical requirements in an HoQ represent?"
+            }
+        ],
+        "submission_reason": "submitted"
     }
 ]

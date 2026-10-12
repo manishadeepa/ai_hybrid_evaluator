@@ -1,21 +1,10 @@
 {
-  "Quality": {},
-  "Leadership": {
-    "Formative 1": 30,
-    "Summative Test": 30
-  },
-  "APDTE": {
-    "Formative 1": 50,
-    "Formative 2": 50
-  },
-  "Assessment 6": {
-    "Formative 1": 30,
-    "Formative 2": 30,
-    "Summative Test": 30
-  },
-  "Assessment 2": {
+  "House Of Quality": {
     "Formative 1": 50,
     "Formative 2": 50,
-    "Formative 3": 50
+    "Summative Test": 50
+  },
+  "AI 3": {
+    "Formative 1": 50
   }
 }
