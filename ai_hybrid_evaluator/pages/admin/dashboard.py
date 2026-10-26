@@ -197,37 +197,10 @@ def assessments_overview_card() -> rx.Component:
                 spacing="4",
                 align_items="center",
                 width="100%",
-                padding_y="1em",
-            ),
-
-            rx.spacer(),
-
-            # Bottom CTA button
-            rx.hstack(
-                rx.link(
-                    rx.hstack(
-                        rx.text("View All Assessments", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["primary"]),
-                        rx.icon("chevron-right", size=14, color=COLORS["primary"]),
-                        spacing="1",
-                        align_items="center",
-                        justify_content="center",
-                        padding="0.5em 1.2em",
-                        border=f"1px solid {COLORS['primary_light']}",
-                        border_radius="8px",
-                        background=COLORS["surface"],
-                        _hover={"background": COLORS["primary_soft"]},
-                        transition="all 0.15s ease",
-                    ),
-                    href="/admin/assessments",
-                    text_decoration="none",
-                ),
-                width="100%",
-                justify_content="center",
-                padding_top="0.5em",
+                padding_y="0.5em",
             ),
             spacing="3",
             width="100%",
-            height="100%",
         ),
         background=COLORS["surface"],
         border=f"1px solid {COLORS['line']}",
@@ -349,7 +322,7 @@ def recent_assessments_card() -> rx.Component:
 
 def admin_dashboard_page() -> rx.Component:
     content = rx.vstack(
-        # ── 4 KPI Stat Cards ──────────────────────────────────────────
+        # ── 2 KPI Stat Cards (Total Facilitators & Total Candidates) ──
         rx.hstack(
             dashboard_kpi_card(
                 "Total Facilitators",
@@ -367,25 +340,8 @@ def admin_dashboard_page() -> rx.Component:
                 "#059669",
                 "#ECFDF3",
             ),
-            dashboard_kpi_card(
-                "Active Assessments",
-                AdminState.active_assessments,
-                "Currently running",
-                "clipboard-list",
-                "#D97706",
-                "#FEF3C7",
-            ),
-            dashboard_kpi_card(
-                "Completed Assessments",
-                AdminState.completed_assessments,
-                "Successfully completed",
-                "circle-check",
-                "#2563EB",
-                "#DBEAFE",
-            ),
             spacing="4",
             width="100%",
-            flex_wrap="wrap",
         ),
 
         # ── Assessment Overview (expanded) ───────────────────────────
