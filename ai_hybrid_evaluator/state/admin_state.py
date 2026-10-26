@@ -309,9 +309,48 @@ class AdminState(rx.State):
     new_facilitator_show_password: bool = False
     facilitator_form_error: str = ""
 
+    def get_next_facilitator_id(self) -> str:
+        """Find the next available sequential facilitator ID (F001, F002, ...)."""
+        existing_ids = set()
+        for f in self.facilitators:
+            emp_id = str(f.get("emp_id", "")).strip().upper()
+            if emp_id:
+                existing_ids.add(emp_id)
+        for f in SHARED_FACILITATORS:
+            emp_id = str(f.get("emp_id", "")).strip().upper()
+            if emp_id:
+                existing_ids.add(emp_id)
+        try:
+            for f in FacilitatorRepository().get_all():
+                emp_id = str(f.get("emp_id", "")).strip().upper()
+                if emp_id:
+                    existing_ids.add(emp_id)
+        except Exception:
+            pass
+
+        num = 1
+        while f"F{num:03d}" in existing_ids:
+            num += 1
+        return f"F{num:03d}"
+
+    def open_add_facilitator(self):
+        """Open the Add Facilitator dialog with the next available sequential ID."""
+        self.new_facilitator_empid = self.get_next_facilitator_id()
+        self.new_facilitator_name = ""
+        self.new_facilitator_email = ""
+        self.new_facilitator_phone = ""
+        self.new_facilitator_password = ""
+        self.new_facilitator_show_password = False
+        self.facilitator_form_error = ""
+        self.show_add_facilitator = True
+
     def set_show_add_facilitator(self, value: bool):
         self.show_add_facilitator = value
-        if not value:
+        if value:
+            if not self.new_facilitator_empid:
+                self.new_facilitator_empid = self.get_next_facilitator_id()
+            self.facilitator_form_error = ""
+        else:
             self.new_facilitator_empid = ""
             self.new_facilitator_name = ""
             self.new_facilitator_email = ""
@@ -324,7 +363,7 @@ class AdminState(rx.State):
         self.new_facilitator_show_password = not self.new_facilitator_show_password
 
     def set_new_facilitator_empid(self, value: str):
-        self.new_facilitator_empid = value
+        self.new_facilitator_empid = value.strip().upper()
 
     def set_new_facilitator_name(self, value: str):
         self.new_facilitator_name = value
@@ -339,6 +378,7 @@ class AdminState(rx.State):
         self.new_facilitator_password = value
 
     def add_facilitator(self):
+        self.new_facilitator_empid = self.new_facilitator_empid.strip().upper()
         if not all([
             self.new_facilitator_empid, self.new_facilitator_name,
             self.new_facilitator_email, self.new_facilitator_phone,
@@ -358,12 +398,21 @@ class AdminState(rx.State):
         if len(self.new_facilitator_password) < 6:
             self.facilitator_form_error = "Password must be at least 6 characters."
             return
-        if any(f["emp_id"] == self.new_facilitator_empid for f in self.facilitators):
+
+        target_id = self.new_facilitator_empid
+        existing_ids = {str(f.get("emp_id", "")).strip().upper() for f in self.facilitators}
+        existing_ids.update(str(f.get("emp_id", "")).strip().upper() for f in SHARED_FACILITATORS)
+        try:
+            existing_ids.update(str(f.get("emp_id", "")).strip().upper() for f in FacilitatorRepository().get_all())
+        except Exception:
+            pass
+
+        if target_id in existing_ids:
             self.facilitator_form_error = "This Employee ID already exists."
             return
 
         new_f: Facilitator = {
-            "emp_id": self.new_facilitator_empid,
+            "emp_id": target_id,
             "name": self.new_facilitator_name,
             "email": self.new_facilitator_email,
             "phone": self.new_facilitator_phone,

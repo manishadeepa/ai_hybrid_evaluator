@@ -19,5 +19,12 @@
         "email": "kannadasan.r@tvsmotor.com",
         "phone": "0000000000",
         "password": "123456"
+    },
+    {
+        "emp_id": "F004",
+        "name": "Pattabiraman",
+        "email": "pattabiraman@tvsmotor.com",
+        "phone": "9832578521",
+        "password": "00000000"
     }
 ]

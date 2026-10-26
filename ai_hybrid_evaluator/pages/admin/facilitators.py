@@ -65,6 +65,7 @@ def add_facilitator_dialog() -> rx.Component:
                 color="white",
                 border_radius="8px",
                 font_family=FONT_BODY,
+                on_click=AdminState.open_add_facilitator,
                 _hover={"background": COLORS["primary_hover"]},
             ),
         ),
