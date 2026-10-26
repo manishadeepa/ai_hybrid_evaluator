@@ -110,5 +110,26 @@
             "F003": "pending"
         },
         "assessment_id": "c2efae21170245578323187ea1e6d981"
+    },
+    {
+        "name": "ai",
+        "assessment_date": "",
+        "facilitator_ids": [
+            "F003"
+        ],
+        "facilitator_names": [
+            "Kannadasan R"
+        ],
+        "facilitator_id": "F003",
+        "facilitator_name": "Kannadasan R",
+        "assigned_candidates": [
+            "CAND-5678"
+        ],
+        "status": "Scheduled",
+        "approval_status": "pending",
+        "facilitator_approvals": {
+            "F003": "pending"
+        },
+        "assessment_id": "d96443c57a4949e2b8bf6beb65513e21"
     }
 ]

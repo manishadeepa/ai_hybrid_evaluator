@@ -2,6 +2,7 @@
 
 import reflex as rx
 
+from ai_hybrid_evaluator.pages.home import home_page
 from ai_hybrid_evaluator.pages.auth.login import login_page
 from ai_hybrid_evaluator.pages.auth.signup import signup_page
 from ai_hybrid_evaluator.pages.admin.dashboard import admin_dashboard_page
@@ -36,10 +37,7 @@ radius="large",
 ),
 )
 
-def index() -> rx.Component:
-    return rx.fragment()
-
-app.add_page(index, route="/", on_load=rx.redirect("/signin"))
+app.add_page(home_page, route="/", title="Gen AI Hybrid Evaluator")
 
 # Admin Routes
 

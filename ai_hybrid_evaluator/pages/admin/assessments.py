@@ -1,4 +1,4 @@
-﻿"""Assessments page â€” list + Add / Edit / Delete Assessment + Tests Management & Details (mock data)."""
+"""Assessments page â€” list + Add / Edit / Delete Assessment + Tests Management & Details (mock data)."""
 
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
@@ -39,107 +39,90 @@ def final_test_chip(assessment_index: int, final_test_name: str) -> rx.Component
 
 def facilitator_response_badge(approval_status: str) -> rx.Component:
     """Shows the facilitator's Approve/Decline response for the admin to see."""
+    approved_badge = rx.hstack(
+        rx.icon("circle-check", size=13, color="#027A48"),
+        rx.text("Approved", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
+        spacing="1",
+        align_items="center",
+        background="#ECFDF3",
+        border="1px solid #A6F4C5",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
+    declined_badge = rx.hstack(
+        rx.icon("circle-x", size=13, color="#991B1B"),
+        rx.text("Declined", font_family=FONT_BODY, size="1", weight="medium", color="#991B1B"),
+        spacing="1",
+        align_items="center",
+        background="#FEF2F2",
+        border="1px solid #FECACA",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
+    approval_pending_badge = rx.hstack(
+        rx.icon("clock", size=13, color="#B45309"),
+        rx.text("Approval Pending", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
+        spacing="1",
+        align_items="center",
+        background="#FFFBEB",
+        border="1px solid #FDE68A",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
     return rx.match(
         approval_status,
-        ("approved", rx.hstack(
-            rx.icon("circle-check", size=13, color="#027A48"),
-            rx.text("Approved", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
-            spacing="1",
-            align_items="center",
-            background="#ECFDF3",
-            border="1px solid #A6F4C5",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        ("declined", rx.hstack(
-            rx.icon("circle-x", size=13, color="#991B1B"),
-            rx.text("Declined", font_family=FONT_BODY, size="1", weight="medium", color="#991B1B"),
-            spacing="1",
-            align_items="center",
-            background="#FEF2F2",
-            border="1px solid #FECACA",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        # Default â€” pending / awaiting
-        rx.hstack(
-            rx.icon("clock", size=13, color="#B45309"),
-            rx.text("Awaiting", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
-            spacing="1",
-            align_items="center",
-            background="#FFFBEB",
-            border="1px solid #FDE68A",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        ),
+        ("approved", approved_badge),
+        ("Approved", approved_badge),
+        ("declined", declined_badge),
+        ("Declined", declined_badge),
+        # Default — pending / awaiting
+        approval_pending_badge,
     )
 
 
 def assessment_status_badge(status: str) -> rx.Component:
-    """Shows the assessment status badge: Pending, In Progress, or Completed."""
+    """Shows the assessment status badge: Not Completed, In Progress, or Completed."""
+    in_progress_badge = rx.hstack(
+        rx.icon("loader-2", size=13, color="#175CD3"),
+        rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
+        spacing="1",
+        align_items="center",
+        background="#EFF8FF",
+        border="1px solid #B2DDFF",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
+    completed_badge = rx.hstack(
+        rx.icon("circle-check", size=13, color="#027A48"),
+        rx.text("Completed", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
+        spacing="1",
+        align_items="center",
+        background="#ECFDF3",
+        border="1px solid #A6F4C5",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
+    not_completed_badge = rx.hstack(
+        rx.icon("clock", size=13, color="#B45309"),
+        rx.text("Not Completed", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
+        spacing="1",
+        align_items="center",
+        background="#FFFBEB",
+        border="1px solid #FDE68A",
+        padding="0.3em 0.7em",
+        border_radius="999px",
+    )
     return rx.match(
         status,
-        ("In Progress", rx.hstack(
-            rx.icon("loader-2", size=13, color="#175CD3"),
-            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
-            spacing="1",
-            align_items="center",
-            background="#EFF8FF",
-            border="1px solid #B2DDFF",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        ("in_progress", rx.hstack(
-            rx.icon("loader-2", size=13, color="#175CD3"),
-            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
-            spacing="1",
-            align_items="center",
-            background="#EFF8FF",
-            border="1px solid #B2DDFF",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        ("Active", rx.hstack(
-            rx.icon("loader-2", size=13, color="#175CD3"),
-            rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
-            spacing="1",
-            align_items="center",
-            background="#EFF8FF",
-            border="1px solid #B2DDFF",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        ("Completed", rx.hstack(
-            rx.icon("circle-check", size=13, color="#027A48"),
-            rx.text("Completed", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
-            spacing="1",
-            align_items="center",
-            background="#ECFDF3",
-            border="1px solid #A6F4C5",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        ("completed", rx.hstack(
-            rx.icon("circle-check", size=13, color="#027A48"),
-            rx.text("Completed", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
-            spacing="1",
-            align_items="center",
-            background="#ECFDF3",
-            border="1px solid #A6F4C5",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        )),
-        # Default â€” Pending
-        rx.hstack(
-            rx.icon("clock", size=13, color="#B45309"),
-            rx.text("Pending", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
-            spacing="1",
-            align_items="center",
-            background="#FFFBEB",
-            border="1px solid #FDE68A",
-            padding="0.3em 0.7em",
-            border_radius="999px",
-        ),
+        ("In Progress", in_progress_badge),
+        ("in_progress", in_progress_badge),
+        ("Active", in_progress_badge),
+        ("Completed", completed_badge),
+        ("completed", completed_badge),
+        ("Pending", not_completed_badge),
+        ("pending", not_completed_badge),
+        # Default — Not Completed
+        not_completed_badge,
     )
 
 
@@ -221,11 +204,11 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
             justify="center",
             align="center",
         ),
-        # 7. Facilitator Response (Approved / Awaiting / Declined)
+        # 7. Facilitator Response (Approved / Approval Pending / Declined)
         rx.table.cell(
             facilitator_response_badge(a.get("approval_status", "pending")),
         ),
-        # 8. Status (Pending / In Progress / Completed)
+        # 8. Status (Not Completed / In Progress / Completed)
         rx.table.cell(
             assessment_status_badge(a.get("status", "Pending")),
         ),
