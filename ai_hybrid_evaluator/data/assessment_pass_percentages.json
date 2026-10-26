@@ -1,10 +1,10 @@
 {
-  "House Of Quality": {
-    "Formative 1": 50,
+  "HoQ": {
+    "Formative 1": 20,
     "Formative 2": 50,
-    "Summative Test": 50
+    "Formative 3": 50
   },
-  "AI 3": {
-    "Formative 1": 50
+  "HoQ 3": {
+    "Formative 1": 10
   }
 }

@@ -4,7 +4,7 @@
         "full_name": "Sudhir V",
         "email": "sudhir@tvsmotor.com",
         "phone": "0000000000",
-        "location": "",
+        "location": "Bangalore",
         "profile_photo_url": "",
         "designation": "Lead Evaluator",
         "department": "Other",
@@ -42,5 +42,27 @@
         "subjects_domains": "Two-Wheeler Manufacturing",
         "assessment_types": "",
         "availability": "9AM - 5PM"
+    },
+    {
+        "emp_id": "F003",
+        "full_name": "Kannadasan R",
+        "email": "kannadasan.r@tvsmotor.com",
+        "phone": "0000000000",
+        "location": "Chennai",
+        "profile_photo_url": "",
+        "designation": "Lead Evaluator",
+        "department": "Research & Development (R&D)",
+        "business_unit": "HRD",
+        "years_experience": "5",
+        "primary_expertise": "Domain Specific",
+        "specific_skills": "Python, AI",
+        "highest_qualification": "PhD",
+        "specialization": "Electrical and Electronics",
+        "certifications": "",
+        "training_experience": "3-5 years",
+        "assessment_experience": "",
+        "subjects_domains": "Other",
+        "assessment_types": "",
+        "availability": "9AM - 6PM"
     }
 ]

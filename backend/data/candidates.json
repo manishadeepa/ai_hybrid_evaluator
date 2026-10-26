@@ -18,19 +18,21 @@
         "deleted_at": "2026-10-08T07:04:29.196264+00:00"
     },
     {
-        "candidate_id": "CAND-1234",
-        "name": "Shivani R",
-        "email": "shivani.r@tvsmotor.com",
-        "created_at": "2026-10-08T08:19:33.046005+00:00",
-        "updated_at": "2026-10-10T19:45:48.061206+00:00",
-        "password_hash": "pbkdf2_sha256$600000$3783da3d9998d7047c9af2c4fb3a720e$af1d745a6eeca7d3d815a9abd2d3ac6b609877a04460addf1c24a5a4c7dbd1a4"
-    },
-    {
         "candidate_id": "CAND-5678",
         "name": "Manisha N",
         "email": "manisha.n@tvsmotor.com",
-        "created_at": "2026-10-08T08:20:08.377944+00:00",
-        "updated_at": "2026-10-10T19:45:57.637904+00:00",
-        "password_hash": "pbkdf2_sha256$600000$fd2fa1d07a5c46e707cb4ca6aaf4101e$5415f328dfd8b090f416dd456e3e9429666b8a69372b70c99d641ee7671a6f1e"
+        "created_at": "2026-10-15T03:41:17.686394+00:00",
+        "updated_at": "2026-10-15T03:43:07.755960+00:00",
+        "password": "123456",
+        "password_hash": "pbkdf2_sha256$600000$433ab3126ca1240990848e44a5ae14a7$e224979ddd4cb7959d4c0578069378fdf324fab262915b7b52878455901def8f"
+    },
+    {
+        "candidate_id": "CAND-1234",
+        "name": "Shivani R",
+        "email": "shivani.r@tvsmotor.com",
+        "created_at": "2026-10-15T03:40:34.083638+00:00",
+        "updated_at": "2026-10-23T06:01:54.047010+00:00",
+        "password": "123456",
+        "password_hash": "pbkdf2_sha256$600000$0bf296664299f8088ae2ee294526ad07$738504f05362ae63d9544be75550fc3ac8fbea4116664439e5906619d103d261"
     }
 ]

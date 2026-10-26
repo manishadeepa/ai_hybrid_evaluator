@@ -1,16 +1,23 @@
 [
     {
-        "name": "Ravi Kumar",
         "emp_id": "F001",
-        "email": "ravi.kumar@tvsmotor.com",
-        "phone": "9876543210",
-        "password": "Ravi@123"
+        "name": "V Sudhir",
+        "email": "v.sudhir@tvsmotor.com",
+        "phone": "0000000000",
+        "password": "123456"
     },
     {
-        "name": "Meena Iyer",
         "emp_id": "F002",
-        "email": "meena.iyer@tvsmotor.com",
-        "phone": "9876500000",
-        "password": "Meena@123"
+        "name": "P Vagheswara Subramanian",
+        "email": "vaghi@tvsmotor.com",
+        "phone": "0000000000",
+        "password": "123456"
+    },
+    {
+        "emp_id": "F003",
+        "name": "Kannadasan R",
+        "email": "kannadasan.r@tvsmotor.com",
+        "phone": "0000000000",
+        "password": "123456"
     }
 ]
