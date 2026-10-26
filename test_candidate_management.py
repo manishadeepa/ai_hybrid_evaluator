@@ -46,7 +46,7 @@ class CandidateManagementTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.create(identity, email)
         self.assertEqual(self.repo.file_path.read_bytes(), before)
 
-    def test_invalid_required_fields_and_password_is_hashed(self):
+    def test_new_candidate_password_is_displayable_and_hashed_for_login(self):
         base = {"candidate_id": "C1", "name": "One", "email": "one@example.com"}
         for field, value in (("candidate_id", " "), ("candidate_id", 3), ("name", ""), ("name", None),
                              ("email", "bad"), ("email", ""), ("email", None)):
@@ -57,8 +57,13 @@ class CandidateManagementTests(unittest.TestCase):
             self.service.create_candidate({**base, "password": "short"})
 
         value = self.service.create_candidate({**base, "password": "secret123"})
-        self.assertNotIn("password", value)
+        self.assertEqual(value["password"], "secret123")
         self.assertIn("password_hash", value)
+        self.assertNotIn("password", self.service.list_candidates()[0])
+        admin_candidate = self.service.list_candidates(include_passwords=True)[0]
+        self.assertEqual(admin_candidate["password"], "secret123")
+        self.assertFalse(admin_candidate["password_hash_only"])
+        self.assertNotIn("password_hash", admin_candidate)
         self.assertTrue(value["password_hash"].startswith("pbkdf2_sha256$"))
         self.assertTrue(
             self.service._verify_password("secret123", value["password_hash"])
@@ -92,10 +97,29 @@ class CandidateManagementTests(unittest.TestCase):
             self.service.update_candidate("C1", {"password": "short"})
 
         updated = self.service.update_candidate("C1", {"password": "changed123"})
-        self.assertNotIn("password", updated)
-        self.assertNotIn("changed123", self.repo.file_path.read_text())
+        self.assertEqual(updated["password"], "changed123")
+        self.assertIn("changed123", self.repo.file_path.read_text())
         self.assertIsNone(self.service.authenticate_candidate("C1", "initial123"))
         self.assertIsNotNone(self.service.authenticate_candidate("C1", "changed123"))
+
+    def test_hash_only_candidate_remains_login_compatible_and_requires_reset_for_display(self):
+        password = "legacy123"
+        self.repo.save({
+            "candidate_id": "C1",
+            "name": "Candidate One",
+            "email": "one@example.com",
+            "password_hash": self.service._hash_password(password),
+        })
+
+        self.assertIsNotNone(self.service.authenticate_candidate("C1", password))
+        admin_candidate = self.service.list_candidates(include_passwords=True)[0]
+        self.assertEqual(admin_candidate["password"], "")
+        self.assertTrue(admin_candidate["password_hash_only"])
+
+        updated = self.service.update_candidate("C1", {"password": "visible123"})
+        self.assertEqual(updated["password"], "visible123")
+        self.assertIsNone(self.service.authenticate_candidate("C1", password))
+        self.assertIsNotNone(self.service.authenticate_candidate("C1", "visible123"))
 
     def test_update_duplicate_email_and_missing(self):
         self.create(); self.create("C2", "two@example.com")

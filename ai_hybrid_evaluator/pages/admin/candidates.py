@@ -209,6 +209,17 @@ def edit_candidate_dialog() -> rx.Component:
                     width="100%",
                 ),
                 rx.cond(
+                    AdminState.edit_candidate_password_hash_only,
+                    rx.text(
+                        "This account has an older hash-only password that cannot be displayed. Enter and save a new password to make it visible here.",
+                        color=COLORS["slate"], size="1", font_family=FONT_BODY, padding_top="0.3em",
+                    ),
+                    rx.text(
+                        "The saved password is shown here. Use the eye icon to reveal or hide it.",
+                        color=COLORS["slate"], size="1", font_family=FONT_BODY, padding_top="0.3em",
+                    ),
+                ),
+                rx.cond(
                     AdminState.edit_candidate_error != "",
                     rx.text(AdminState.edit_candidate_error, color=COLORS["danger"], size="2", font_family=FONT_BODY, padding_top="0.7em"),
                 ),

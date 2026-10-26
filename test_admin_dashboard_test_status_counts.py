@@ -1,4 +1,7 @@
-from ai_hybrid_evaluator.state.admin_state import count_assessments_by_status
+from ai_hybrid_evaluator.state.admin_state import (
+    count_assessments_by_status,
+    format_feedback_timestamp,
+)
 
 
 def test_dashboard_counts_assessment_assignments_from_approval_and_close_state():
@@ -36,3 +39,9 @@ def test_dashboard_counts_assignments_without_test_multiplication():
         "pending": 0,
         "completed": 0,
     }
+
+
+def test_feedback_timestamps_are_formatted_in_india_time():
+    assert format_feedback_timestamp("2026-10-23T04:15:21.741102+00:00") == (
+        "23 Oct 2026, 09:45 AM"
+    )

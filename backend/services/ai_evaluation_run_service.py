@@ -7,6 +7,7 @@ import os
 from threading import RLock
 from uuid import uuid4
 from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
+from backend.services.question_type_schema import evaluate_objective, objective_question
 
 _LOCK = RLock()
 _PROCESS = uuid4().hex
@@ -21,6 +22,46 @@ _TRANSITIONS = {
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _evaluate_objective_locally(record):
+    """Grade a pure Objective-test answer against the canonical answer key."""
+    question = objective_question(record['question'], record['answer_key'])
+    outcome = evaluate_objective(record, question)
+    status = outcome['answer_status']
+    maximum = record['max_marks']
+    awarded = outcome['awarded_marks']
+    if status == 'Correct':
+        correctness = 'Correct option selected.'
+        strengths = ['Selected the correct option.']
+        incorrect_points = []
+    elif status == 'Unanswered':
+        correctness = 'Not answered.'
+        strengths = []
+        incorrect_points = []
+    else:
+        correctness = 'Incorrect option selected.'
+        strengths = []
+        incorrect_points = ['Selected option does not match the answer key.']
+
+    return {
+        'question_no': record['question_no'],
+        'question': record['question'],
+        'maximum_marks': maximum,
+        'awarded_marks': awarded,
+        'percentage': round(awarded / maximum * 100, 2) if maximum else 0,
+        'evaluation': {
+            'correctness': correctness,
+            'relevance': 'Checked against the canonical answer key.',
+            'completeness': 'Objective answer graded as correct or incorrect.',
+            'strengths': strengths,
+            'missing_points': ['No answer provided'] if status == 'Unanswered' else [],
+            'incorrect_points': incorrect_points,
+        },
+        'justification': outcome['justification'],
+        'answer_status': status,
+        'correct_option': outcome['correct_option'],
+    }
 
 
 class AIEvaluationRunService:
@@ -531,9 +572,8 @@ class AIEvaluationRunService:
             if test['test_type'] in ('objective', 'mixed') or run.get('canonical_input'):
                 self._validate_submission_snapshot(run, test)
 
-            # Business rule:
-            # Both Objective and Subjective tests are evaluated by the LLM.
-            # The canonical Answer Key remains the grading reference for both.
+            # Pure Objective tests are deterministic and do not require an AI
+            # connection. Subjective and Hybrid tests continue through the LLM.
             from ai_hybrid_evaluator.services import ai_evaluation_service as engine
 
             while True:
@@ -568,37 +608,48 @@ class AIEvaluationRunService:
                         )
                     )
                 try:
-                    # Unanswered responses need no Azure call; the engine
-                    # deterministically awards zero for them.
-                    if client is None and any(not r['unanswered'] for r in rows):
-                        client, deployment = engine._load_client()
-
-                    # Both Objective and Subjective answers use the same LLM
-                    # evaluation engine and their canonical Answer Key.
-                    if run['candidate_scope'] == 'all':
-                        outcomes = engine._evaluate_question_batch(
-                            client,
-                            deployment,
-                            rows,
-                            max_retries,
-                            delay_seconds,
-                            lambda pair_id, outcome: self.checkpoint(
-                                run_id,
-                                token,
-                                pair_id,
-                                result=outcome,
-                            ),
-                        )
-                    else:
+                    if test['test_type'] == 'objective':
                         outcomes = [
-                            engine._evaluate_with_retry(
+                            dict(
+                                _evaluate_objective_locally(row),
+                                response_id=row['response_id'],
+                                status='unanswered' if row['unanswered'] else 'completed',
+                                attempts=0,
+                            )
+                            for row in rows
+                        ]
+                    else:
+                        # Unanswered answers need no request; the engine gives
+                        # them zero locally even for Subjective and Hybrid.
+                        if client is None and any(not r['unanswered'] for r in rows):
+                            client, deployment = engine._load_client()
+
+                        # Hybrid tests intentionally stay on the API path,
+                        # including their objective-type questions.
+                        if run['candidate_scope'] == 'all':
+                            outcomes = engine._evaluate_question_batch(
                                 client,
                                 deployment,
-                                rows[0],
+                                rows,
                                 max_retries,
                                 delay_seconds,
+                                lambda pair_id, outcome: self.checkpoint(
+                                    run_id,
+                                    token,
+                                    pair_id,
+                                    result=outcome,
+                                ),
                             )
-                        ]
+                        else:
+                            outcomes = [
+                                engine._evaluate_with_retry(
+                                    client,
+                                    deployment,
+                                    rows[0],
+                                    max_retries,
+                                    delay_seconds,
+                                )
+                            ]
                 except Exception as exc:
                     outcomes = [{'status': 'failed', 'error': str(exc)} for _ in rows]
                 for q, outcome in zip(chunk, outcomes):

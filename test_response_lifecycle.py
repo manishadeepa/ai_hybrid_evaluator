@@ -13,7 +13,11 @@ from backend.services.candidate_management_service import CandidateManagementSer
 from backend.services.candidate_assignment_service import CandidateAssignmentService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
 from backend.services.question_paper_service import QuestionPaperService, COLUMNS
-from ai_hybrid_evaluator.services.candidate_response_service import find_candidate_response_file, get_latest_candidate_response
+from ai_hybrid_evaluator.services.candidate_response_service import (
+    _format_submitted_at,
+    find_candidate_response_file,
+    get_latest_candidate_response,
+)
 
 
 class ResponseLifecycleTests(unittest.TestCase):
@@ -49,6 +53,20 @@ class ResponseLifecycleTests(unittest.TestCase):
 
     def assignment_status(self):
         return self.assignments.get_test_assignment('C1', self.tid)['status']
+
+    def test_submission_timestamp_is_displayed_in_india_time(self):
+        self.assertEqual(
+            _format_submitted_at('2026-10-23T04:14:00+00:00'),
+            '23 Oct 2026, 09:44 AM',
+        )
+        self.assertEqual(
+            _format_submitted_at('2026-10-23T04:14:00'),
+            '23 Oct 2026, 09:44 AM',
+        )
+        self.assertEqual(
+            _format_submitted_at('23-10-2026 09:45:15'),
+            '23 Oct 2026, 09:45 AM',
+        )
 
     def test_start_assignment_and_timestamps(self):
         self.assertEqual(self.service.get_status(*self.key), 'Assigned')

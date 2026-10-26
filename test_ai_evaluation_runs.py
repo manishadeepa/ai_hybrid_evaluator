@@ -155,6 +155,37 @@ class RunTests(unittest.TestCase):
         self.assertEqual(run['status'],'completed')
         self.assertTrue(all(q['result']['awarded_marks']==0 for q in run['questions']))
 
+    def test_objective_test_is_scored_locally_without_ai_connection(self):
+        row=records(count=1)[0]
+        row.update(
+            question_no='Q1',
+            question='Select the correct answer.\nA) Alpha\nB) Beta\nC) Gamma\nD) Delta',
+            candidate_answer='A',
+            answer_key='A',
+            question_type='objective',
+        )
+        rid=self.service.create_run('Assessment','Test',[row],**self.ids)['run_id']
+        with patch.object(self.service,'_canonical_test',return_value={'test_type':'objective'}), \
+             patch.object(self.service,'_validate_submission_snapshot',return_value={}), \
+             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client') as client:
+            run=self.service.execute(rid)
+        client.assert_not_called()
+        self.assertEqual(run['status'],'completed')
+        self.assertEqual(run['questions'][0]['result']['awarded_marks'],2)
+        self.assertEqual(run['questions'][0]['result']['answer_status'],'Correct')
+
+    def test_hybrid_test_still_uses_ai_connection_for_objective_question(self):
+        row=records(count=1)[0]
+        row['question_type']='objective'
+        rid=self.service.create_run('Assessment','Test',[row],**self.ids)['run_id']
+        with patch.object(self.service,'_canonical_test',return_value={'test_type':'mixed'}), \
+             patch.object(self.service,'_validate_submission_snapshot',return_value={}), \
+             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')) as client, \
+             patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=dict(result(),awarded_marks=2)):
+            run=self.service.execute(rid)
+        client.assert_called_once()
+        self.assertEqual(run['status'],'completed')
+
     def test_recovery_does_not_steal_live_process(self):
         run=self.service.start(self.create()['run_id']);rid=run['run_id']
         run['owner_process']='prior-process';self.repo.save(run)

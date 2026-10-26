@@ -1,8 +1,35 @@
 """Candidate Response Service — persists submitted candidate answers to Excel."""
 
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import pandas as pd
+
+
+_DISPLAY_TIMEZONE = ZoneInfo("Asia/Kolkata")
+
+
+def _format_submitted_at(value: str) -> str:
+    """Format a stored UTC submission timestamp in the app's India timezone."""
+    if not value:
+        return value
+    try:
+        raw = str(value)
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            # Some older response rows stored local timestamps without an ISO
+            # timezone suffix. Preserve their original India-local wall time.
+            parsed = datetime.strptime(raw, "%d-%m-%Y %H:%M:%S").replace(
+                tzinfo=_DISPLAY_TIMEZONE
+            )
+    except (TypeError, ValueError):
+        return str(value)
+    if parsed.tzinfo is None:
+        # Canonical lifecycle timestamps are UTC; treat legacy naive values the
+        # same way so the displayed time does not depend on the server timezone.
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(_DISPLAY_TIMEZONE).strftime("%d %b %Y, %I:%M %p")
 
 
 def save_candidate_response(
@@ -265,12 +292,7 @@ def get_latest_candidate_response(
             submitted_on = submitted_at
 
             if submitted_at:
-                try:
-                    submitted_on = datetime.fromisoformat(
-                        submitted_at.replace("Z", "+00:00")
-                    ).strftime("%d %b %Y, %I:%M %p")
-                except (ValueError, TypeError):
-                    pass
+                submitted_on = _format_submitted_at(submitted_at)
 
             return {
                 "submitted_on": submitted_on,
@@ -325,7 +347,7 @@ def get_latest_candidate_response(
             })
 
         mtime = datetime.fromtimestamp(
-            path.stat().st_mtime
+            path.stat().st_mtime, tz=_DISPLAY_TIMEZONE
         ).strftime("%d %b %Y, %I:%M %p")
 
         return {

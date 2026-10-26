@@ -8,7 +8,7 @@ shapes kept stable on purpose so that swap is easy later.
 import json
 import asyncio
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
 import re
@@ -27,6 +27,31 @@ from ai_hybrid_evaluator.models.models import (
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 FACILITATOR_ID_REGEX = r"^F\d{3}$"
 PHONE_REGEX = r"^\d{10}$"
+
+_DISPLAY_TIMEZONE = ZoneInfo("Asia/Kolkata")
+
+
+def format_feedback_timestamp(value: str) -> str:
+    """Render stored feedback timestamps as readable India-local date/time."""
+    if not value:
+        return ""
+    raw = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        # Older feedback records may already contain a local timestamp.
+        for pattern in ("%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(raw, pattern).replace(tzinfo=_DISPLAY_TIMEZONE)
+                break
+            except ValueError:
+                continue
+        else:
+            return raw
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(_DISPLAY_TIMEZONE).strftime("%d %b %Y, %I:%M %p")
 
 
 def generate_assessment_donut_svg(
@@ -154,17 +179,19 @@ class AdminState(rx.State):
     # ---- Mock data ----
     facilitators: list[Facilitator] = list(SHARED_FACILITATORS)
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
+    candidate_password_hash_only_ids: list[str] = []
     pending_evaluations: int = 12
 
     def load_persisted_candidates(self):
         """Load candidate identities from the backend into the existing UI shape."""
         try:
             service = CandidateManagementService()
-            backend_candidates = service.list_candidates()
+            backend_candidates = service.list_candidates(include_passwords=True)
         except (ValueError, OSError):
             return
 
         loaded_candidates = []
+        hash_only_ids = []
 
         for candidate in backend_candidates:
             candidate_id = str(candidate["candidate_id"])
@@ -175,8 +202,11 @@ class AdminState(rx.State):
                 "email": str(candidate["email"]),
                 "password": str(candidate.get("password", "")),
             })
+            if candidate.get("password_hash_only"):
+                hash_only_ids.append(candidate_id)
 
         self.candidates = loaded_candidates
+        self.candidate_password_hash_only_ids = hash_only_ids
 
     def load_persisted_facilitators(self):
         """Load persisted facilitators from the JSON repository."""
@@ -582,10 +612,14 @@ class AdminState(rx.State):
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
             "email": saved["email"],
-            "password": "",
+            "password": str(saved.get("password", "")),
         }
 
         self.candidates.append(new_c)
+        self.candidate_password_hash_only_ids = [
+            identity for identity in self.candidate_password_hash_only_ids
+            if identity != candidate_id
+        ]
 
         self.set_show_add_candidate(False)
 
@@ -598,6 +632,7 @@ class AdminState(rx.State):
     edit_candidate_name: str = ""
     edit_candidate_email: str = ""
     edit_candidate_password: str = ""
+    edit_candidate_password_hash_only: bool = False
     edit_candidate_show_password: bool = False
     edit_candidate_error: str = ""
 
@@ -610,9 +645,8 @@ class AdminState(rx.State):
         self.edit_candidate_id = c["emp_id"]
         self.edit_candidate_name = c["name"]
         self.edit_candidate_email = c["email"]
-        # Never display a stored password. A blank field means keep the current
-        # credential; the admin may enter a replacement password if needed.
-        self.edit_candidate_password = ""
+        self.edit_candidate_password = str(c.get("password", ""))
+        self.edit_candidate_password_hash_only = self.edit_candidate_id in self.candidate_password_hash_only_ids
         self.edit_candidate_show_password = False
         self.edit_candidate_error = ""
         self.show_edit_candidate = True
@@ -622,6 +656,7 @@ class AdminState(rx.State):
         if not value:
             self.edit_candidate_index = -1
             self.edit_candidate_password = ""
+            self.edit_candidate_password_hash_only = False
             self.edit_candidate_show_password = False
             self.edit_candidate_error = ""
 
@@ -685,10 +720,18 @@ class AdminState(rx.State):
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
             "email": saved["email"],
-            "password": self.candidates[self.edit_candidate_index].get("password", ""),
+            "password": str(saved.get("password", self.candidates[self.edit_candidate_index].get("password", ""))),
         }
 
         self.candidates[self.edit_candidate_index] = updated_candidate
+        if saved.get("password_hash") and not saved.get("password"):
+            if original_id not in self.candidate_password_hash_only_ids:
+                self.candidate_password_hash_only_ids.append(original_id)
+        else:
+            self.candidate_password_hash_only_ids = [
+                identity for identity in self.candidate_password_hash_only_ids
+                if identity != original_id
+            ]
 
         # Keep shared identity details in sync without changing credentials.
         shared_candidate_found = False
@@ -855,11 +898,13 @@ class AdminState(rx.State):
 
     @rx.var
     def active_assessments(self) -> int:
-        return self.assessment_in_progress_count
+        # Keep the KPI in sync with the dashboard donut: facilitator approval
+        # determines in-progress status, not the assessment lifecycle label.
+        return self.dashboard_assessments_in_progress_count
 
     @rx.var
     def completed_assessments(self) -> int:
-        return self.assessment_completed_count
+        return self.dashboard_assessments_completed_count
 
     @rx.var
     def total_approved_assessments(self) -> int:
@@ -2750,7 +2795,7 @@ class AdminFeedbackState(rx.State):
             c_id = item.get("candidate_id") or ""
             asmn = item.get("assessment") or ""
             test_name = item.get("test") or ""
-            sub_on = item.get("submitted_at") or ""
+            sub_on = format_feedback_timestamp(item.get("submitted_at") or "")
 
             # Parse dynamic QA pairs from submitted form
             qa_pairs: list[dict] = []
@@ -2811,7 +2856,9 @@ class AdminFeedbackState(rx.State):
         for key, item in self.raw_facilitator_feedbacks.items():
             asmn = item.get("assessment") or ""
             fac = item.get("facilitator") or item.get("respondent_id") or "Unknown Facilitator"
-            sub_on = item.get("updated_at") or item.get("submitted_at") or ""
+            sub_on = format_feedback_timestamp(
+                item.get("updated_at") or item.get("submitted_at") or ""
+            )
 
             # Parse dynamic QA pairs from submitted facilitator form
             qa_pairs: list[dict] = []

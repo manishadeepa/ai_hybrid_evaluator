@@ -33,7 +33,15 @@ class CandidateManagementService:
     @staticmethod
     def _shared_candidates():
         from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
-        return [{"candidate_id": c["emp_id"], "name": c["name"], "email": c["email"]} for c in SHARED_CANDIDATES]
+        return [
+            {
+                "candidate_id": c["emp_id"],
+                "name": c["name"],
+                "email": c["email"],
+                "password": c.get("password", ""),
+            }
+            for c in SHARED_CANDIDATES
+        ]
 
     @staticmethod
     def _identity(value):
@@ -68,15 +76,23 @@ class CandidateManagementService:
                 "Candidate details support candidate_id, name, email, and password."
             )
 
-    def list_candidates(self):
-        legacy = {self._identity(c.get("candidate_id", c.get("emp_id"))):
-                  {"candidate_id": self._identity(c.get("candidate_id", c.get("emp_id"))), "name": c["name"], "email": c["email"]}
-                  for c in self.legacy_catalog()}
+    def list_candidates(self, include_passwords=False):
+        legacy = {}
+        for candidate in self.legacy_catalog():
+            identity = self._identity(candidate.get("candidate_id", candidate.get("emp_id")))
+            legacy[identity] = {
+                "candidate_id": identity,
+                "name": candidate["name"],
+                "email": candidate["email"],
+            }
+            if include_passwords:
+                legacy[identity]["password"] = str(candidate.get("password", ""))
+                legacy[identity]["password_hash_only"] = False
         for row in self.repository.get_all(include_deleted=True):
             if row.get("deleted_at"):
                 legacy.pop(row["candidate_id"], None)
             else:
-                legacy[row["candidate_id"]] = {
+                candidate = {
                     k: v
                     for k, v in row.items()
                     if k in {
@@ -87,6 +103,12 @@ class CandidateManagementService:
                         "updated_at",
                     }
                 }
+                if include_passwords:
+                    candidate["password"] = str(row.get("password", ""))
+                    candidate["password_hash_only"] = bool(
+                        row.get("password_hash") and not row.get("password")
+                    )
+                legacy[row["candidate_id"]] = candidate
         return [deepcopy(v) for v in legacy.values()]
 
     def get_candidate(self, candidate_id):
@@ -149,6 +171,16 @@ class CandidateManagementService:
         if stored and stored.get("deleted_at"):
             return None
 
+        if stored and stored.get("password"):
+            if not hmac.compare_digest(str(stored["password"]), password):
+                return None
+            return {
+                "emp_id": stored["candidate_id"],
+                "name": stored["name"],
+                "email": stored["email"],
+            }
+
+        # Continue accepting older accounts that only have a one-way hash.
         if stored and stored.get("password_hash"):
             if not self._verify_password(password, stored["password_hash"]):
                 return None
@@ -206,6 +238,9 @@ class CandidateManagementService:
                 "updated_at": stamp,
             }
             if password is not None:
+                # Admin candidate management intentionally mirrors the legacy
+                # facilitator screen, which displays the saved password.
+                record["password"] = password
                 record["password_hash"] = self._hash_password(password)
 
             return self.repository.save(record)
@@ -223,9 +258,9 @@ class CandidateManagementService:
             if password and len(password) < 6:
                 raise ValueError("Password must be at least 6 characters.")
 
-            # Credentials are persisted separately from the public identity
-            # fields. Preserve an existing hash on profile edits, and replace it
-            # only when the admin supplies a non-empty new password.
+            # Preserve the existing credential on profile edits. When the
+            # admin supplies a password, keep the displayable value and its
+            # login hash synchronized.
             public_changes = {key: value for key, value in changes.items() if key != "password"}
             value = self._clean({**old, **public_changes})
             self._unique_email(value)
@@ -242,6 +277,7 @@ class CandidateManagementService:
             record.setdefault("created_at", stamp)
             record["updated_at"] = stamp
             if password:
+                record["password"] = password
                 record["password_hash"] = self._hash_password(password)
             return self.repository.save(record)
 

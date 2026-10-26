@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
+from backend.repositories.facilitator_repository import FacilitatorRepository
 from backend.repositories.feedback_repository import FeedbackFormRepository, FeedbackResponseRepository
 from backend.repositories.response_repository import ResponseRepository
 from backend.services.assessment_service import _PERSISTENCE_LOCK
@@ -174,7 +175,13 @@ class FeedbackService:
         assessments = {a["assessment_id"]: a for a in self.assessments.repository.get_all()}
         tests = {t["test_id"]: t for t in self.assessments.tests.repository.get_all()}
         candidates = {c["candidate_id"]: c for c in self.assignments.candidates.list_candidates()}
-        facilitators = {f["emp_id"]: f for f in self.assessments._facilitators()}
+        # Resolve feedback authors against the persisted account directory.
+        # The in-memory shared catalogue can still contain demo names after
+        # facilitator accounts have been edited in JSON.
+        facilitator_store = FacilitatorRepository(
+            self.assignments.repository.file_path.parent / "facilitators.json"
+        )
+        facilitators = {f["emp_id"]: f for f in facilitator_store.get_all()}
         views = []
         for r in self.responses.get_all():
             form = forms.get(r["feedback_form_id"])

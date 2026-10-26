@@ -1119,7 +1119,17 @@ class FacilitatorState(rx.State):
             try:
                 import json
                 with open(fp, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    completions = json.load(f)
+                # Older or manually reset data may contain a list (for
+                # example, []), while completion flags are keyed by name.
+                # Normalize invalid shapes so downstream .get() calls are safe.
+                if not isinstance(completions, dict):
+                    return {}
+                return {
+                    name: is_complete
+                    for name, is_complete in completions.items()
+                    if isinstance(name, str) and isinstance(is_complete, bool)
+                }
             except Exception:
                 return {}
         return {}

@@ -116,6 +116,24 @@ class PersistenceTests(unittest.TestCase):
         self.assertNotIn('Formative 1', loaded['question_papers'])
         self.assertEqual(loaded['test_ids']['Formative 1'], identity)
 
+    def test_completion_loader_normalizes_legacy_list_json(self):
+        path = self.folder / 'assessment_completions.json'
+        path.write_text('[]', encoding='utf-8')
+        namespace = {'Path': Path}
+        Harness = extract_methods(
+            'ai_hybrid_evaluator/state/facilitator_state.py',
+            'FacilitatorState',
+            {'_load_saved_completions'},
+            namespace,
+        )
+        state = Harness()
+        state._get_completion_file_path = lambda: path
+
+        self.assertEqual(state._load_saved_completions(), {})
+
+        path.write_text('{"Quality": true}', encoding='utf-8')
+        self.assertEqual(state._load_saved_completions(), {'Quality': True})
+
     def test_invalid_edit_does_not_replace_saved_data(self):
         a = self.service.save_assessment(sample())
         before = self.tests.get_all()
