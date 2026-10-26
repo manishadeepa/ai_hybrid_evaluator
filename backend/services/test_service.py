@@ -8,6 +8,7 @@ from backend.services.test_dependency_service import TestDependencyService
 from backend.repositories.test_repository import TestRepository
 from backend.repositories.response_repository import ResponseRepository
 from backend.services.question_type_schema import validate_test_type
+from backend.services.assessment_approval import all_facilitators_approved
 
 
 class TestService:
@@ -124,7 +125,9 @@ class TestService:
 
     def create_test(self, assessment_id, details):
         with self._lock():
-            self._assessment(assessment_id)
+            assessment = self._assessment(assessment_id)
+            if not all_facilitators_approved(assessment):
+                raise ValueError("All assigned facilitators must approve this assessment before a test can be created.")
             if not isinstance(details, dict):
                 raise ValueError("Test details must be an object.")
             self._allowed(details)

@@ -22,9 +22,9 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assignments=CandidateAssignmentService(self.candidates)
         self.candidates.create_candidate({'candidate_id':'NAV-C1','name':'Candidate','email':'nav@example.com'})
         self.first=self.service.save_assessment({'name':'First assessment','facilitator_ids':['F001'],
-            'facilitator_id':'F001','assigned_candidates':[],'tests':[],'status':'Draft'})
+            'facilitator_id':'F001','facilitator_approvals':{'F001':'approved'},'assigned_candidates':[],'tests':[],'status':'Draft'})
         self.second=self.service.save_assessment({'name':'Second assessment','facilitator_ids':['F001'],
-            'facilitator_id':'F001','assigned_candidates':['NAV-C1'],'tests':[],'status':'Draft'})
+            'facilitator_id':'F001','facilitator_approvals':{'F001':'approved'},'assigned_candidates':['NAV-C1'],'tests':[],'status':'Draft'})
         root=rx.State(_reflex_internal_init=True)
         self.fac=root.get_substate(tuple(module.FacilitatorState.get_full_name().split('.')))
         self.admin=root.get_substate(tuple(admin_module.AdminState.get_full_name().split('.')))

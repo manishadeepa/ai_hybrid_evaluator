@@ -255,7 +255,7 @@ def _role_card(
     button_color: str,
     button_hover_color: str,
     button_shadow_color: str,
-    alert_message: str,
+    target_route: str,
 ) -> rx.Component:
     """Individual rounded role card matching reference design."""
     return rx.box(
@@ -327,7 +327,7 @@ def _role_card(
                         justify_content="center",
                         width="100%",
                     ),
-                    on_click=rx.window_alert(alert_message),
+                    on_click=rx.redirect(target_route),
                     background=button_color,
                     color="#FFFFFF",
                     width="100%",
@@ -397,7 +397,7 @@ def _role_cards_container() -> rx.Component:
             button_color="#6D28D9",
             button_hover_color="#5B21B6",
             button_shadow_color="rgba(109, 40, 217, 0.28)",
-            alert_message="Admin role selected.",
+            target_route="/signin",
         ),
 
         # 2. Facilitator (Green)
@@ -415,7 +415,7 @@ def _role_cards_container() -> rx.Component:
             button_color="#059669",
             button_hover_color="#047857",
             button_shadow_color="rgba(5, 150, 105, 0.28)",
-            alert_message="Facilitator role selected.",
+            target_route="/facilitator/signin",
         ),
 
         # 3. Candidate (Blue)
@@ -433,7 +433,7 @@ def _role_cards_container() -> rx.Component:
             button_color="#0066FF",
             button_hover_color="#0052CC",
             button_shadow_color="rgba(0, 102, 255, 0.28)",
-            alert_message="Candidate role selected.",
+            target_route="/candidate/login",
         ),
 
         direction=_bp(initial="column", md="row"),

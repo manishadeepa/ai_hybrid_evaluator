@@ -5,6 +5,10 @@ from threading import RLock
 from uuid import uuid4
 from backend.repositories.assessment_repository import AssessmentRepository
 from backend.services.test_service import TestService
+from backend.services.assessment_approval import (
+    aggregate_facilitator_approval_status,
+    all_facilitators_approved,
+)
 
 # Serialize assessment/test read-modify-write operations within the Reflex process.
 _PERSISTENCE_LOCK = RLock()
@@ -65,6 +69,7 @@ class AssessmentService:
             if any(r["name"].strip().casefold() == name.casefold() and r["assessment_id"] != identity for r in existing):
                 raise ValueError("An assessment with this name already exists.")
             value["assessment_id"] = identity
+            value["approval_status"] = aggregate_facilitator_approval_status(value)
             self._validate_lifecycle(value)
             for field in ("test_ids", "test_dates", "test_descriptions", "question_papers", "facilitator_approvals", "test_types", "test_timings"):
                 if field in value and not isinstance(value[field], dict):
@@ -305,6 +310,8 @@ class AssessmentService:
             self.tests._validate_fields({"test_name": test_name, "date": date,
                                          "description": description, "is_final": is_final})
             record = self.get_assessment(assessment_id)
+            if not all_facilitators_approved(record):
+                raise ValueError("All assigned facilitators must approve this assessment before a test can be created.")
             if not isinstance(test_name, str) or not test_name.strip():
                 raise ValueError("Test name is required.")
             test_name = test_name.strip()

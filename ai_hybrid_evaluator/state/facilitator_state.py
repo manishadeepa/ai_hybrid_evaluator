@@ -20,6 +20,10 @@ def today_ist() -> date:
 
 from backend.services.manual_evaluation_service import ManualEvaluationService
 from backend.services.assessment_service import AssessmentService
+from backend.services.assessment_approval import (
+    aggregate_facilitator_approval_status,
+    all_facilitators_approved,
+)
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
 from backend.services.feedback_service import FeedbackService
 from backend.services.report_service import ReportService
@@ -2565,7 +2569,7 @@ class FacilitatorState(rx.State):
                 approvals = dict(updated.get("facilitator_approvals", {}))
                 approvals[fac_id] = "approved"
                 updated["facilitator_approvals"] = approvals
-                updated["approval_status"] = "approved"
+                updated["approval_status"] = aggregate_facilitator_approval_status(updated)
                 updated = admin_state._persist_assessment_record(updated)
                 break
         return rx.toast.success(f"Assessment '{assessment_name}' approved!")
@@ -2581,9 +2585,7 @@ class FacilitatorState(rx.State):
                 approvals = dict(updated.get("facilitator_approvals", {}))
                 approvals[fac_id] = "declined"
                 updated["facilitator_approvals"] = approvals
-                assigned_ids = updated.get("facilitator_ids", [updated.get("facilitator_id", "")])
-                if all(approvals.get(fid) == "declined" for fid in assigned_ids):
-                    updated["approval_status"] = "declined"
+                updated["approval_status"] = aggregate_facilitator_approval_status(updated)
                 updated = admin_state._persist_assessment_record(updated)
                 break
         return rx.toast.info(f"Assessment '{assessment_name}' declined.")
@@ -2824,6 +2826,8 @@ class FacilitatorState(rx.State):
             assessment = await self._workspace_assessment()
         except ValueError as exc:
             return rx.toast.error(str(exc))
+        if not all_facilitators_approved(assessment):
+            return rx.toast.error("All assigned facilitators must approve this assessment before tests can be created.")
         current_tests = list(assessment.get("tests", []))
 
         formative_nums = []
@@ -2937,6 +2941,8 @@ class FacilitatorState(rx.State):
             print(f"[CREATE TEST TIMING] _workspace_assessment: {time.perf_counter() - _step:.3f}s", flush=True)
         except ValueError as exc:
             return rx.toast.error(str(exc))
+        if not all_facilitators_approved(assessment):
+            return rx.toast.error("All assigned facilitators must approve this assessment before tests can be created.")
         if self.new_question_type not in ("Objective", "Subjective", "Hybrid"):
             return rx.toast.error("Please select a Question Type.")
         admin_state = await self.get_state(AdminState)

@@ -122,6 +122,48 @@ class AssessmentTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.service.update_lifecycle(aid,**changes)
         self.assertEqual(self.repo.file_path.read_bytes(),before)
 
+    def test_tests_require_approval_from_every_assigned_facilitator(self):
+        self.facilitators.extend(
+            [{"emp_id": "F3", "name": "Third"}, {"emp_id": "F4", "name": "Fourth"}]
+        )
+        assessment = self.create()
+        assessment_id = assessment["assessment_id"]
+        for facilitator_id in ("F1", "F2", "F3", "F4"):
+            self.service.assign_facilitator(assessment_id, facilitator_id)
+
+        with self.assertRaisesRegex(ValueError, "All assigned facilitators"):
+            self.service.add_test(assessment_id, "Formative 2")
+
+        self.service.update_assessment(
+            assessment_id,
+            {"facilitator_approvals": {
+                "F1": "approved", "F2": "approved", "F3": "approved"
+            }},
+        )
+        self.assertEqual(
+            self.service.get_assessment(assessment_id)["approval_status"], "pending"
+        )
+        with self.assertRaisesRegex(ValueError, "All assigned facilitators"):
+            self.service.add_test(assessment_id, "Formative 2")
+
+        self.service.update_assessment(
+            assessment_id,
+            {"facilitator_approvals": {
+                "F1": "approved", "F2": "approved",
+                "F3": "approved", "F4": "approved"
+            }},
+        )
+        self.assertEqual(
+            self.service.get_assessment(assessment_id)["approval_status"], "approved"
+        )
+        self.service.add_test(assessment_id, "Formative 2")
+
+        self.facilitators.append({"emp_id": "F5", "name": "Fifth"})
+        updated = self.service.assign_facilitator(assessment_id, "F5")
+        self.assertEqual(updated["approval_status"], "pending")
+        with self.assertRaisesRegex(ValueError, "All assigned facilitators"):
+            self.service.add_test(assessment_id, "Formative 3")
+
     def test_m5_test_relationships_and_scope(self):
         aid=self.create()['assessment_id']; bid=self.create('Other')['assessment_id']
         saved=self.service.add_test(aid,'Formative 2',description='Second')

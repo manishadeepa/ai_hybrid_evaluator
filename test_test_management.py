@@ -24,6 +24,14 @@ class TestManagementTests(unittest.TestCase):
     def create(self, **details):
         return self.service.create_test(self.a, {"test_name": "Formative 1", **details})
 
+    def test_direct_test_creation_requires_all_facilitator_approvals(self):
+        self.assessments.facilitator_catalog = lambda: [
+            {"emp_id": "F1", "name": "First"}
+        ]
+        self.assessments.assign_facilitator(self.a, "F1")
+        with self.assertRaisesRegex(ValueError, "All assigned facilitators"):
+            self.service.create_test(self.a, {"test_name": "Formative 1"})
+
     def test_crud_and_reload(self):
         first = self.create(description="keep", date="2099-09-20")
         other = self.service.create_test(self.b, {"test_name": "Formative 1"})
