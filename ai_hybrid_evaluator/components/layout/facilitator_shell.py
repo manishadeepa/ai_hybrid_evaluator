@@ -129,7 +129,10 @@ def workspace_subnav_item(label: str, icon: str, tab_key: str, assessment_name: 
 
 
 def sidebar_approved_assessment_item(a: dict) -> rx.Component:
-    is_sel = FacilitatorState.selected_assessment_name == a["name"]
+    is_expanded = (
+        (FacilitatorState.expanded_assessment == a["assessment_id"])
+        | (FacilitatorState.expanded_assessment == a["name"])
+    )
     is_tests_active = (
         (FacilitatorState.selected_assessment_name == a["name"])
         & (FacilitatorState.active_workspace_tab == "tests")
@@ -137,13 +140,13 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
     return rx.vstack(
         # Assessment header row
         rx.hstack(
-            rx.icon("clipboard-check", size=14, color=rx.cond(is_sel, COLORS["primary"], COLORS["slate"])),
+            rx.icon("clipboard-check", size=14, color=rx.cond(is_expanded, COLORS["primary"], COLORS["slate"])),
             rx.text(
                 a["name"],
                 font_family=FONT_BODY,
                 size="1",
-                weight=rx.cond(is_sel, "bold", "semibold"),
-                color=rx.cond(is_sel, COLORS["primary"], "#1E293B"),
+                weight=rx.cond(is_expanded, "bold", "semibold"),
+                color=rx.cond(is_expanded, COLORS["primary"], "#1E293B"),
                 no_of_lines=1,
                 overflow="hidden",
                 text_overflow="ellipsis",
@@ -151,7 +154,7 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
             ),
             rx.spacer(),
             rx.icon(
-                rx.cond(is_sel, "chevron-down", "chevron-right"),
+                rx.cond(is_expanded, "chevron-down", "chevron-right"),
                 size=12,
                 color=COLORS["slate"],
             ),
@@ -161,14 +164,14 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
             padding="0.45em 0.8em 0.45em 1.2em",
             border_radius="8px",
             cursor="pointer",
-            background=rx.cond(is_sel, "#F5F3FF", "transparent"),
-            on_click=FacilitatorState.open_assessment_by_name(a["name"]),
+            background=rx.cond(is_expanded, "#F5F3FF", "transparent"),
+            on_click=FacilitatorState.toggle_assessment_expand(a["assessment_id"]),
             _hover={"background": "#F8FAFC"},
             transition="all 0.15s ease",
         ),
-        # Workspace sub-navigation (shown when assessment is selected)
+        # Workspace sub-navigation (shown when assessment is expanded)
         rx.cond(
-            is_sel,
+            is_expanded,
             rx.vstack(
                 # Tests row (with nested test sub-items when active)
                 rx.vstack(

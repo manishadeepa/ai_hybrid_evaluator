@@ -23,6 +23,7 @@ def dashboard_kpi_card(
     icon: str,
     icon_color: str,
     icon_bg: str,
+    on_click: rx.event.EventHandler | None = None,
 ) -> rx.Component:
     return rx.box(
         rx.hstack(
@@ -71,6 +72,14 @@ def dashboard_kpi_card(
         padding="1.2em 1.4em",
         flex="1",
         box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
+        cursor="pointer" if on_click else "default",
+        on_click=on_click,
+        _hover={
+            "box_shadow": "0 4px 14px rgba(0, 0, 0, 0.08)",
+            "border_color": icon_color,
+            "transform": "translateY(-1px)",
+        } if on_click else {},
+        transition="all 0.15s ease",
     )
 
 
@@ -140,18 +149,7 @@ def assessment_donut_svg() -> rx.Component:
                 font_family="Inter, system-ui, sans-serif",
                 style={"pointerEvents": "none"},
             ),
-            rx.el.text(
-                "Assessments",
-                x="100",
-                y="120",
-                text_anchor="middle",
-                dominant_baseline="central",
-                fill="#64748B",
-                font_size="10",
-                font_weight="500",
-                font_family="Inter, system-ui, sans-serif",
-                style={"pointerEvents": "none"},
-            ),
+           
         ),
         width="220",
         height="220",
@@ -464,6 +462,266 @@ def assessment_overview_modal() -> rx.Component:
     )
 
 
+def _facilitator_modal_row(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(
+            rx.text(item["num"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="15%",
+            vertical_align="middle",
+        ),
+        rx.table.cell(
+            rx.text(item["fid"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="40%",
+            vertical_align="middle",
+        ),
+        rx.table.cell(
+            rx.text(item["name"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="45%",
+            vertical_align="middle",
+        ),
+        style={
+            "&:hover": {"background": "#F8FAFC"},
+            "transition": "background 0.12s ease",
+            "borderBottom": f"1px solid {COLORS['line']}",
+        },
+    )
+
+
+def dashboard_facilitators_modal() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Modal Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("users", size=18, color="#7C3AED"),
+                            background="#F3E8FF",
+                            padding="0.5em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            flex_shrink="0",
+                        ),
+                        rx.text(
+                            "Facilitators List",
+                            font_family=FONT_BODY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"], "color": COLORS["ink"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                ),
+
+                # Table of Facilitators: # | FID | Name
+                rx.box(
+                    rx.cond(
+                        AdminState.dashboard_facilitators_modal_items.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(
+                                        rx.text("#", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="15%",
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("FID", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="40%",
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("Name", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="45%",
+                                    ),
+                                    style={"background": "#FAF5FF"},
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(AdminState.dashboard_facilitators_modal_items, _facilitator_modal_row)
+                            ),
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.text(
+                                "No facilitators found.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            padding="2.5em 1em",
+                            text_align="center",
+                            width="100%",
+                        ),
+                    ),
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="10px",
+                    overflow="hidden",
+                    width="100%",
+                    max_height="360px",
+                    overflow_y="auto",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "560px"},
+            background=COLORS["surface"],
+            border_radius="16px",
+            padding="1.6em",
+        ),
+        open=AdminState.show_facilitators_modal,
+        on_open_change=AdminState.set_show_facilitators_modal,
+    )
+
+
+def _candidate_modal_row(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(
+            rx.text(item["num"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="15%",
+            vertical_align="middle",
+        ),
+        rx.table.cell(
+            rx.text(item["cid"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="40%",
+            vertical_align="middle",
+        ),
+        rx.table.cell(
+            rx.text(item["name"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            width="45%",
+            vertical_align="middle",
+        ),
+        style={
+            "&:hover": {"background": "#F8FAFC"},
+            "transition": "background 0.12s ease",
+            "borderBottom": f"1px solid {COLORS['line']}",
+        },
+    )
+
+
+def dashboard_candidates_modal() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Modal Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("users", size=18, color="#10B981"),
+                            background="#DCFCE7",
+                            padding="0.5em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            flex_shrink="0",
+                        ),
+                        rx.text(
+                            "Candidates List",
+                            font_family=FONT_BODY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"], "color": COLORS["ink"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                ),
+
+                # Table of Candidates: # | Candidate ID | Name
+                rx.box(
+                    rx.cond(
+                        AdminState.dashboard_candidates_modal_items.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(
+                                        rx.text("#", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="15%",
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("Candidate ID", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="40%",
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("Name", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                        width="45%",
+                                    ),
+                                    style={"background": "#FAF5FF"},
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(AdminState.dashboard_candidates_modal_items, _candidate_modal_row)
+                            ),
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.text(
+                                "No candidates found.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            padding="2.5em 1em",
+                            text_align="center",
+                            width="100%",
+                        ),
+                    ),
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="10px",
+                    overflow="hidden",
+                    width="100%",
+                    max_height="360px",
+                    overflow_y="auto",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "560px"},
+            background=COLORS["surface"],
+            border_radius="16px",
+            padding="1.6em",
+        ),
+        open=AdminState.show_candidates_modal,
+        on_open_change=AdminState.set_show_candidates_modal,
+    )
+
+
 def assessments_overview_card() -> rx.Component:
     return rx.box(
         rx.vstack(
@@ -657,6 +915,7 @@ def admin_dashboard_page() -> rx.Component:
                 "users",
                 "#6D28D9",
                 "#EDE9FE",
+                on_click=AdminState.open_facilitators_modal,
             ),
             dashboard_kpi_card(
                 "Total Candidates",
@@ -665,6 +924,7 @@ def admin_dashboard_page() -> rx.Component:
                 "user",
                 "#059669",
                 "#ECFDF3",
+                on_click=AdminState.open_candidates_modal,
             ),
             spacing="4",
             width="100%",
@@ -678,6 +938,12 @@ def admin_dashboard_page() -> rx.Component:
 
         # ── Assessment Overview Modal ─────────────────────────────────
         assessment_overview_modal(),
+
+        # ── Facilitators List Modal ───────────────────────────────────
+        dashboard_facilitators_modal(),
+
+        # ── Candidates List Modal ─────────────────────────────────────
+        dashboard_candidates_modal(),
 
         spacing="5",
         width="100%",

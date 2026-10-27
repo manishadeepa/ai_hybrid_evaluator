@@ -363,6 +363,23 @@ class FacilitatorState(rx.State):
     selected_assessment_index: int = -1
     selected_assessment_name: str = ""
     selected_assessment_id: str = ""
+    expanded_assessment: str | None = None
+
+    @property
+    def expandedAssessment(self):
+        return self.expanded_assessment
+
+    @expandedAssessment.setter
+    def expandedAssessment(self, val):
+        self.expanded_assessment = val
+
+    @property
+    def expanded_assessment_id(self):
+        return self.expanded_assessment
+
+    @expanded_assessment_id.setter
+    def expanded_assessment_id(self, val):
+        self.expanded_assessment = val
 
     # â”€â”€ Dashboard search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     assessment_search_query: str = ""
@@ -2510,6 +2527,7 @@ class FacilitatorState(rx.State):
 
     async def open_assessment_by_id(self, assessment_id: str):
         """Open only a persisted assessment assigned to the signed-in facilitator."""
+        self.expanded_assessment = assessment_id
         self.selected_assessment_id = assessment_id
         self.selected_assessment_name = ""
         error = await self.load_persisted_assessment_workspace()
@@ -2533,6 +2551,35 @@ class FacilitatorState(rx.State):
         await self.sync_assessment_weightage(assessment["name"])
         self.active_workspace_tab = "tests"
         return rx.redirect("/facilitator/assessment")
+
+    async def toggle_assessment_expand(self, assessment_identifier: str):
+        """Toggle expand/collapse for an assessment in the sidebar.
+        If already expanded, collapse it (set to None).
+        Otherwise, expand it and open the assessment workspace.
+        """
+        admin_state = await self.get_state(AdminState)
+        assessment = next(
+            (a for a in admin_state.assessments
+             if a.get("assessment_id") == assessment_identifier or a.get("name") == assessment_identifier),
+            None,
+        )
+        target_id = assessment.get("assessment_id", "") if assessment else assessment_identifier
+        target_name = assessment.get("name", "") if assessment else assessment_identifier
+
+        if self.expanded_assessment and (self.expanded_assessment == target_id or self.expanded_assessment == target_name):
+            self.expanded_assessment = None
+            return
+
+        self.expanded_assessment = target_id or target_name
+        if target_id:
+            return await self.open_assessment_by_id(target_id)
+        return await self.open_assessment_by_name(target_name)
+
+    def set_expanded_assessment(self, value: str | None):
+        self.expanded_assessment = value
+
+    async def toggle_expanded_assessment(self, assessment_identifier: str):
+        return await self.toggle_assessment_expand(assessment_identifier)
 
     async def open_assessment_tab(self, assessment_name: str, tab: str):
         event = await self.open_assessment_by_name(assessment_name)

@@ -992,6 +992,8 @@ class AdminState(rx.State):
 
     async def load_persisted_assessments_async(self, legacy_question_papers: dict | None = None):
         try:
+            self.load_persisted_facilitators()
+            self.load_persisted_candidates()
             records = await asyncio.to_thread(self._load_persisted_assessments, legacy_question_papers, False)
             self._apply_assessment_records(records)
         except (ValueError, OSError) as exc:
@@ -1613,6 +1615,64 @@ class AdminState(rx.State):
             self.close_assessment_overview_modal()
         else:
             self.show_assessment_overview_modal = True
+
+    # =========================================================
+    # DASHBOARD FACILITATORS MODAL
+    # =========================================================
+    show_facilitators_modal: bool = False
+
+    def open_facilitators_modal(self):
+        self.load_persisted_facilitators()
+        self.show_facilitators_modal = True
+
+    def close_facilitators_modal(self):
+        self.show_facilitators_modal = False
+
+    def set_show_facilitators_modal(self, value: bool):
+        if not value:
+            self.close_facilitators_modal()
+        else:
+            self.open_facilitators_modal()
+
+    @rx.var
+    def dashboard_facilitators_modal_items(self) -> list[dict]:
+        return [
+            {
+                "num": str(i + 1),
+                "fid": str(f.get("emp_id", "")),
+                "name": str(f.get("name", "")),
+            }
+            for i, f in enumerate(self.facilitators)
+        ]
+
+    # =========================================================
+    # DASHBOARD CANDIDATES MODAL
+    # =========================================================
+    show_candidates_modal: bool = False
+
+    def open_candidates_modal(self):
+        self.load_persisted_candidates()
+        self.show_candidates_modal = True
+
+    def close_candidates_modal(self):
+        self.show_candidates_modal = False
+
+    def set_show_candidates_modal(self, value: bool):
+        if not value:
+            self.close_candidates_modal()
+        else:
+            self.open_candidates_modal()
+
+    @rx.var
+    def dashboard_candidates_modal_items(self) -> list[dict]:
+        return [
+            {
+                "num": str(i + 1),
+                "cid": str(c.get("emp_id", "")),
+                "name": str(c.get("name", "")),
+            }
+            for i, c in enumerate(self.candidates)
+        ]
 
     # =========================================================
     # FEEDBACK FORM BUILDER (UI-only)
