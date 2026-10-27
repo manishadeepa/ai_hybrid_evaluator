@@ -360,6 +360,7 @@ class CandidateState(rx.State):
     candidate_feedback_questions: list[dict] = []
     candidate_feedback_answers: dict[str, str] = {}
     candidate_feedback_error: str = ""
+    candidate_feedback_additional: str = ""
     saved_candidate_feedbacks: dict[str, dict] = {}
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Candidate Identity Helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -1967,11 +1968,13 @@ class CandidateState(rx.State):
                     "No pending Candidate Feedback Form is available for this test."
                 )
 
-            self.candidate_feedback_questions = list(
-                form.get("questions", [])
-            )
+            self.candidate_feedback_questions = [
+                {**dict(q), "rating": 0}
+                for q in form.get("questions", [])
+            ]
             self.candidate_feedback_answers = {}
             self.candidate_feedback_error = ""
+            self.candidate_feedback_additional = ""
             self.show_candidate_feedback_modal = True
 
         except (ValueError, OSError) as exc:
@@ -1988,7 +1991,41 @@ class CandidateState(rx.State):
         self.candidate_feedback_questions = []
         self.candidate_feedback_answers = {}
         self.candidate_feedback_error = ""
+        self.candidate_feedback_additional = ""
         return self.return_to_dashboard()
+
+    def set_candidate_feedback_rating(self, qid: str, rating: int):
+        """Set star rating for a specific feedback question."""
+        self.candidate_feedback_questions = [
+            {**q, "rating": rating} if str(q.get("id")) == str(qid) else q
+            for q in self.candidate_feedback_questions
+        ]
+
+    def set_candidate_feedback_additional(self, val: str):
+        """Update the additional feedback text and clear error if non-empty."""
+        self.candidate_feedback_additional = val
+        if val.strip():
+            self.candidate_feedback_error = ""
+
+    @rx.var
+    def candidate_feedback_avg_score(self) -> float:
+        ratings = [
+            q.get("rating", 0)
+            for q in self.candidate_feedback_questions
+            if q.get("rating", 0) > 0
+        ]
+        if not ratings:
+            return 0.0
+        return round(sum(ratings) / len(ratings), 1)
+
+    @rx.var
+    def candidate_feedback_avg_score_str(self) -> str:
+        avg = self.candidate_feedback_avg_score
+        return f"{avg:.1f} / 5"
+
+    @rx.var
+    def candidate_feedback_avg_stars_count(self) -> int:
+        return round(self.candidate_feedback_avg_score)
 
     def set_candidate_feedback_answer(self, question_id: str, answer: str):
         answers = dict(self.candidate_feedback_answers)
@@ -2018,6 +2055,12 @@ class CandidateState(rx.State):
         if missing_required:
             self.candidate_feedback_error = (
                 "Please complete all required questions before submitting."
+            )
+            return
+
+        if not self.candidate_feedback_additional.strip():
+            self.candidate_feedback_error = (
+                "Please provide additional feedback before submitting."
             )
             return
 
@@ -2079,6 +2122,7 @@ class CandidateState(rx.State):
         self.candidate_feedback_questions = []
         self.candidate_feedback_answers = {}
         self.candidate_feedback_error = ""
+        self.candidate_feedback_additional = ""
 
         yield rx.toast.success(
             "Feedback submitted successfully. Thank you!"

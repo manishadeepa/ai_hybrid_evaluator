@@ -72,7 +72,7 @@ app.add_page(
 settings_page,
 route="/admin/settings",
 title="Settings",
-on_load=SettingsState.load_active_connection,
+on_load=SettingsState.on_page_load,
 )
 
 app.add_page(

@@ -80,6 +80,222 @@ def facilitator_response_badge(approval_status: str) -> rx.Component:
     )
 
 
+def _approval_facilitator_row(item: dict) -> rx.Component:
+    """Single facilitator row inside the Facilitator Approval Status dialog."""
+    num = item["num"]
+    name = item["name"]
+    status = item["status"]
+    approved_badge = rx.hstack(
+        rx.icon("circle-check", size=12, color="#027A48"),
+        rx.text("Approved", font_family=FONT_BODY, size="1", weight="medium", color="#027A48"),
+        spacing="1",
+        align_items="center",
+        background="#ECFDF3",
+        border="1px solid #A6F4C5",
+        padding="0.25em 0.65em",
+        border_radius="999px",
+    )
+    pending_badge = rx.hstack(
+        rx.icon("clock", size=12, color="#B45309"),
+        rx.text("Approval Pending", font_family=FONT_BODY, size="1", weight="medium", color="#B45309"),
+        spacing="1",
+        align_items="center",
+        background="#FFFBEB",
+        border="1px solid #FDE68A",
+        padding="0.25em 0.65em",
+        border_radius="999px",
+    )
+    declined_badge = rx.hstack(
+        rx.icon("circle-x", size=12, color="#991B1B"),
+        rx.text("Declined", font_family=FONT_BODY, size="1", weight="medium", color="#991B1B"),
+        spacing="1",
+        align_items="center",
+        background="#FEF2F2",
+        border="1px solid #FECACA",
+        padding="0.25em 0.65em",
+        border_radius="999px",
+    )
+    return rx.table.row(
+        rx.table.cell(
+            rx.text(num.to_string(), font_family=FONT_BODY, size="2", color=COLORS["slate"]),
+        ),
+        rx.table.cell(
+            rx.text(name, font_family=FONT_BODY, size="2", color=COLORS["ink"], weight="medium"),
+        ),
+        rx.table.cell(
+            rx.match(
+                status,
+                ("approved", approved_badge),
+                ("Approved", approved_badge),
+                ("declined", declined_badge),
+                ("Declined", declined_badge),
+                pending_badge,
+            ),
+        ),
+    )
+
+
+def facilitator_approval_dialog() -> rx.Component:
+    """Facilitator Approval Status dialog — opened by clicking the Facilitator Response badge."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("users", size=20, color="#6941C6"),
+                        background="#F4EBFF",
+                        padding="0.5em",
+                        border_radius="8px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Facilitator Approval Status",
+                            font_family=FONT_BODY,
+                            size="3",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "View the approval status of all facilitators for this assessment.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon(
+                            "x",
+                            size=18,
+                            color=COLORS["slate"],
+                            cursor="pointer",
+                            _hover={"color": COLORS["ink"]},
+                            on_click=AdminState.close_facilitator_approval_dialog,
+                        ),
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                ),
+                # Assessment Name Row
+                rx.box(
+                    rx.hstack(
+                        rx.text(
+                            "Assessment Name",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                            weight="medium",
+                            min_width="140px",
+                        ),
+                        rx.text(
+                            AdminState.approval_dialog_assessment_name,
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="4",
+                        align_items="center",
+                        width="100%",
+                    ),
+                    background=COLORS["canvas"],
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="8px",
+                    padding="0.75em 1em",
+                    width="100%",
+                ),
+                # Facilitators Table
+                rx.vstack(
+                    rx.hstack(
+                        rx.text(
+                            "Facilitators (",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            AdminState.approval_dialog_facilitators.length().to_string(),
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            ")",
+                            font_family=FONT_BODY,
+                            size="2",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="0",
+                    ),
+                    rx.box(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(
+                                        rx.text("#", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("Facilitator Name", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    ),
+                                    rx.table.column_header_cell(
+                                        rx.text("Approval Status", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                                    ),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    AdminState.approval_dialog_facilitators,
+                                    _approval_facilitator_row,
+                                ),
+                            ),
+                            width="100%",
+                        ),
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        overflow="hidden",
+                        width="100%",
+                    ),
+                    spacing="2",
+                    align_items="start",
+                    width="100%",
+                ),
+                # Close button row
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Close",
+                            on_click=AdminState.close_facilitator_approval_dialog,
+                            variant="outline",
+                            color=COLORS["ink"],
+                            background=COLORS["surface"],
+                            border=f"1px solid {COLORS['line']}",
+                            font_family=FONT_BODY,
+                            _hover={"background": COLORS["canvas"]},
+                        ),
+                    ),
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "560px"},
+        ),
+        open=AdminState.show_facilitator_approval_dialog,
+        on_open_change=AdminState.set_show_facilitator_approval_dialog,
+    )
+
+
 def assessment_status_badge(status: str) -> rx.Component:
     """Shows the assessment status badge: Not Completed, In Progress, or Completed."""
     in_progress_badge = rx.hstack(
@@ -204,9 +420,15 @@ def assessment_row(a: dict, idx: int) -> rx.Component:
             justify="center",
             align="center",
         ),
-        # 7. Facilitator Response (Approved / Approval Pending / Declined)
+        # 7. Facilitator Response — clickable badge opens Approval Status dialog
         rx.table.cell(
-            facilitator_response_badge(a.get("approval_status", "pending")),
+            rx.box(
+                facilitator_response_badge(a.get("approval_status", "pending")),
+                cursor="pointer",
+                on_click=AdminState.open_facilitator_approval_dialog(idx),
+                _hover={"opacity": "0.8"},
+                display="inline-flex",
+            ),
         ),
         # 8. Status (Not Completed / In Progress / Completed)
         rx.table.cell(
@@ -1769,6 +1991,7 @@ def assessments_page() -> rx.Component:
         ),
         edit_assessment_dialog(),
         delete_assessment_dialog(),
+        facilitator_approval_dialog(),
         feedback_type_dialog(),
         facilitator_feedback_builder_dialog(),
         candidate_feedback_builder_dialog(),

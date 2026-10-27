@@ -3544,6 +3544,8 @@ class FacilitatorState(rx.State):
     close_assessment_feedback_title: str = ""
     close_assessment_feedback_questions: list[dict] = []
     close_assessment_feedback_answers: dict[str, str] = {}
+    close_assessment_feedback_additional: str = ""
+    close_assessment_feedback_additional_error: str = ""
     # Sync cache of the current assessment's candidates â€” populated in open_assessment handlers
     _current_assessment_candidates: list[dict] = []
 
@@ -3976,7 +3978,7 @@ class FacilitatorState(rx.State):
             )
 
             self.close_assessment_feedback_questions = [
-                dict(question)
+                {**dict(question), "rating": 0}
                 for question in pending_form.get("questions", [])
             ]
 
@@ -3984,6 +3986,8 @@ class FacilitatorState(rx.State):
                 question["id"]: ""
                 for question in self.close_assessment_feedback_questions
             }
+            self.close_assessment_feedback_additional = ""
+            self.close_assessment_feedback_additional_error = ""
 
             self.show_facilitator_feedback_modal = True
 
@@ -3996,6 +4000,8 @@ class FacilitatorState(rx.State):
 
     def close_facilitator_feedback_modal(self):
         self.show_facilitator_feedback_modal = False
+        self.close_assessment_feedback_additional = ""
+        self.close_assessment_feedback_additional_error = ""
 
     def set_show_facilitator_feedback_modal(self, val: bool):
         self.show_facilitator_feedback_modal = val
@@ -4005,8 +4011,41 @@ class FacilitatorState(rx.State):
         answers[qid] = value
         self.close_assessment_feedback_answers = answers
 
+    def set_close_assessment_feedback_rating(self, qid: str, rating: int):
+        self.close_assessment_feedback_questions = [
+            {**q, "rating": rating} if str(q.get("id")) == str(qid) else q
+            for q in self.close_assessment_feedback_questions
+        ]
+
+    def set_close_assessment_feedback_additional(self, val: str):
+        self.close_assessment_feedback_additional = val
+        if val.strip():
+            self.close_assessment_feedback_additional_error = ""
+
+    @rx.var
+    def close_assessment_feedback_avg_score(self) -> float:
+        ratings = [q.get("rating", 0) for q in self.close_assessment_feedback_questions if q.get("rating", 0) > 0]
+        if not ratings:
+            return 0.0
+        return round(sum(ratings) / len(ratings), 1)
+
+    @rx.var
+    def close_assessment_feedback_avg_score_str(self) -> str:
+        avg = self.close_assessment_feedback_avg_score
+        return f"{avg:.1f} / 5"
+
+    @rx.var
+    def close_assessment_feedback_avg_stars_count(self) -> int:
+        return round(self.close_assessment_feedback_avg_score)
+
     async def submit_facilitator_feedback_modal(self):
         """Persist facilitator feedback, then close the assessment."""
+        # Frontend validation for required additional feedback
+        if not self.close_assessment_feedback_additional.strip():
+            self.close_assessment_feedback_additional_error = "Please provide additional feedback before submitting."
+            self.show_facilitator_feedback_modal = True
+            return rx.toast.error(self.close_assessment_feedback_additional_error)
+
         try:
             auth_state = await self.get_state(AuthState)
             facilitator_id = auth_state.facilitator_emp_id
@@ -4053,6 +4092,8 @@ class FacilitatorState(rx.State):
 
             self.show_facilitator_feedback_modal = False
             self.close_assessment_feedback_answers = {}
+            self.close_assessment_feedback_additional = ""
+            self.close_assessment_feedback_additional_error = ""
 
             return rx.toast.success(
                 "Feedback submitted successfully. Assessment closed."

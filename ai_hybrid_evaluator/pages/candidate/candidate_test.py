@@ -1501,36 +1501,170 @@ def submit_confirmation_dialog() -> rx.Component:
 
 
 def _candidate_feedback_question(question: dict) -> rx.Component:
-    return rx.vstack(
-        rx.hstack(
-            rx.text(
-                question["text"],
-                font_family=FONT_BODY,
-                size="2",
-                weight="medium",
-                color=COLORS["ink"],
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.text(
+                    question["text"],
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="medium",
+                    color=COLORS["ink"],
+                ),
+                rx.cond(
+                    question["required"],
+                    rx.text("Required", font_family=FONT_BODY, size="1", color="#B42318"),
+                    rx.text("Optional", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
+                ),
+                spacing="2",
+                align_items="center",
+                width="100%",
             ),
-            rx.cond(
-                question["required"],
-                rx.text("Required", font_family=FONT_BODY, size="1", color="#B42318"),
-                rx.fragment(),
+            rx.text_area(
+                on_change=CandidateState.set_candidate_feedback_answer(question["id"]),
+                placeholder="Enter your response...",
+                min_height="88px",
+                width="100%",
+                font_family=FONT_BODY,
+                color=COLORS["ink"],
+                background="white",
+                border=f"1px solid {COLORS['line']}",
+                border_radius="8px",
+            ),
+            rx.hstack(
+                *[
+                    rx.icon(
+                        "star",
+                        size=20,
+                        color=rx.cond(
+                            question["rating"].to(int) >= i,
+                            "#F59E0B",
+                            "#D1D5DB",
+                        ),
+                        fill=rx.cond(
+                            question["rating"].to(int) >= i,
+                            "#F59E0B",
+                            "none",
+                        ),
+                        cursor="pointer",
+                        on_click=CandidateState.set_candidate_feedback_rating(question["id"], i),
+                        _hover={"color": "#F59E0B"},
+                    )
+                    for i in range(1, 6)
+                ],
+                spacing="1",
+                align_items="center",
             ),
             spacing="2",
-            align_items="center",
             width="100%",
+            align_items="stretch",
         ),
-        rx.text_area(
-            on_change=CandidateState.set_candidate_feedback_answer(question["id"]),
-            placeholder="Enter your response...",
-            min_height="88px",
-            width="100%",
-            font_family=FONT_BODY,
-            border=f"1px solid {COLORS['line']}",
-            border_radius="8px",
-        ),
-        spacing="2",
+        background="#F8FAFC",
+        border="1px solid #F1F5F9",
+        border_radius="10px",
+        padding="1em",
         width="100%",
-        align_items="stretch",
+    )
+
+
+def _candidate_feedback_average_score_section() -> rx.Component:
+    """Average Feedback Score section with dynamic score from state."""
+    return rx.box(
+        rx.vstack(
+            rx.text(
+                "Average Feedback Score",
+                font_family=FONT_BODY,
+                size="2",
+                weight="bold",
+                color=COLORS["ink"],
+            ),
+            rx.hstack(
+                rx.text(
+                    CandidateState.candidate_feedback_avg_score_str,
+                    font_family=FONT_DISPLAY,
+                    size="4",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.hstack(
+                    *[
+                        rx.icon(
+                            "star",
+                            size=20,
+                            color=rx.cond(
+                                CandidateState.candidate_feedback_avg_stars_count >= i,
+                                "#F59E0B",
+                                "#D1D5DB",
+                            ),
+                            fill=rx.cond(
+                                CandidateState.candidate_feedback_avg_stars_count >= i,
+                                "#F59E0B",
+                                "none",
+                            ),
+                        )
+                        for i in range(1, 6)
+                    ],
+                    spacing="1",
+                    align_items="center",
+                ),
+                spacing="3",
+                align_items="center",
+            ),
+            spacing="2",
+            align_items="start",
+            width="100%",
+        ),
+        background="#F8FAFC",
+        border="1px solid #F1F5F9",
+        border_radius="10px",
+        padding="1em",
+        width="100%",
+    )
+
+
+def _candidate_feedback_additional_section() -> rx.Component:
+    """Additional feedback textarea section — Required, bound to state."""
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.text(
+                    "Additional Feedback / Suggestions",
+                    font_family=FONT_BODY,
+                    size="2",
+                    weight="bold",
+                    color=COLORS["ink"],
+                ),
+                rx.text("Required", font_family=FONT_BODY, size="1", color="#B42318"),
+                spacing="2",
+                align_items="center",
+            ),
+            rx.text(
+                "Any additional comments or suggestions for improvement?",
+                font_family=FONT_BODY,
+                size="2",
+                color=COLORS["slate"],
+            ),
+            rx.text_area(
+                value=CandidateState.candidate_feedback_additional,
+                on_change=CandidateState.set_candidate_feedback_additional,
+                placeholder="Enter your feedback here...",
+                min_height="88px",
+                width="100%",
+                font_family=FONT_BODY,
+                color=COLORS["ink"],
+                background="white",
+                border=f"1px solid {COLORS['line']}",
+                border_radius="8px",
+            ),
+            spacing="2",
+            align_items="start",
+            width="100%",
+        ),
+        background="#F8FAFC",
+        border="1px solid #F1F5F9",
+        border_radius="10px",
+        padding="1em",
+        width="100%",
     )
 
 
@@ -1573,6 +1707,8 @@ def candidate_feedback_modal() -> rx.Component:
                             CandidateState.candidate_feedback_questions,
                             _candidate_feedback_question,
                         ),
+                        _candidate_feedback_average_score_section(),
+                        _candidate_feedback_additional_section(),
                         spacing="4",
                         width="100%",
                         align_items="stretch",

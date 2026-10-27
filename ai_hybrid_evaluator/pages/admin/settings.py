@@ -1,5 +1,4 @@
-"""Admin Settings page — AI Connection Settings."""
-
+import os
 import reflex as rx
 from datetime import datetime
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
@@ -14,7 +13,7 @@ from backend.services.ai_connection_service import AIConnectionService
 class SettingsState(rx.State):
     # ── View mode: "select" (initial) | "new" | "current" ─────
     active_view: str = "select"
-    show_selection_dialog: bool = True
+    show_selection_dialog: bool = False
 
     # ── AI Connection form fields ─────────────────────────────
     ai_conn_name: str = ""
@@ -40,7 +39,7 @@ class SettingsState(rx.State):
         self.show_selection_dialog = v
 
     def open_selection_dialog(self):
-        self.show_selection_dialog = True
+        self.show_selection_dialog = False
         self.active_view = "select"
 
     def choose_create_new(self):
@@ -90,16 +89,40 @@ class SettingsState(rx.State):
 
     def ai_test_connection(self):
         try:
-            result = AIConnectionService().test_connection(
-                self._connection_form()
-            )
-        except (ValueError, OSError) as exc:
+            service = AIConnectionService()
+            form = self._connection_form()
+            # If in Existing AI Connection view and form has not been filled, test active connection
+            if not form.get("name") and self.ai_saved_name:
+                client, model, http_client = service.get_active_client()
+                try:
+                    active_rec = service.repository.get_active()
+                    if active_rec and active_rec.get("provider") == "azure":
+                        client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": "Reply OK."}],
+                            max_tokens=1,
+                        )
+                    else:
+                        client.models.list()
+                finally:
+                    http_client.close()
+                from datetime import datetime, timezone
+                self.ai_saved_last_tested = datetime.now(timezone.utc).isoformat()
+                self.ai_saved_status = "success"
+                return rx.toast.success("Connection test succeeded.")
+
+            result = service.test_connection(form)
+            self.ai_saved_last_tested = result["last_tested_at"]
+            self.ai_saved_status = "success"
+            return rx.toast.success("Connection test succeeded.")
+        except Exception as exc:
+            self.ai_saved_status = "error"
             return rx.toast.error(str(exc))
 
-        self.ai_saved_last_tested = result["last_tested_at"]
-        return rx.toast.success("Connection test succeeded.")
-
     def ai_save_and_use(self):
+        form = self._connection_form()
+        if not form.get("name") and self.ai_saved_name:
+            return rx.toast.success("Existing connection is already saved and active.")
         try:
             record = AIConnectionService().save_and_activate(
                 self._connection_form()
@@ -141,7 +164,7 @@ class SettingsState(rx.State):
         self._ai_conn_api_key = ""
         self.ai_conn_show_key = False
         self.active_view = "select"
-        self.show_selection_dialog = True
+        self.show_selection_dialog = False
 
     def ai_replace_connection(self):
         """Transition from current connection to the new connection form."""
@@ -154,6 +177,272 @@ class SettingsState(rx.State):
         self.ai_conn_show_key = False
         self.active_view = "new"
         self.show_selection_dialog = False
+
+    def ai_edit_connection(self):
+        """Transition from existing connection to the edit form with current values."""
+        self.ai_conn_name = self.ai_saved_name
+        self.ai_conn_endpoint = self.ai_saved_endpoint if self.ai_saved_endpoint != "OpenAI" else ""
+        self.ai_conn_model = self.ai_saved_model if self.ai_saved_model != "Not configured" else ""
+        self.ai_conn_api_version = self.ai_saved_api_version if self.ai_saved_api_version != "Not applicable" else ""
+        self.ai_conn_cert = self.ai_saved_cert if self.ai_saved_cert != "Not configured" else ""
+        self._ai_conn_api_key = ""
+        self.ai_conn_show_key = False
+        self.active_view = "new"
+        self.show_selection_dialog = False
+
+    # ── Access Control State ──────────────────────────────────
+    admin_accounts: list[dict] = []
+
+    # Add Admin Dialog State
+    show_add_admin_dialog: bool = False
+    new_admin_username: str = ""
+    new_admin_password: str = ""
+    new_admin_confirm_password: str = ""
+    show_new_admin_password: bool = False
+    show_new_admin_confirm_password: bool = False
+    add_admin_error: str = ""
+
+    # Edit Admin Dialog State
+    show_edit_admin_dialog: bool = False
+    edit_admin_index: int = -1
+    edit_admin_username: str = ""
+    edit_admin_password: str = ""
+    edit_admin_confirm_password: str = ""
+    show_edit_admin_password: bool = False
+    show_edit_admin_confirm_password: bool = False
+    edit_admin_error: str = ""
+
+    # Delete Admin Dialog State
+    show_delete_admin_dialog: bool = False
+    delete_admin_index: int = -1
+    delete_admin_username: str = ""
+
+    def load_admin_accounts(self):
+        """Loads administrator accounts, ensuring Master Admin (Manisha) is authoritative at #1."""
+        if self.admin_accounts:
+            return
+
+        master_name = "Manisha"
+        from ai_hybrid_evaluator.services.mock_api import find_admin_excel_path
+        excel_path = find_admin_excel_path()
+        other_names = []
+        if excel_path and os.path.isfile(excel_path):
+            try:
+                import pandas as pd
+                df = pd.read_excel(excel_path)
+                col_map = {str(c).strip().lower(): c for c in df.columns}
+                name_col = col_map.get("employeename")
+                if name_col:
+                    for _, row in df.iterrows():
+                        raw_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+                        if raw_name:
+                            if raw_name.lower() == master_name.lower():
+                                master_name = raw_name
+                            elif raw_name not in other_names:
+                                other_names.append(raw_name)
+            except Exception:
+                pass
+
+        if not other_names:
+            other_names = ["Kannadasan R", "Sudhir", "Vaghee", "Shivani"]
+
+        accounts = [
+            {
+                "num": "1",
+                "username": master_name,
+                "role": "Master Admin",
+                "status": "Active",
+                "is_master": True,
+            }
+        ]
+        for i, name in enumerate(other_names):
+            status = "Inactive" if name.lower() == "arun" else "Active"
+            accounts.append({
+                "num": str(i + 2),
+                "username": name,
+                "role": "Administrator",
+                "status": status,
+                "is_master": False,
+            })
+        self.admin_accounts = accounts
+
+    def on_page_load(self):
+        self.load_active_connection()
+        self.load_admin_accounts()
+
+    # ── Add Admin Handlers ────────────────────────────────────
+    def open_add_admin_dialog(self):
+        self.new_admin_username = ""
+        self.new_admin_password = ""
+        self.new_admin_confirm_password = ""
+        self.show_new_admin_password = False
+        self.show_new_admin_confirm_password = False
+        self.add_admin_error = ""
+        self.show_add_admin_dialog = True
+
+    def close_add_admin_dialog(self):
+        self.show_add_admin_dialog = False
+        self.add_admin_error = ""
+
+    def set_show_add_admin_dialog(self, v: bool):
+        self.show_add_admin_dialog = v
+        if not v:
+            self.add_admin_error = ""
+
+    def toggle_new_admin_password(self):
+        self.show_new_admin_password = not self.show_new_admin_password
+
+    def toggle_new_admin_confirm_password(self):
+        self.show_new_admin_confirm_password = not self.show_new_admin_confirm_password
+
+    def set_new_admin_username(self, v: str):
+        self.new_admin_username = v
+        self.add_admin_error = ""
+
+    def set_new_admin_password(self, v: str):
+        self.new_admin_password = v
+        self.add_admin_error = ""
+
+    def set_new_admin_confirm_password(self, v: str):
+        self.new_admin_confirm_password = v
+        self.add_admin_error = ""
+
+    def create_admin(self):
+        uname = self.new_admin_username.strip()
+        pwd = self.new_admin_password.strip()
+        cpwd = self.new_admin_confirm_password.strip()
+
+        if not uname:
+            self.add_admin_error = "Username is required."
+            return
+        if not pwd:
+            self.add_admin_error = "Password is required."
+            return
+        if not cpwd:
+            self.add_admin_error = "Please confirm your password."
+            return
+        if pwd != cpwd:
+            self.add_admin_error = "Passwords do not match."
+            return
+
+        for a in self.admin_accounts:
+            if a.get("username", "").strip().lower() == uname.lower():
+                self.add_admin_error = "An administrator with this username already exists."
+                return
+
+        new_num = str(len(self.admin_accounts) + 1)
+        new_account = {
+            "num": new_num,
+            "username": uname,
+            "role": "Administrator",
+            "status": "Active",
+            "is_master": False,
+        }
+        self.admin_accounts.append(new_account)
+        self.show_add_admin_dialog = False
+        return rx.toast.success(f"Administrator '{uname}' created successfully.")
+
+    # ── Edit Admin Handlers ───────────────────────────────────
+    def open_edit_admin_dialog(self, index: int):
+        if not (0 <= index < len(self.admin_accounts)):
+            return
+        target = self.admin_accounts[index]
+        if target.get("is_master"):
+            return rx.toast.error("Master admin cannot be edited.")
+        self.edit_admin_index = index
+        self.edit_admin_username = target.get("username", "")
+        self.edit_admin_password = ""
+        self.edit_admin_confirm_password = ""
+        self.show_edit_admin_password = False
+        self.show_edit_admin_confirm_password = False
+        self.edit_admin_error = ""
+        self.show_edit_admin_dialog = True
+
+    def close_edit_admin_dialog(self):
+        self.show_edit_admin_dialog = False
+        self.edit_admin_error = ""
+
+    def set_show_edit_admin_dialog(self, v: bool):
+        self.show_edit_admin_dialog = v
+        if not v:
+            self.edit_admin_error = ""
+
+    def toggle_edit_admin_password(self):
+        self.show_edit_admin_password = not self.show_edit_admin_password
+
+    def toggle_edit_admin_confirm_password(self):
+        self.show_edit_admin_confirm_password = not self.show_edit_admin_confirm_password
+
+    def set_edit_admin_username(self, v: str):
+        self.edit_admin_username = v
+        self.edit_admin_error = ""
+
+    def set_edit_admin_password(self, v: str):
+        self.edit_admin_password = v
+        self.edit_admin_error = ""
+
+    def set_edit_admin_confirm_password(self, v: str):
+        self.edit_admin_confirm_password = v
+        self.edit_admin_error = ""
+
+    def save_admin_changes(self):
+        if not (0 <= self.edit_admin_index < len(self.admin_accounts)):
+            return
+        uname = self.edit_admin_username.strip()
+        pwd = self.edit_admin_password.strip()
+        cpwd = self.edit_admin_confirm_password.strip()
+
+        if not uname:
+            self.edit_admin_error = "Username is required."
+            return
+
+        if pwd or cpwd:
+            if pwd != cpwd:
+                self.edit_admin_error = "Passwords do not match."
+                return
+
+        for i, a in enumerate(self.admin_accounts):
+            if i != self.edit_admin_index and a.get("username", "").strip().lower() == uname.lower():
+                self.edit_admin_error = "An administrator with this username already exists."
+                return
+
+        updated = list(self.admin_accounts)
+        updated[self.edit_admin_index]["username"] = uname
+        self.admin_accounts = updated
+        self.show_edit_admin_dialog = False
+        return rx.toast.success(f"Administrator details updated for '{uname}'.")
+
+    # ── Delete Admin Handlers ─────────────────────────────────
+    def open_delete_admin_dialog(self, index: int):
+        if not (0 <= index < len(self.admin_accounts)):
+            return
+        target = self.admin_accounts[index]
+        if target.get("is_master"):
+            return rx.toast.error("Master admin cannot be deleted.")
+        self.delete_admin_index = index
+        self.delete_admin_username = target.get("username", "")
+        self.show_delete_admin_dialog = True
+
+    def close_delete_admin_dialog(self):
+        self.show_delete_admin_dialog = False
+        self.delete_admin_index = -1
+        self.delete_admin_username = ""
+
+    def set_show_delete_admin_dialog(self, v: bool):
+        self.show_delete_admin_dialog = v
+
+    def confirm_delete_admin(self):
+        if not (0 <= self.delete_admin_index < len(self.admin_accounts)):
+            return
+        uname = self.delete_admin_username
+        updated = [a for i, a in enumerate(self.admin_accounts) if i != self.delete_admin_index]
+        for idx, a in enumerate(updated):
+            a["num"] = str(idx + 1)
+        self.admin_accounts = updated
+        self.show_delete_admin_dialog = False
+        self.delete_admin_index = -1
+        self.delete_admin_username = ""
+        return rx.toast.success(f"Administrator '{uname}' deleted.")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -177,7 +466,7 @@ def _ai_field_label(text: str, required: bool = False) -> rx.Component:
 
 
 def _ai_display_field(label: str, value: rx.Var) -> rx.Component:
-    """Read-only labelled display box for the Current Connection card."""
+    """Read-only labelled display box for the Existing Connection card."""
     return rx.vstack(
         rx.text(label, font_family=FONT_BODY, size="2",
                 weight="medium", color=COLORS["ink"]),
@@ -287,7 +576,7 @@ def selection_dialog() -> rx.Component:
                     width="100%",
                 ),
 
-                # Option 2: Current AI Connection
+                # Option 2: Existing AI Connection
                 rx.box(
                     rx.hstack(
                         rx.box(
@@ -301,7 +590,7 @@ def selection_dialog() -> rx.Component:
                         ),
                         rx.vstack(
                             rx.text(
-                                "Current AI Connection",
+                                "Existing AI Connection",
                                 font_family=FONT_BODY,
                                 size="3",
                                 weight="bold",
@@ -421,7 +710,7 @@ def _selection_view_card() -> rx.Component:
                         border_radius="8px",
                     ),
                     rx.vstack(
-                        rx.text("Current AI Connection", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
+                        rx.text("Existing AI Connection", font_family=FONT_BODY, size="3", weight="bold", color=COLORS["ink"]),
                         rx.text("View and manage your active AI connection.", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
                         spacing="0",
                         align_items="start",
@@ -485,17 +774,6 @@ def _new_connection_card() -> rx.Component:
                     align_items="start",
                 ),
                 rx.spacer(),
-                rx.button(
-                    rx.icon("arrow-left-right", size=13),
-                    "Switch View",
-                    on_click=SettingsState.open_selection_dialog,
-                    size="1",
-                    variant="ghost",
-                    color=COLORS["slate"],
-                    font_family=FONT_BODY,
-                    cursor="pointer",
-                    _hover={"color": "#4F46E5"},
-                ),
                 spacing="3",
                 align_items="center",
                 padding_bottom="1.2em",
@@ -722,11 +1000,11 @@ def _new_connection_card() -> rx.Component:
 
 
 # ─────────────────────────────────────────────────────────────
-# 2. Current AI Connection Card
+# 2. Existing AI Connection Card
 # ─────────────────────────────────────────────────────────────
 
 def _current_connection_card() -> rx.Component:
-    """Read-only card shown when user chooses Current AI Connection."""
+    """Read-only card shown when user chooses Existing AI Connection."""
     return rx.box(
         rx.vstack(
             # ── Card header ──────────────────────────────────────
@@ -741,7 +1019,7 @@ def _current_connection_card() -> rx.Component:
                     justify_content="center",
                 ),
                 rx.vstack(
-                    rx.text("Current AI Connection",
+                    rx.text("Existing AI Connection",
                             font_family=FONT_BODY, size="3",
                             weight="bold", color=COLORS["ink"]),
                     rx.text("View and manage your active AI connection.",
@@ -751,17 +1029,6 @@ def _current_connection_card() -> rx.Component:
                     align_items="start",
                 ),
                 rx.spacer(),
-                rx.button(
-                    rx.icon("arrow-left-right", size=13),
-                    "Switch View",
-                    on_click=SettingsState.open_selection_dialog,
-                    size="1",
-                    variant="ghost",
-                    color=COLORS["slate"],
-                    font_family=FONT_BODY,
-                    cursor="pointer",
-                    _hover={"color": "#4F46E5"},
-                ),
                 spacing="3",
                 align_items="center",
                 padding_bottom="1.2em",
@@ -910,6 +1177,19 @@ def _current_connection_card() -> rx.Component:
             # ── Action buttons ────────────────────────────────────
             rx.hstack(
                 rx.button(
+                    rx.icon("pencil", size=14),
+                    "Edit",
+                    on_click=SettingsState.ai_edit_connection,
+                    variant="outline",
+                    color=COLORS["ink"],
+                    border=f"1.5px solid {COLORS['line']}",
+                    background="white",
+                    font_family=FONT_BODY,
+                    size="2",
+                    cursor="pointer",
+                    _hover={"background": COLORS["canvas"]},
+                ),
+                rx.button(
                     rx.icon("radio", size=14),
                     "Test Connection",
                     on_click=SettingsState.ai_test_connection,
@@ -922,21 +1202,18 @@ def _current_connection_card() -> rx.Component:
                     cursor="pointer",
                     _hover={"background": COLORS["canvas"]},
                 ),
-                rx.spacer(),
                 rx.button(
-                    rx.icon("pencil", size=14),
-                    "Replace with New Connection",
-                    on_click=SettingsState.ai_replace_connection,
-                    variant="outline",
-                    color=COLORS["ink"],
-                    border=f"1.5px solid {COLORS['line']}",
-                    background="white",
+                    rx.icon("check", size=14),
+                    "Save and Use",
+                    on_click=SettingsState.ai_save_and_use,
+                    background=COLORS["primary"],
+                    color="white",
                     font_family=FONT_BODY,
                     size="2",
                     cursor="pointer",
-                    _hover={"background": COLORS["canvas"]},
+                    _hover={"background": COLORS["primary_hover"]},
                 ),
-                width="100%",
+                spacing="3",
                 align_items="center",
                 padding_top="0.5em",
             ),
@@ -955,37 +1232,737 @@ def _current_connection_card() -> rx.Component:
 
 
 # ─────────────────────────────────────────────────────────────
+# Access Control Component & Dialogs
+# ─────────────────────────────────────────────────────────────
+
+def _admin_account_row(admin: dict, idx: int) -> rx.Component:
+
+    return rx.table.row(
+        # 1. #
+        rx.table.cell(
+            rx.text(admin["num"], font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+            vertical_align="middle",
+            width="8%",
+        ),
+        # 2. Username
+        rx.table.cell(
+            rx.text(admin["username"], font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+            vertical_align="middle",
+            width="28%",
+        ),
+        # 3. Role
+        rx.table.cell(
+            rx.text(admin["role"], font_family=FONT_BODY, size="2", color=COLORS["ink"]),
+            vertical_align="middle",
+            width="30%",
+        ),
+        # 4. Actions
+        rx.table.cell(
+            rx.cond(
+                admin["is_master"],
+                rx.hstack(
+                    rx.text("—", color=COLORS["slate"], font_family=FONT_BODY, size="2"),
+                    rx.text("Cannot be edited or removed", color=COLORS["slate"], font_family=FONT_BODY, size="1"),
+                    spacing="3",
+                    align_items="center",
+                ),
+                rx.hstack(
+                    rx.hstack(
+                        rx.icon("pencil", size=14, color="#4F46E5"),
+                        rx.text("Edit", font_family=FONT_BODY, size="2", weight="medium", color="#4F46E5"),
+                        spacing="1",
+                        align_items="center",
+                        cursor="pointer",
+                        _hover={"opacity": 0.8},
+                        on_click=SettingsState.open_edit_admin_dialog(idx),
+                    ),
+                    rx.hstack(
+                        rx.icon("trash-2", size=14, color="#DC2626"),
+                        rx.text("Delete", font_family=FONT_BODY, size="2", weight="medium", color="#DC2626"),
+                        spacing="1",
+                        align_items="center",
+                        cursor="pointer",
+                        _hover={"opacity": 0.8},
+                        on_click=SettingsState.open_delete_admin_dialog(idx),
+                    ),
+                    spacing="4",
+                    align_items="center",
+                ),
+            ),
+            vertical_align="middle",
+            width="34%",
+        ),
+        style={
+            "&:hover": {"background": "#F8FAFC"},
+            "transition": "background 0.12s ease",
+            "borderBottom": f"1px solid {COLORS['line']}",
+        },
+    )
+
+
+def access_control_card() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            # Section Header Row
+            rx.hstack(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("users-round", size=20, color="#4F46E5"),
+                        background="#EEF2FF",
+                        padding="0.7em",
+                        border_radius="50%",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Access Control",
+                            font_family=FONT_BODY,
+                            size="3",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.text(
+                            "Manage administrator accounts. Master admin can add, edit and remove other administrators.",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                rx.spacer(),
+                rx.button(
+                    rx.icon("plus", size=15),
+                    "Add Admin",
+                    background="#4F46E5",
+                    color="white",
+                    font_family=FONT_BODY,
+                    font_size="13px",
+                    font_weight="medium",
+                    border_radius="8px",
+                    padding="0.5em 1.2em",
+                    cursor="pointer",
+                    _hover={"background": "#4338CA"},
+                    transition="all 0.15s ease",
+                    on_click=SettingsState.open_add_admin_dialog,
+                ),
+                width="100%",
+                align_items="center",
+                padding_bottom="1.2em",
+                border_bottom=f"1px solid {COLORS['line']}",
+            ),
+
+            # Administrator Table
+            rx.box(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell(
+                                rx.text("#", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                width="8%",
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Username", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                width="28%",
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Role", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                width="30%",
+                            ),
+                            rx.table.column_header_cell(
+                                rx.text("Actions", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                                width="34%",
+                            ),
+                            style={"background": "#F5F3FF"},
+                        ),
+                    ),
+                    rx.table.body(
+                        rx.foreach(SettingsState.admin_accounts, _admin_account_row)
+                    ),
+                    width="100%",
+                ),
+                border=f"1px solid {COLORS['line']}",
+                border_radius="10px",
+                overflow="hidden",
+                width="100%",
+            ),
+
+            spacing="4",
+            width="100%",
+            align_items="stretch",
+        ),
+        background=COLORS["surface"],
+        border=f"1px solid {COLORS['line']}",
+        border_radius="14px",
+        padding="1.75em",
+        width="100%",
+        box_shadow="0 1px 3px rgba(0, 0, 0, 0.04)",
+    )
+
+
+def add_admin_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("user-plus", size=22, color="#4F46E5"),
+                            background="#EEF2FF",
+                            padding="0.65em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "Add New Admin",
+                                font_family=FONT_BODY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "Create a new administrator account.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"], "color": COLORS["ink"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            on_click=SettingsState.close_add_admin_dialog,
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.6em",
+                ),
+
+                # Error banner
+                rx.cond(
+                    SettingsState.add_admin_error != "",
+                    rx.box(
+                        rx.text(
+                            SettingsState.add_admin_error,
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#DC2626",
+                        ),
+                        background="#FEF2F2",
+                        border="1px solid #FECACA",
+                        border_radius="8px",
+                        padding="0.6em 0.9em",
+                        width="100%",
+                    ),
+                    rx.fragment(),
+                ),
+
+                # Form Fields - Vertical Stack
+                rx.vstack(
+                    # Row 1: Username
+                    rx.vstack(
+                        _ai_field_label("Username", required=True),
+                        rx.input(
+                            placeholder="Enter username",
+                            value=SettingsState.new_admin_username,
+                            on_change=SettingsState.set_new_admin_username,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    # Row 2: Password
+                    rx.vstack(
+                        _ai_field_label("Password", required=True),
+                        rx.input(
+                            rx.input.slot(
+                                rx.cond(
+                                    SettingsState.show_new_admin_password,
+                                    rx.icon("eye-off", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_new_admin_password),
+                                    rx.icon("eye", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_new_admin_password),
+                                ),
+                                side="right",
+                            ),
+                            type=rx.cond(SettingsState.show_new_admin_password, "text", "password"),
+                            placeholder="Enter password",
+                            value=SettingsState.new_admin_password,
+                            on_change=SettingsState.set_new_admin_password,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    # Row 3: Confirm Password
+                    rx.vstack(
+                        _ai_field_label("Confirm Password", required=True),
+                        rx.input(
+                            rx.input.slot(
+                                rx.cond(
+                                    SettingsState.show_new_admin_confirm_password,
+                                    rx.icon("eye-off", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_new_admin_confirm_password),
+                                    rx.icon("eye", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_new_admin_confirm_password),
+                                ),
+                                side="right",
+                            ),
+                            type=rx.cond(SettingsState.show_new_admin_confirm_password, "text", "password"),
+                            placeholder="Confirm password",
+                            value=SettingsState.new_admin_confirm_password,
+                            on_change=SettingsState.set_new_admin_confirm_password,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    spacing="4",
+                    width="100%",
+                ),
+
+                # Footer Buttons
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        on_click=SettingsState.close_add_admin_dialog,
+                        variant="outline",
+                        color=COLORS["ink"],
+                        border=f"1.5px solid {COLORS['line']}",
+                        background="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    rx.button(
+                        rx.icon("user-plus", size=15),
+                        "Create Admin",
+                        on_click=SettingsState.create_admin,
+                        background="#4F46E5",
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": "#4338CA"},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "480px"},
+            background="white",
+            border_radius="14px",
+            padding="1.6em",
+        ),
+        open=SettingsState.show_add_admin_dialog,
+        on_open_change=SettingsState.set_show_add_admin_dialog,
+    )
+
+
+def edit_admin_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("pencil", size=22, color="#4F46E5"),
+                            background="#EEF2FF",
+                            padding="0.65em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "Edit Admin",
+                                font_family=FONT_BODY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "Update administrator account details.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"], "color": COLORS["ink"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            on_click=SettingsState.close_edit_admin_dialog,
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.6em",
+                ),
+
+                # Error banner
+                rx.cond(
+                    SettingsState.edit_admin_error != "",
+                    rx.box(
+                        rx.text(
+                            SettingsState.edit_admin_error,
+                            font_family=FONT_BODY,
+                            size="2",
+                            color="#DC2626",
+                        ),
+                        background="#FEF2F2",
+                        border="1px solid #FECACA",
+                        border_radius="8px",
+                        padding="0.6em 0.9em",
+                        width="100%",
+                    ),
+                    rx.fragment(),
+                ),
+
+                # Form Fields - Vertical Stack
+                rx.vstack(
+                    # Row 1: Username
+                    rx.vstack(
+                        _ai_field_label("Username", required=True),
+                        rx.input(
+                            placeholder="Enter username",
+                            value=SettingsState.edit_admin_username,
+                            on_change=SettingsState.set_edit_admin_username,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    # Row 2: Password
+                    rx.vstack(
+                        rx.text("Password", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                        rx.input(
+                            rx.input.slot(
+                                rx.cond(
+                                    SettingsState.show_edit_admin_password,
+                                    rx.icon("eye-off", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_edit_admin_password),
+                                    rx.icon("eye", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_edit_admin_password),
+                                ),
+                                side="right",
+                            ),
+                            type=rx.cond(SettingsState.show_edit_admin_password, "text", "password"),
+                            placeholder="Enter new password",
+                            value=SettingsState.edit_admin_password,
+                            on_change=SettingsState.set_edit_admin_password,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    # Row 3: Confirm Password
+                    rx.vstack(
+                        rx.text("Confirm Password", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                        rx.input(
+                            rx.input.slot(
+                                rx.cond(
+                                    SettingsState.show_edit_admin_confirm_password,
+                                    rx.icon("eye-off", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_edit_admin_confirm_password),
+                                    rx.icon("eye", size=16, color=COLORS["slate"], cursor="pointer", on_click=SettingsState.toggle_edit_admin_confirm_password),
+                                ),
+                                side="right",
+                            ),
+                            type=rx.cond(SettingsState.show_edit_admin_confirm_password, "text", "password"),
+                            placeholder="Confirm new password",
+                            value=SettingsState.edit_admin_confirm_password,
+                            on_change=SettingsState.set_edit_admin_confirm_password,
+                            font_family=FONT_BODY,
+                            size="2",
+                            width="100%",
+                            border=f"1.5px solid {COLORS['line']}",
+                            border_radius="8px",
+                            padding="0.65em 0.9em",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                        width="100%",
+                    ),
+                    spacing="4",
+                    width="100%",
+                ),
+
+                # Footer Buttons
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        on_click=SettingsState.close_edit_admin_dialog,
+                        variant="outline",
+                        color=COLORS["ink"],
+                        border=f"1.5px solid {COLORS['line']}",
+                        background="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    rx.button(
+                        rx.icon("save", size=15),
+                        "Save Changes",
+                        on_click=SettingsState.save_admin_changes,
+                        background="#4F46E5",
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": "#4338CA"},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "560px"},
+            background="white",
+            border_radius="14px",
+            padding="1.6em",
+        ),
+        open=SettingsState.show_edit_admin_dialog,
+        on_open_change=SettingsState.set_show_edit_admin_dialog,
+    )
+
+
+def delete_admin_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("trash-2", size=22, color="#DC2626"),
+                            background="#FEE2E2",
+                            padding="0.65em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.text(
+                            "Delete Admin",
+                            font_family=FONT_BODY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"], "color": COLORS["ink"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            on_click=SettingsState.close_delete_admin_dialog,
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.6em",
+                ),
+
+                # Message & Warning
+                rx.vstack(
+                    rx.text(
+                        "Are you sure you want to delete this admin account?",
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="medium",
+                        color=COLORS["ink"],
+                    ),
+                    rx.text(
+                        "This action cannot be undone.",
+                        font_family=FONT_BODY,
+                        size="1",
+                        color=COLORS["slate"],
+                    ),
+                    spacing="0",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # Username display box
+                rx.box(
+                    rx.vstack(
+                        rx.text(
+                            "Username",
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
+                        ),
+                        rx.text(
+                            SettingsState.delete_admin_username,
+                            font_family=FONT_BODY,
+                            size="3",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    background="#F8FAFC",
+                    border=f"1.5px solid {COLORS['line']}",
+                    border_radius="8px",
+                    padding="0.8em 1em",
+                    width="100%",
+                ),
+
+                # Footer Buttons
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        on_click=SettingsState.close_delete_admin_dialog,
+                        variant="outline",
+                        color=COLORS["ink"],
+                        border=f"1.5px solid {COLORS['line']}",
+                        background="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    rx.button(
+                        "Delete",
+                        on_click=SettingsState.confirm_delete_admin,
+                        background="#DC2626",
+                        color="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": "#B91C1C"},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                    width="100%",
+                    padding_top="0.6em",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "480px"},
+            background="white",
+            border_radius="14px",
+            padding="1.6em",
+        ),
+        open=SettingsState.show_delete_admin_dialog,
+        on_open_change=SettingsState.set_show_delete_admin_dialog,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 # Settings page entry point
 # ─────────────────────────────────────────────────────────────
 
 def settings_page() -> rx.Component:
     content = rx.vstack(
-        # ── Selection Dialog ──────────────────────────────────
-        selection_dialog(),
-
-        # ── Breadcrumb: Admin > Settings > AI Connection ─────
-        rx.hstack(
-            rx.text("Admin", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
-            rx.icon("chevron-right", size=13, color=COLORS["slate"]),
-            rx.text("Settings", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
-            rx.icon("chevron-right", size=13, color=COLORS["slate"]),
-            rx.text("AI Connection", font_family=FONT_BODY, size="2",
-                    weight="bold", color="#4F46E5"),
-            spacing="2",
-            align_items="center",
-        ),
-
         # ── Page Header ───────────────────────────────────────
         rx.vstack(
             rx.text(
-                "AI Connection Settings",
+                "Settings",
                 font_family=FONT_DISPLAY,
                 size="6",
                 weight="bold",
                 color=COLORS["ink"],
             ),
             rx.text(
-                "Configure and manage the AI model connection used for evaluation.",
+                "Manage system settings and administrator accounts.",
                 font_family=FONT_BODY,
                 size="2",
                 color=COLORS["slate"],
@@ -993,6 +1970,24 @@ def settings_page() -> rx.Component:
             spacing="1",
             align_items="start",
             padding_bottom="0.5em",
+        ),
+
+        # ── Back to Settings button (shown when in a connection sub-view) ──
+        rx.cond(
+            SettingsState.active_view != "select",
+            rx.button(
+                rx.icon("arrow-left", size=14),
+                "Back to Settings",
+                on_click=SettingsState.open_selection_dialog,
+                variant="ghost",
+                color=COLORS["slate"],
+                font_family=FONT_BODY,
+                size="2",
+                cursor="pointer",
+                padding_left="0",
+                _hover={"color": COLORS["ink"]},
+            ),
+            rx.fragment(),
         ),
 
         # ── Connection Card View ──────────────────────────────
@@ -1006,14 +2001,26 @@ def settings_page() -> rx.Component:
             ),
         ),
 
-        spacing="4",
+        # ── Access Control Section (only visible on main/select view) ──
+        rx.cond(
+            SettingsState.active_view == "select",
+            access_control_card(),
+            rx.fragment(),
+        ),
+
+        # ── Admin Dialogs ─────────────────────────────────────
+        add_admin_dialog(),
+        edit_admin_dialog(),
+        delete_admin_dialog(),
+
+        spacing="5",
         width="100%",
         align_items="stretch",
     )
 
     return admin_shell(
         active="settings",
-        title="AI Connection Settings",
-        subtitle="Configure and manage the AI model connection used for evaluation.",
+        title="Settings",
+        subtitle="Manage system settings and administrator accounts.",
         content=content,
     )

@@ -60,8 +60,8 @@ def generate_assessment_donut_svg(
     completed: int,
     cx: float = 100.0,
     cy: float = 100.0,
-    R: float = 86.0,
-    r: float = 50.0,
+    R: float = 88.0,
+    r: float = 54.0,
 ) -> str:
     total = in_prog + pending + completed
 
@@ -71,9 +71,9 @@ def generate_assessment_donut_svg(
 
     # Order matches reference design: Green (top-right), Blue (bottom), Orange (top-left)
     items = [
-        ("In Progress", in_prog, lbl_ip, "#10B981"),    # Green
-        ("Completed", completed, lbl_co, "#2563EB"),    # Blue
-        ("Pending", pending, lbl_pe, "#F59E0B"),        # Orange
+        ("In Progress", in_prog, lbl_ip, "#10B981"),      # Green
+        ("Completed", completed, lbl_co, "#2563EB"),      # Blue
+        ("Not Completed", pending, lbl_pe, "#F59E0B"),  # Orange (renamed from Pending)
     ]
 
     # Angular allocation:
@@ -127,18 +127,122 @@ def generate_assessment_donut_svg(
         labels.append(f'<text x="{tx:.1f}" y="{ty:.1f}" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="13" font-weight="700" font-family="Inter, system-ui, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.35);">{lbl}</text>')
 
     svg = (
-        f'<svg width="190" height="190" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="display:block;">'
+        f'<svg width="220" height="220" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="display:block;max-width:100%;height:auto;">'
         f'<g>'
         + "".join(paths)
         + f'<circle cx="{cx}" cy="{cy}" r="{r-1}" fill="#ffffff" />'
         + "".join(labels)
-        + f'<text x="{cx}" y="{cy-9}" text-anchor="middle" dominant-baseline="central" fill="#0F172A" font-size="28" font-weight="700" font-family="Plus Jakarta Sans, system-ui, sans-serif">{total}</text>'
-        + f'<text x="{cx}" y="{cy+11}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Total</text>'
-        + f'<text x="{cx}" y="{cy+25}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="10" font-weight="500" font-family="Inter, system-ui, sans-serif">Assessments</text>'
+        + f'<text x="{cx}" y="{cy-15}" text-anchor="middle" dominant-baseline="central" fill="#0F172A" font-size="28" font-weight="700" font-family="Plus Jakarta Sans, system-ui, sans-serif">{total}</text>'
+        + f'<text x="{cx}" y="{cy+6}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="11" font-weight="500" font-family="Inter, system-ui, sans-serif">Total</text>'
+        + f'<text x="{cx}" y="{cy+20}" text-anchor="middle" dominant-baseline="central" fill="#64748B" font-size="10" font-weight="500" font-family="Inter, system-ui, sans-serif">Assessments</text>'
         f'</g>'
         f'</svg>'
     )
     return svg
+
+
+def get_assessment_donut_segment_data(
+    in_prog: int,
+    not_completed: int,
+    completed: int,
+    cx: float = 100.0,
+    cy: float = 100.0,
+    R: float = 88.0,
+    r: float = 54.0,
+) -> list[dict]:
+    total = in_prog + not_completed + completed
+
+    lbl_ip = str(in_prog)
+    lbl_pe = str(not_completed)
+    lbl_co = str(completed)
+
+    # Order matches reference design: Green (top-right), Blue (bottom), Orange (top-left)
+    items = [
+        ("In Progress", in_prog, lbl_ip, "#10B981"),
+        ("Completed", completed, lbl_co, "#2563EB"),
+        ("Not Completed", not_completed, lbl_pe, "#F59E0B"),
+    ]
+
+    min_arc = 42.0
+    zero_count = sum(1 for _, cnt, _, _ in items if cnt == 0)
+
+    if total == 0 or zero_count == 3:
+        spans = [120.0, 120.0, 120.0]
+    elif zero_count > 0:
+        reserved_for_zero = zero_count * min_arc
+        remaining_deg = 360.0 - reserved_for_zero
+        non_zero_sum = sum(cnt for _, cnt, _, _ in items if cnt > 0)
+        spans = [min_arc if cnt == 0 else (cnt / non_zero_sum) * remaining_deg for _, cnt, _, _ in items]
+    else:
+        raw_spans = [(cnt / total) * 360.0 for _, cnt, _, _ in items]
+        small_count = sum(1 for s in raw_spans if s < min_arc)
+        if small_count > 0:
+            rem = 360.0 - (small_count * min_arc)
+            large_sum = sum(cnt for s, (_, cnt, _, _) in zip(raw_spans, items) if s >= min_arc)
+            spans = [min_arc if s < min_arc else (cnt / large_sum) * rem for s, (_, cnt, _, _) in zip(raw_spans, items)]
+        else:
+            spans = raw_spans
+
+    current_angle = 0.0  # Start at top (12 o'clock)
+    segments = []
+    r_mid = (R + r) / 2.0
+
+    for i, (status_name, cnt, lbl, fill_color) in enumerate(items):
+        span = spans[i]
+        a1 = current_angle
+        a2 = current_angle + span
+        current_angle += span
+
+        t1 = math.radians(a1 - 90)
+        t2 = math.radians(a2 - 90)
+
+        x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+        x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+        x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+        x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+
+        large = 1 if (span % 360) > 180 else 0
+
+        d = f"M {x1_o:.2f} {y1_o:.2f} A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} L {x2_i:.2f} {y2_i:.2f} A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+
+        mid = (a1 + a2) / 2.0
+        tm = math.radians(mid - 90)
+        tx, ty = cx + r_mid * math.cos(tm), cy + r_mid * math.sin(tm)
+
+        segments.append({
+            "status": status_name,
+            "count": cnt,
+            "label": lbl,
+            "fill": fill_color,
+            "d": d,
+            "tx": f"{tx:.1f}",
+            "ty": f"{ty:.1f}",
+        })
+
+    return segments
+
+
+def get_assessment_status_category(assessment: dict) -> str:
+    """Classifies an assessment into 'Completed', 'In Progress', or 'Not Completed' matching overview rules."""
+    lifecycle = str(assessment.get("status", "")).strip().casefold()
+    if lifecycle in {"completed", "done", "finished"}:
+        return "Completed"
+    if lifecycle in {"not completed"}:
+        return "Not Completed"
+
+    approval = str(assessment.get("approval_status", "")).strip().casefold()
+    facilitator_approvals = assessment.get("facilitator_approvals", {})
+    if approval:
+        is_approved = approval == "approved"
+    else:
+        is_approved = (
+            isinstance(facilitator_approvals, dict)
+            and any(
+                str(value).strip().casefold() == "approved"
+                for value in facilitator_approvals.values()
+            )
+        )
+    return "In Progress" if is_approved else "Not Completed"
 
 
 def count_assessments_by_status(assessments: list[dict]) -> dict[str, int]:
@@ -1036,6 +1140,30 @@ class AdminState(rx.State):
         return "assessment" if self.dashboard_assessments_completed_count == 1 else "assessments"
 
     @rx.var
+    def dashboard_assessments_not_completed_count(self) -> int:
+        return self.dashboard_assessments_pending_count
+
+    @rx.var
+    def dashboard_assessments_not_completed_subtitle(self) -> str:
+        return self.dashboard_assessments_pending_subtitle
+
+    @rx.var
+    def assessment_donut_segments(self) -> list[dict]:
+        return get_assessment_donut_segment_data(
+            self.dashboard_assessments_in_progress_count,
+            self.dashboard_assessments_pending_count,
+            self.dashboard_assessments_completed_count,
+        )
+
+    @rx.var
+    def assessment_donut_total_count(self) -> int:
+        return (
+            self.dashboard_assessments_in_progress_count
+            + self.dashboard_assessments_pending_count
+            + self.dashboard_assessments_completed_count
+        )
+
+    @rx.var
     def assessment_donut_svg_html(self) -> str:
         return generate_assessment_donut_svg(
             self.dashboard_assessments_in_progress_count,
@@ -1393,6 +1521,98 @@ class AdminState(rx.State):
             self.set_show_delete_assessment(False)
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
+
+    # =========================================================
+    # FACILITATOR APPROVAL STATUS DIALOG
+    # =========================================================
+    show_facilitator_approval_dialog: bool = False
+    approval_dialog_assessment_name: str = ""
+    approval_dialog_facilitators: list[dict] = []
+
+    def open_facilitator_approval_dialog(self, index: int):
+        """Populate and open the Facilitator Approval Status dialog for the given assessment."""
+        if not (0 <= index < len(self.assessments)):
+            return
+        a = self.assessments[index]
+        self.approval_dialog_assessment_name = a.get("name", "")
+        ids = list(a.get("facilitator_ids", []))
+        if not ids and a.get("facilitator_id"):
+            ids = [a["facilitator_id"]]
+        names = list(a.get("facilitator_names", []))
+        if not names and a.get("facilitator_name"):
+            names = [a["facilitator_name"]]
+        approvals = dict(a.get("facilitator_approvals", {}))
+        rows = []
+        for i, fid in enumerate(ids):
+            fname = names[i] if i < len(names) else fid
+            status = approvals.get(fid, a.get("approval_status", "pending"))
+            rows.append({"num": i + 1, "name": fname, "status": status})
+        # If no facilitator_ids, fall back to single facilitator
+        if not rows:
+            rows.append({
+                "num": 1,
+                "name": a.get("facilitator_name", "—"),
+                "status": a.get("approval_status", "pending"),
+            })
+        self.approval_dialog_facilitators = rows
+        self.show_facilitator_approval_dialog = True
+
+    def close_facilitator_approval_dialog(self):
+        self.show_facilitator_approval_dialog = False
+        self.approval_dialog_assessment_name = ""
+        self.approval_dialog_facilitators = []
+
+    def set_show_facilitator_approval_dialog(self, value: bool):
+        if not value:
+            self.close_facilitator_approval_dialog()
+        else:
+            self.show_facilitator_approval_dialog = True
+
+    # =========================================================
+    # ASSESSMENT OVERVIEW MODAL
+    # =========================================================
+    show_assessment_overview_modal: bool = False
+    assessment_overview_modal_status: str = ""
+    assessment_overview_modal_title: str = ""
+    assessment_overview_modal_subtitle: str = ""
+    assessment_overview_modal_items: list[dict] = []
+
+    def open_assessment_overview_modal(self, status: str):
+        self.assessment_overview_modal_status = status
+        if status == "In Progress":
+            self.assessment_overview_modal_title = "Assessments in Progress"
+            self.assessment_overview_modal_subtitle = "List of all assessments that are currently in progress."
+        elif status == "Completed":
+            self.assessment_overview_modal_title = "Assessments Completed"
+            self.assessment_overview_modal_subtitle = "List of all assessments that are currently completed."
+        else:
+            self.assessment_overview_modal_title = "Assessments Not Completed"
+            self.assessment_overview_modal_subtitle = "List of all assessments that are not completed."
+
+        filtered = [
+            a for a in self.assessments
+            if get_assessment_status_category(a) == status
+        ]
+        self.assessment_overview_modal_items = [
+            {
+                "num": str(i + 1),
+                "name": str(a.get("name", "Untitled Assessment")),
+                "status": status,
+            }
+            for i, a in enumerate(filtered)
+        ]
+        self.show_assessment_overview_modal = True
+
+    def close_assessment_overview_modal(self):
+        self.show_assessment_overview_modal = False
+        self.assessment_overview_modal_status = ""
+        self.assessment_overview_modal_items = []
+
+    def set_show_assessment_overview_modal(self, value: bool):
+        if not value:
+            self.close_assessment_overview_modal()
+        else:
+            self.show_assessment_overview_modal = True
 
     # =========================================================
     # FEEDBACK FORM BUILDER (UI-only)

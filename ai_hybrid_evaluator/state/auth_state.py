@@ -36,9 +36,9 @@ class AuthState(rx.State):
 
     # ---- Session (Admin) ----
     is_authenticated: bool = False
-    admin_name: str = ""
-    admin_employee_id: str = ""
-    admin_email: str = ""
+    admin_name: str = "Manisha"
+    admin_employee_id: str = "ADM004"
+    admin_email: str = "manisha@tvsmotor.com"
 
     # ---- Facilitator sign-in (Facilitator ID + Password created by Admin) ----
     facilitator_signin_id: str = ""
