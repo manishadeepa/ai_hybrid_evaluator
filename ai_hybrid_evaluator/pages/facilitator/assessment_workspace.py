@@ -1122,6 +1122,7 @@ def tests_tab_card(test: dict) -> rx.Component:
     t_date = test["date"]
     is_final = test["is_final"]
     has_file = test["has_qp"]
+    is_selected_test = FacilitatorState.selected_test_name == t_name
 
     return rx.box(
         rx.hstack(
@@ -1317,11 +1318,17 @@ def tests_tab_card(test: dict) -> rx.Component:
         ),
         padding="1.2em 1.4em",
         border_radius="12px",
-        background=COLORS["surface"],
-        border=f"1px solid {COLORS['line']}",
+        background=rx.cond(is_selected_test, "#FAF8FF", COLORS["surface"]),
+        border=rx.cond(
+            is_selected_test,
+            "1.5px solid #7C3AED",
+            f"1px solid {COLORS['line']}",
+        ),
         width="100%",
-        _hover={"border_color": "#CBD5E1", "background": "#FAFAFC"},
+        _hover={"border_color": rx.cond(is_selected_test, "#6D28D9", "#CBD5E1"), "background": rx.cond(is_selected_test, "#F5F0FF", "#FAFAFC")},
         transition="all 0.15s ease",
+        cursor="pointer",
+        on_click=FacilitatorState.select_test_card(t_name),
     )
 
 
@@ -1368,6 +1375,18 @@ def tests_tab() -> rx.Component:
         # Page header with + Add Test button
         rx.hstack(
             rx.vstack(
+                rx.text(
+                    rx.cond(
+                        FacilitatorState.selected_assessment_name != "",
+                        "Assessment: " + FacilitatorState.selected_assessment_name,
+                        "Assessment",
+                    ),
+                    font_family=FONT_BODY,
+                    size="1",
+                    weight="medium",
+                    color=COLORS["primary"],
+                    letter_spacing="0.01em",
+                ),
                 rx.text(
                     "Tests",
                     font_family=FONT_DISPLAY,
@@ -1418,6 +1437,18 @@ def tests_tab() -> rx.Component:
         rx.vstack(
             rx.hstack(
                 rx.vstack(
+                    rx.text(
+                        rx.cond(
+                            FacilitatorState.selected_assessment_name != "",
+                            "Assessment: " + FacilitatorState.selected_assessment_name,
+                            "Assessment",
+                        ),
+                        font_family=FONT_BODY,
+                        size="1",
+                        weight="medium",
+                        color=COLORS["primary"],
+                        letter_spacing="0.01em",
+                    ),
                     rx.text(
                         "Tests",
                         font_family=FONT_DISPLAY,

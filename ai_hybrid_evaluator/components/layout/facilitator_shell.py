@@ -133,6 +133,10 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
         (FacilitatorState.expanded_assessment == a["assessment_id"])
         | (FacilitatorState.expanded_assessment == a["name"])
     )
+    # True when this assessment is the active one (regardless of expand/collapse state)
+    is_selected = FacilitatorState.selected_assessment_name == a["name"]
+    # Highlight when expanded OR when selected-but-collapsed
+    is_highlighted = is_expanded | is_selected
     is_tests_active = (
         (FacilitatorState.selected_assessment_name == a["name"])
         & (FacilitatorState.active_workspace_tab == "tests")
@@ -140,13 +144,13 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
     return rx.vstack(
         # Assessment header row
         rx.hstack(
-            rx.icon("clipboard-check", size=14, color=rx.cond(is_expanded, COLORS["primary"], COLORS["slate"])),
+            rx.icon("clipboard-check", size=14, color=rx.cond(is_highlighted, COLORS["primary"], COLORS["slate"])),
             rx.text(
                 a["name"],
                 font_family=FONT_BODY,
                 size="1",
-                weight=rx.cond(is_expanded, "bold", "semibold"),
-                color=rx.cond(is_expanded, COLORS["primary"], "#1E293B"),
+                weight=rx.cond(is_highlighted, "bold", "semibold"),
+                color=rx.cond(is_highlighted, COLORS["primary"], "#1E293B"),
                 no_of_lines=1,
                 overflow="hidden",
                 text_overflow="ellipsis",
@@ -156,7 +160,7 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
             rx.icon(
                 rx.cond(is_expanded, "chevron-down", "chevron-right"),
                 size=12,
-                color=COLORS["slate"],
+                color=rx.cond(is_highlighted, COLORS["primary"], COLORS["slate"]),
             ),
             spacing="2",
             align_items="center",
@@ -164,9 +168,9 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
             padding="0.45em 0.8em 0.45em 1.2em",
             border_radius="8px",
             cursor="pointer",
-            background=rx.cond(is_expanded, "#F5F3FF", "transparent"),
+            background=rx.cond(is_highlighted, "#F5F3FF", "transparent"),
             on_click=FacilitatorState.toggle_assessment_expand(a["assessment_id"]),
-            _hover={"background": "#F8FAFC"},
+            _hover={"background": rx.cond(is_highlighted, "#EDE9FE", "#F8FAFC")},
             transition="all 0.15s ease",
         ),
         # Workspace sub-navigation (shown when assessment is expanded)
@@ -252,7 +256,8 @@ def sidebar_approved_assessment_item(a: dict) -> rx.Component:
 def facilitator_sidebar(active: str) -> rx.Component:
     return rx.box(
         rx.vstack(
-            nav_link("My Assessments", "/facilitator/dashboard", "layout-grid", active == "assessments"),
+            nav_link("Dashboard", "/facilitator/dashboard", "layout-dashboard", active == "dashboard"),
+            nav_link("My Assessments", "/facilitator/assessments", "clipboard-list", active == "assessments"),
             # ── Approved assessment quick-links with test sub-items (Scrollable) ───
             rx.box(
                 rx.cond(

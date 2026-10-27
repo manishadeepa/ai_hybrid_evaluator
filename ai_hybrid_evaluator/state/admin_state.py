@@ -21,7 +21,7 @@ from backend.repositories.facilitator_repository import FacilitatorRepository
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
     SHARED_CANDIDATES, SHARED_FACILITATORS,
-    get_facilitator_profile, get_candidate_profile,
+    get_facilitator_profile, get_candidate_profile, save_candidate_profile,
 )
 
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -299,10 +299,18 @@ class AdminState(rx.State):
 
         for candidate in backend_candidates:
             candidate_id = str(candidate["candidate_id"])
+            dept = str(candidate.get("department") or "")
+            if not dept:
+                try:
+                    prof = get_candidate_profile(candidate_id)
+                    dept = str(prof.get("department") or "")
+                except Exception:
+                    dept = ""
 
             loaded_candidates.append({
                 "emp_id": candidate_id,
                 "name": str(candidate["name"]),
+                "department": dept,
                 "email": str(candidate["email"]),
                 "password": str(candidate.get("password", "")),
             })
@@ -693,6 +701,7 @@ class AdminState(rx.State):
     show_add_candidate: bool = False
     new_candidate_id: str = ""
     new_candidate_name: str = ""
+    new_candidate_department: str = ""
     new_candidate_email: str = ""
     new_candidate_password: str = ""
     new_candidate_show_password: bool = False
@@ -703,6 +712,7 @@ class AdminState(rx.State):
         if not value:
             self.new_candidate_id = ""
             self.new_candidate_name = ""
+            self.new_candidate_department = ""
             self.new_candidate_email = ""
             self.new_candidate_password = ""
             self.new_candidate_show_password = False
@@ -716,6 +726,9 @@ class AdminState(rx.State):
 
     def set_new_candidate_name(self, value: str):
         self.new_candidate_name = value
+
+    def set_new_candidate_department(self, value: str):
+        self.new_candidate_department = value
 
     def set_new_candidate_email(self, value: str):
         self.new_candidate_email = value
@@ -761,9 +774,16 @@ class AdminState(rx.State):
             self.candidate_form_error = str(exc)
             return
 
+        if self.new_candidate_department.strip():
+            try:
+                save_candidate_profile(candidate_id, {"department": self.new_candidate_department.strip()})
+            except Exception:
+                pass
+
         new_c: Candidate = {
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
+            "department": self.new_candidate_department.strip(),
             "email": saved["email"],
             "password": str(saved.get("password", "")),
         }
@@ -783,6 +803,7 @@ class AdminState(rx.State):
     edit_candidate_index: int = -1
     edit_candidate_id: str = ""
     edit_candidate_name: str = ""
+    edit_candidate_department: str = ""
     edit_candidate_email: str = ""
     edit_candidate_password: str = ""
     edit_candidate_password_hash_only: bool = False
@@ -797,6 +818,7 @@ class AdminState(rx.State):
         self.edit_candidate_index = index
         self.edit_candidate_id = c["emp_id"]
         self.edit_candidate_name = c["name"]
+        self.edit_candidate_department = c.get("department", "")
         self.edit_candidate_email = c["email"]
         self.edit_candidate_password = str(c.get("password", ""))
         self.edit_candidate_password_hash_only = self.edit_candidate_id in self.candidate_password_hash_only_ids
@@ -808,6 +830,7 @@ class AdminState(rx.State):
         self.show_edit_candidate = value
         if not value:
             self.edit_candidate_index = -1
+            self.edit_candidate_department = ""
             self.edit_candidate_password = ""
             self.edit_candidate_password_hash_only = False
             self.edit_candidate_show_password = False
@@ -818,6 +841,9 @@ class AdminState(rx.State):
 
     def set_edit_candidate_name(self, value: str):
         self.edit_candidate_name = value
+
+    def set_edit_candidate_department(self, value: str):
+        self.edit_candidate_department = value
 
     def set_edit_candidate_email(self, value: str):
         self.edit_candidate_email = value
@@ -869,9 +895,17 @@ class AdminState(rx.State):
             self.edit_candidate_error = str(exc)
             return
 
+        dept = self.edit_candidate_department.strip()
+        if dept:
+            try:
+                save_candidate_profile(original_id, {"department": dept})
+            except Exception:
+                pass
+
         updated_candidate: Candidate = {
             "emp_id": saved["candidate_id"],
             "name": saved["name"],
+            "department": dept,
             "email": saved["email"],
             "password": str(saved.get("password", self.candidates[self.edit_candidate_index].get("password", ""))),
         }

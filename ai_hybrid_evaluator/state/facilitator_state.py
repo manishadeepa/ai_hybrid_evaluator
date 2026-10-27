@@ -9,6 +9,7 @@ and to enrich it with resolved candidate details.
 """
 
 import asyncio
+import math
 import base64
 import re
 from datetime import datetime, date
@@ -329,6 +330,81 @@ def _load_workspace_snapshot(scope, papers, upload_dir, ai_results, include_prog
                 (Path(upload_dir) / filename).exists() or (Path("uploaded_files") / filename).exists()))
     return snapshot
 
+
+
+def get_two_segment_donut_data(
+    val1: int,
+    val2: int,
+    name1: str,
+    name2: str,
+    col1: str = "#10B981",
+    col2: str = "#F59E0B",
+    cx: float = 100.0,
+    cy: float = 100.0,
+    R: float = 88.0,
+    r: float = 54.0,
+) -> list[dict]:
+    total = val1 + val2
+    items = [(name1, val1, str(val1), col1), (name2, val2, str(val2), col2)]
+    if total == 0:
+        spans = [180.0, 180.0]
+    elif val1 == 0:
+        spans = [0.0, 360.0]
+    elif val2 == 0:
+        spans = [360.0, 0.0]
+    else:
+        s1 = (val1 / total) * 360.0
+        s2 = (val2 / total) * 360.0
+        if s1 < 25.0:
+            s1 = 25.0
+            s2 = 335.0
+        elif s2 < 25.0:
+            s2 = 25.0
+            s1 = 335.0
+        spans = [s1, s2]
+    current_angle = 0.0
+    segments = []
+    r_mid = (R + r) / 2.0
+    for i, (name, cnt, lbl, fill_col) in enumerate(items):
+        span = spans[i]
+        if span == 0.0:
+            segments.append({"name": name, "count": cnt, "label": "", "fill": fill_col, "d": "", "tx": "0", "ty": "0"})
+            continue
+        a1 = current_angle
+        a2 = current_angle + span
+        current_angle += span
+        if span >= 359.9:
+            d = (
+                f"M {cx:.2f} {cy - R:.2f} "
+                f"A {R} {R} 0 1 1 {cx:.2f} {cy + R:.2f} "
+                f"A {R} {R} 0 1 1 {cx:.2f} {cy - R:.2f} "
+                f"M {cx:.2f} {cy - r:.2f} "
+                f"A {r} {r} 0 1 0 {cx:.2f} {cy + r:.2f} "
+                f"A {r} {r} 0 1 0 {cx:.2f} {cy - r:.2f} Z"
+            )
+            tx, ty = cx, cy - r_mid
+        else:
+            t1 = math.radians(a1 - 90)
+            t2 = math.radians(a2 - 90)
+            x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+            x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+            x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+            x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+            large = 1 if (span % 360) > 180 else 0
+            d = f"M {x1_o:.2f} {y1_o:.2f} A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} L {x2_i:.2f} {y2_i:.2f} A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+            mid = (a1 + a2) / 2.0
+            tm = math.radians(mid - 90)
+            tx, ty = cx + r_mid * math.cos(tm), cy + r_mid * math.sin(tm)
+        segments.append({
+            "name": name,
+            "count": cnt,
+            "label": lbl if cnt > 0 else "",
+            "fill": fill_col,
+            "d": d,
+            "tx": f"{tx:.1f}",
+            "ty": f"{ty:.1f}",
+        })
+    return segments
 
 class FacilitatorState(rx.State):
     # â”€â”€ Dashboard selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2513,6 +2589,324 @@ class FacilitatorState(rx.State):
                     unique_ids.add(cid)
         return len(unique_ids)
 
+    # ── Facilitator Dashboard State ─────────────────────────────────
+    dashboard_completion_assessment_name: str = ""
+    dashboard_evaluation_assessment_name: str = ""
+    dashboard_overview_search: str = ""
+
+    # Modals
+    show_all_assessments_modal: bool = False
+    show_completion_breakdown_modal: bool = False
+    completion_breakdown_status: str = ""  # "Completed" or "Not Completed"
+    show_evaluation_breakdown_modal: bool = False
+    evaluation_breakdown_status: str = ""  # "Evaluations Completed" or "Pending Evaluations"
+
+    def set_dashboard_completion_assessment_name(self, value: str):
+        self.dashboard_completion_assessment_name = value
+
+    def set_dashboard_evaluation_assessment_name(self, value: str):
+        self.dashboard_evaluation_assessment_name = value
+
+    def set_dashboard_overview_search(self, value: str):
+        self.dashboard_overview_search = value
+
+    def open_all_assessments_modal(self):
+        self.show_all_assessments_modal = True
+
+    def close_all_assessments_modal(self):
+        self.show_all_assessments_modal = False
+
+    def set_show_all_assessments_modal(self, val: bool):
+        self.show_all_assessments_modal = val
+
+    def open_completion_breakdown_modal(self, status: str):
+        self.completion_breakdown_status = status
+        self.show_completion_breakdown_modal = True
+
+    def close_completion_breakdown_modal(self):
+        self.show_completion_breakdown_modal = False
+
+    def set_show_completion_breakdown_modal(self, val: bool):
+        self.show_completion_breakdown_modal = val
+
+    def open_evaluation_breakdown_modal(self, status: str):
+        self.evaluation_breakdown_status = status
+        self.show_evaluation_breakdown_modal = True
+
+    def close_evaluation_breakdown_modal(self):
+        self.show_evaluation_breakdown_modal = False
+
+    def set_show_evaluation_breakdown_modal(self, val: bool):
+        self.show_evaluation_breakdown_modal = val
+
+    @rx.var
+    async def dashboard_assessment_names(self) -> list[str]:
+        all_mine = await self.my_assessments
+        return [a["name"] for a in all_mine]
+
+    @rx.var
+    async def effective_completion_assessment_name(self) -> str:
+        names = await self.dashboard_assessment_names
+        if self.dashboard_completion_assessment_name in names:
+            return self.dashboard_completion_assessment_name
+        return names[0] if names else ""
+
+    @rx.var
+    async def effective_evaluation_assessment_name(self) -> str:
+        names = await self.dashboard_assessment_names
+        if self.dashboard_evaluation_assessment_name in names:
+            return self.dashboard_evaluation_assessment_name
+        return names[0] if names else ""
+
+    @rx.var(cache=True)
+    async def dashboard_assessments_overview(self) -> list[dict]:
+        all_mine = await self.my_assessments
+        if not all_mine:
+            return []
+        from backend.services.evaluation_result_service import EvaluationResultService
+        from backend.services.assessment_progress_service import AssessmentProgressService
+        from backend.repositories.json_repository import repository_read_scope
+        service = EvaluationResultService()
+        rows = []
+        with repository_read_scope():
+            for a in all_mine:
+                aid = a.get("assessment_id", "")
+                name = a.get("name", "")
+                all_tests = a.get("all_tests", [])
+                total_tests = len(all_tests)
+                if aid:
+                    try:
+                        prog = AssessmentProgressService(service.assessments).get_progress(aid, self.ai_results_per_candidate)
+                    except Exception:
+                        prog = {}
+                    tot = prog.get("total_candidate_tests", 0)
+                    sub = prog.get("submitted_candidate_tests", 0)
+                    ev = prog.get("evaluated_candidate_tests", 0)
+                    not_comp = tot - sub
+                    pend = sub - ev
+                    
+                    test_stats = {}
+                    for t in all_tests:
+                        test_stats[t] = {
+                            "test_name": t,
+                            "completed": 0,
+                            "not_completed": 0,
+                            "eval_completed": 0,
+                            "pending_eval": 0,
+                        }
+                    for p in prog.get("pairs", []):
+                        t = p.get("test_name", "")
+                        if t not in test_stats:
+                            test_stats[t] = {
+                                "test_name": t,
+                                "completed": 0,
+                                "not_completed": 0,
+                                "eval_completed": 0,
+                                "pending_eval": 0,
+                            }
+                        if p.get("submitted", False):
+                            test_stats[t]["completed"] += 1
+                            if p.get("evaluated", False):
+                                test_stats[t]["eval_completed"] += 1
+                            else:
+                                test_stats[t]["pending_eval"] += 1
+                        else:
+                            test_stats[t]["not_completed"] += 1
+                else:
+                    tot, sub, ev, not_comp, pend = 0, 0, 0, 0, 0
+                    test_stats = {t: {"test_name": t, "completed": 0, "not_completed": 0, "eval_completed": 0, "pending_eval": 0} for t in all_tests}
+                rows.append({
+                    "assessment_id": aid,
+                    "assessment_name": name,
+                    "total_tests": total_tests,
+                    "candidate_tests_completed": sub,
+                    "not_completed": not_comp,
+                    "pending_evaluations": pend,
+                    "evaluations_completed": ev,
+                    "total_candidate_tests": tot,
+                    "test_stats": list(test_stats.values()),
+                })
+        return rows
+
+    @rx.var(cache=True)
+    async def filtered_dashboard_overview(self) -> list[dict]:
+        overview = await self.dashboard_assessments_overview
+        q = self.dashboard_overview_search.strip().lower()
+        if not q:
+            return overview
+        return [r for r in overview if q in r["assessment_name"].lower()]
+
+    @rx.var
+    async def all_assessments_modal_items(self) -> list[dict]:
+        all_mine = await self.my_assessments
+        return [
+            {
+                "index": str(i + 1),
+                "name": a["name"],
+                "total_tests": str(len(a.get("all_tests", []))),
+            }
+            for i, a in enumerate(all_mine)
+        ]
+
+    @rx.var
+    async def candidate_completion_chart_data(self) -> dict:
+        overview = await self.dashboard_assessments_overview
+        target_name = await self.effective_completion_assessment_name
+        match = next((r for r in overview if r["assessment_name"] == target_name), None)
+        if not match and overview:
+            match = overview[0]
+        if match:
+            tot = match["total_candidate_tests"]
+            comp = match["candidate_tests_completed"]
+            not_comp = match["not_completed"]
+            segments = get_two_segment_donut_data(comp, not_comp, "Completed", "Not Completed", "#10B981", "#F59E0B")
+            return {
+                "assessment_name": match["assessment_name"],
+                "total": tot,
+                "completed": comp,
+                "not_completed": not_comp,
+                "segments": segments,
+            }
+        return {
+            "assessment_name": "",
+            "total": 0,
+            "completed": 0,
+            "not_completed": 0,
+            "segments": get_two_segment_donut_data(0, 0, "Completed", "Not Completed", "#10B981", "#F59E0B"),
+        }
+
+    @rx.var
+    async def candidate_completion_donut_segments(self) -> list[dict]:
+        data = await self.candidate_completion_chart_data
+        return data.get("segments", [])
+
+    @rx.var
+    async def candidate_completion_total_count(self) -> int:
+        data = await self.candidate_completion_chart_data
+        return data.get("total", 0)
+
+    @rx.var
+    async def candidate_completion_completed_count(self) -> int:
+        data = await self.candidate_completion_chart_data
+        return data.get("completed", 0)
+
+    @rx.var
+    async def candidate_completion_not_completed_count(self) -> int:
+        data = await self.candidate_completion_chart_data
+        return data.get("not_completed", 0)
+
+    @rx.var
+    async def evaluation_status_chart_data(self) -> dict:
+        overview = await self.dashboard_assessments_overview
+        target_name = await self.effective_evaluation_assessment_name
+        match = next((r for r in overview if r["assessment_name"] == target_name), None)
+        if not match and overview:
+            match = overview[0]
+        if match:
+            tot = match["candidate_tests_completed"]
+            ev = match["evaluations_completed"]
+            pend = match["pending_evaluations"]
+            segments = get_two_segment_donut_data(ev, pend, "Evaluations Completed", "Pending Evaluations", "#10B981", "#F59E0B")
+            return {
+                "assessment_name": match["assessment_name"],
+                "total": tot,
+                "evaluations_completed": ev,
+                "pending_evaluations": pend,
+                "segments": segments,
+            }
+        return {
+            "assessment_name": "",
+            "total": 0,
+            "evaluations_completed": 0,
+            "pending_evaluations": 0,
+            "segments": get_two_segment_donut_data(0, 0, "Evaluations Completed", "Pending Evaluations", "#10B981", "#F59E0B"),
+        }
+
+    @rx.var
+    async def evaluation_status_donut_segments(self) -> list[dict]:
+        data = await self.evaluation_status_chart_data
+        return data.get("segments", [])
+
+    @rx.var
+    async def evaluation_status_total_count(self) -> int:
+        data = await self.evaluation_status_chart_data
+        return data.get("total", 0)
+
+    @rx.var
+    async def evaluation_status_completed_count(self) -> int:
+        data = await self.evaluation_status_chart_data
+        return data.get("evaluations_completed", 0)
+
+    @rx.var
+    async def evaluation_status_pending_count(self) -> int:
+        data = await self.evaluation_status_chart_data
+        return data.get("pending_evaluations", 0)
+
+    @rx.var
+    async def completion_modal_title(self) -> str:
+        name = await self.effective_completion_assessment_name
+        status = self.completion_breakdown_status
+        return f"{name} - {status} Candidate Tests"
+
+    @rx.var
+    def completion_modal_col_name(self) -> str:
+        if self.completion_breakdown_status == "Completed":
+            return "Completed Candidate Tests"
+        return "Not Completed Candidate Tests"
+
+    @rx.var
+    async def completion_modal_items(self) -> list[dict]:
+        overview = await self.dashboard_assessments_overview
+        target_name = await self.effective_completion_assessment_name
+        match = next((r for r in overview if r["assessment_name"] == target_name), None)
+        if not match and overview:
+            match = overview[0]
+        if not match:
+            return []
+        test_stats = match.get("test_stats", [])
+        status = self.completion_breakdown_status
+        return [
+            {
+                "index": str(i + 1),
+                "test_name": s["test_name"],
+                "count": str(s["completed"] if status == "Completed" else s["not_completed"]),
+            }
+            for i, s in enumerate(test_stats)
+        ]
+
+    @rx.var
+    async def evaluation_modal_title(self) -> str:
+        name = await self.effective_evaluation_assessment_name
+        status = self.evaluation_breakdown_status
+        return f"{name} - {status}"
+
+    @rx.var
+    def evaluation_modal_col_name(self) -> str:
+        if self.evaluation_breakdown_status == "Evaluations Completed":
+            return "Evaluations Completed"
+        return "Pending Evaluations"
+
+    @rx.var
+    async def evaluation_modal_items(self) -> list[dict]:
+        overview = await self.dashboard_assessments_overview
+        target_name = await self.effective_evaluation_assessment_name
+        match = next((r for r in overview if r["assessment_name"] == target_name), None)
+        if not match and overview:
+            match = overview[0]
+        if not match:
+            return []
+        test_stats = match.get("test_stats", [])
+        status = self.evaluation_breakdown_status
+        return [
+            {
+                "index": str(i + 1),
+                "test_name": s["test_name"],
+                "count": str(s["eval_completed"] if status == "Evaluations Completed" else s["pending_eval"]),
+            }
+            for i, s in enumerate(test_stats)
+        ]
+
+
     async def open_assessment(self, index: int):
         """Compatibility entry point: the index belongs to the filtered dashboard."""
         error = await self.load_persisted_assessment_workspace()
@@ -2604,6 +2998,13 @@ class FacilitatorState(rx.State):
         self.selected_evaluation_test = test_name
         return event
 
+    def select_test_card(self, test_name: str):
+        """Highlight the given test card on the Tests page without navigating.
+        Sets selected_test_name (and keeps evaluation test in sync) so the
+        card border/background reflects the active test.
+        """
+        self.selected_test_name = test_name
+        self.selected_evaluation_test = test_name
 
     async def approve_assessment(self, assessment_name: str):
         """Mark the assessment as approved in AdminState for the currently logged-in facilitator."""

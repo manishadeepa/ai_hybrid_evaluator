@@ -8,9 +8,10 @@ from typing import TypedDict
 from backend.repositories.json_repository import JSONRepository
 
 
-class Candidate(TypedDict):
+class Candidate(TypedDict, total=False):
     name: str
     emp_id: str
+    department: str
     email: str
     password: str
 

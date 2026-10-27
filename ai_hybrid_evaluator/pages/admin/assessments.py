@@ -299,7 +299,7 @@ def facilitator_approval_dialog() -> rx.Component:
 def assessment_status_badge(status: str) -> rx.Component:
     """Shows the assessment status badge: Not Completed, In Progress, or Completed."""
     in_progress_badge = rx.hstack(
-        rx.icon("loader-2", size=13, color="#175CD3"),
+        rx.icon("loader-circle", size=13, color="#175CD3"),
         rx.text("In Progress", font_family=FONT_BODY, size="1", weight="medium", color="#175CD3"),
         spacing="1",
         align_items="center",

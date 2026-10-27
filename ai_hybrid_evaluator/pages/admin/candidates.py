@@ -10,6 +10,15 @@ def candidate_row(c: dict, idx: int) -> rx.Component:
     return rx.table.row(
         rx.table.cell(c["emp_id"], font_family=FONT_BODY, color=COLORS["slate"]),
         rx.table.cell(c["name"], font_family=FONT_BODY, color=COLORS["ink"]),
+        rx.table.cell(
+            rx.cond(
+                c["department"] != "",
+                c["department"],
+                "—",
+            ),
+            font_family=FONT_BODY,
+            color=COLORS["slate"],
+        ),
         rx.table.cell(c["email"], font_family=FONT_BODY, color=COLORS["slate"]),
         rx.table.cell(
             rx.hstack(
@@ -76,7 +85,7 @@ def add_candidate_dialog() -> rx.Component:
             rx.vstack(
                 rx.text("Employee ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
                 rx.input(
-                    placeholder="e.g. CAND-2031",
+                    placeholder="Enter eid",
                     value=AdminState.new_candidate_id,
                     on_change=AdminState.set_new_candidate_id,
                     width="100%",
@@ -86,6 +95,13 @@ def add_candidate_dialog() -> rx.Component:
                     placeholder="Full Name",
                     value=AdminState.new_candidate_name,
                     on_change=AdminState.set_new_candidate_name,
+                    width="100%",
+                ),
+                rx.text("Department", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    placeholder="Department",
+                    value=AdminState.new_candidate_department,
+                    on_change=AdminState.set_new_candidate_department,
                     width="100%",
                 ),
                 rx.text("Email ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
@@ -168,6 +184,13 @@ def edit_candidate_dialog() -> rx.Component:
                 rx.input(
                     value=AdminState.edit_candidate_name,
                     on_change=AdminState.set_edit_candidate_name,
+                    width="100%",
+                ),
+                rx.text("Department", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
+                rx.input(
+                    placeholder="Department",
+                    value=AdminState.edit_candidate_department,
+                    on_change=AdminState.set_edit_candidate_department,
                     width="100%",
                 ),
                 rx.text("Email ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY, padding_top="0.9em"),
@@ -414,10 +437,11 @@ def candidates_page() -> rx.Component:
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
-                        rx.table.column_header_cell("EID", width="15%"),
+                        rx.table.column_header_cell("EID", width="12%"),
                         rx.table.column_header_cell("Name", width="20%"),
-                        rx.table.column_header_cell("Email", width="35%"),
-                        rx.table.column_header_cell("Actions", width="30%"),
+                        rx.table.column_header_cell("Department", width="18%"),
+                        rx.table.column_header_cell("Email", width="26%"),
+                        rx.table.column_header_cell("Actions", width="24%"),
                     ),
                 ),
                 rx.table.body(rx.foreach(AdminState.candidates, candidate_row)),

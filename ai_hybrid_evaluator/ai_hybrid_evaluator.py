@@ -16,6 +16,7 @@ from ai_hybrid_evaluator.state.admin_state import AdminFeedbackState, AdminState
 from ai_hybrid_evaluator.theme import FONT_STYLESHEETS
 from ai_hybrid_evaluator.pages.auth.facilitator_login import facilitator_login_page
 from ai_hybrid_evaluator.pages.facilitator.dashboard import facilitator_dashboard_page
+from ai_hybrid_evaluator.pages.facilitator.assessments import facilitator_assessments_page
 from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import assessment_workspace_page
 from ai_hybrid_evaluator.pages.facilitator.profile import facilitator_profile_page
 from ai_hybrid_evaluator.pages.facilitator.feedback import facilitator_feedback_page
@@ -93,6 +94,13 @@ title="Facilitator Sign In",
 app.add_page(
 facilitator_dashboard_page,
 route="/facilitator/dashboard",
+title="Facilitator Dashboard",
+on_load=FacilitatorState.load_persisted_assessment_workspace,
+)
+
+app.add_page(
+facilitator_assessments_page,
+route="/facilitator/assessments",
 title="My Assessments",
 on_load=FacilitatorState.load_persisted_assessment_workspace,
 )
