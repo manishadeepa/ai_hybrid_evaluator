@@ -21,11 +21,14 @@ class SettingsState(rx.State):
     ai_conn_model: str = ""
     ai_conn_api_version: str = ""
     ai_conn_cert: str = ""
-    _ai_conn_api_key: str = ""
+    ai_conn_api_key: str = ""
     ai_conn_show_key: bool = False   # toggle API key visibility in the form
 
     # ── Saved AI Connection (populated or default active) ────
     ai_saved_name: str = ""
+    ai_saved_connection_id: str = ""
+    ai_conn_editing_existing: bool = False
+    ai_conn_edit_id: str = ""
     ai_saved_endpoint: str = ""
     ai_saved_model: str = ""
     ai_saved_api_version: str = ""
@@ -40,6 +43,8 @@ class SettingsState(rx.State):
 
     def open_selection_dialog(self):
         self.show_selection_dialog = False
+        self.ai_conn_editing_existing = False
+        self.ai_conn_edit_id = ""
         self.active_view = "select"
 
     def choose_create_new(self):
@@ -56,7 +61,7 @@ class SettingsState(rx.State):
     def set_ai_conn_model(self, v: str): self.ai_conn_model = v
     def set_ai_conn_api_version(self, v: str): self.ai_conn_api_version = v
     def set_ai_conn_cert(self, v: str): self.ai_conn_cert = v
-    def set_ai_conn_api_key(self, value: str): self._ai_conn_api_key = value
+    def set_ai_conn_api_key(self, value: str): self.ai_conn_api_key = value
     def toggle_ai_conn_show_key(self): self.ai_conn_show_key = not self.ai_conn_show_key
     def toggle_ai_saved_show_key(self): self.ai_saved_show_key = not self.ai_saved_show_key
 
@@ -69,6 +74,7 @@ class SettingsState(rx.State):
         if not connection:
             return
 
+        self.ai_saved_connection_id = connection.get("connection_id", "")
         self.ai_saved_name = connection.get("name", "")
         self.ai_saved_endpoint = connection.get("endpoint", "") or "OpenAI"
         self.ai_saved_model = connection.get("model", "") or "Not configured"
@@ -84,7 +90,7 @@ class SettingsState(rx.State):
             "model": self.ai_conn_model,
             "api_version": self.ai_conn_api_version,
             "cert_path": self.ai_conn_cert,
-            "api_key": self._ai_conn_api_key,
+            "api_key": self.ai_conn_api_key,
         }
 
     def ai_test_connection(self):
@@ -111,7 +117,10 @@ class SettingsState(rx.State):
                 self.ai_saved_status = "success"
                 return rx.toast.success("Connection test succeeded.")
 
-            result = service.test_connection(form)
+            result = service.test_connection(
+                form,
+                connection_id=(self.ai_conn_edit_id if self.ai_conn_editing_existing else None),
+            )
             self.ai_saved_last_tested = result["last_tested_at"]
             self.ai_saved_status = "success"
             return rx.toast.success("Connection test succeeded.")
@@ -121,15 +130,18 @@ class SettingsState(rx.State):
 
     def ai_save_and_use(self):
         form = self._connection_form()
-        if not form.get("name") and self.ai_saved_name:
+        editing_existing = self.ai_conn_editing_existing and bool(self.ai_conn_edit_id)
+        if not form.get("name") and self.ai_saved_name and not editing_existing:
             return rx.toast.success("Existing connection is already saved and active.")
         try:
             record = AIConnectionService().save_and_activate(
-                self._connection_form()
+                form,
+                connection_id=(self.ai_conn_edit_id if editing_existing else None),
             )
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
 
+        self.ai_saved_connection_id = record["connection_id"]
         self.ai_saved_name = record["name"]
         self.ai_saved_endpoint = record["endpoint"] or "OpenAI"
         self.ai_saved_model = record["model"] or "Not configured"
@@ -140,13 +152,15 @@ class SettingsState(rx.State):
         self.ai_saved_last_tested = record["last_tested_at"]
         self.ai_saved_status = "success"
 
-        self._ai_conn_api_key = ""
+        self.ai_conn_api_key = ""
         self.ai_conn_name = ""
         self.ai_conn_endpoint = ""
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
         self.ai_conn_show_key = False
+        self.ai_conn_editing_existing = False
+        self.ai_conn_edit_id = ""
         self.active_view = "current"
         self.show_selection_dialog = False
 
@@ -155,15 +169,18 @@ class SettingsState(rx.State):
         )
 
     def ai_cancel_form(self):
-        """Clear the new-connection form and return to selection."""
+        """Discard the form and return to the prior connection view."""
+        returning_to_existing = self.ai_conn_editing_existing
         self.ai_conn_name = ""
         self.ai_conn_endpoint = ""
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
-        self._ai_conn_api_key = ""
+        self.ai_conn_api_key = ""
         self.ai_conn_show_key = False
-        self.active_view = "select"
+        self.ai_conn_editing_existing = False
+        self.ai_conn_edit_id = ""
+        self.active_view = "current" if returning_to_existing else "select"
         self.show_selection_dialog = False
 
     def ai_replace_connection(self):
@@ -173,21 +190,36 @@ class SettingsState(rx.State):
         self.ai_conn_model = ""
         self.ai_conn_api_version = ""
         self.ai_conn_cert = ""
-        self._ai_conn_api_key = ""
+        self.ai_conn_api_key = ""
         self.ai_conn_show_key = False
+        self.ai_conn_editing_existing = False
+        self.ai_conn_edit_id = ""
         self.active_view = "new"
         self.show_selection_dialog = False
 
     def ai_edit_connection(self):
-        """Transition from existing connection to the edit form with current values."""
+        """Unlock the active connection fields for editing."""
+        if not self.ai_saved_connection_id:
+            self.load_active_connection()
+        if not self.ai_saved_connection_id:
+            return rx.toast.error("No saved AI connection is available to edit.")
+        self.ai_conn_editing_existing = True
+        self.ai_conn_edit_id = self.ai_saved_connection_id
         self.ai_conn_name = self.ai_saved_name
         self.ai_conn_endpoint = self.ai_saved_endpoint if self.ai_saved_endpoint != "OpenAI" else ""
         self.ai_conn_model = self.ai_saved_model if self.ai_saved_model != "Not configured" else ""
         self.ai_conn_api_version = self.ai_saved_api_version if self.ai_saved_api_version != "Not applicable" else ""
         self.ai_conn_cert = self.ai_saved_cert if self.ai_saved_cert != "Not configured" else ""
-        self._ai_conn_api_key = ""
+        try:
+            self.ai_conn_api_key = AIConnectionService().get_decrypted_api_key(
+                self.ai_saved_connection_id
+            )
+        except (ValueError, OSError) as exc:
+            self.ai_conn_editing_existing = False
+            self.ai_conn_edit_id = ""
+            return rx.toast.error(str(exc))
         self.ai_conn_show_key = False
-        self.active_view = "new"
+        self.active_view = "current"
         self.show_selection_dialog = False
 
     # ── Access Control State ──────────────────────────────────
@@ -894,7 +926,6 @@ def _new_connection_card() -> rx.Component:
                 rx.hstack(
                     rx.input(
                         placeholder="Enter API key",
-
                         on_change=SettingsState.set_ai_conn_api_key,
                         type=rx.cond(SettingsState.ai_conn_show_key, "text", "password"),
                         flex="1", size="3",
@@ -1003,8 +1034,92 @@ def _new_connection_card() -> rx.Component:
 # 2. Existing AI Connection Card
 # ─────────────────────────────────────────────────────────────
 
+def _current_connection_edit_field(label: str, saved_value, edit_value, setter) -> rx.Component:
+    """Render a saved value read-only until Edit unlocks the current card."""
+    return rx.cond(
+        SettingsState.ai_conn_editing_existing,
+        rx.vstack(
+            _ai_field_label(label, required=label == "Connection Name"),
+            rx.input(
+                value=edit_value,
+                on_change=setter,
+                width="100%", size="3", background="white",
+                border=f"1.5px solid {COLORS['line']}",
+                _focus={"border_color": COLORS["primary"],
+                        "box_shadow": f"0 0 0 3px {COLORS['primary_soft']}"},
+                font_family=FONT_BODY,
+            ),
+            spacing="1", width="100%", align_items="stretch",
+        ),
+        _ai_display_field(label, saved_value),
+    )
+
+
+def _current_connection_api_key() -> rx.Component:
+    """Keep the existing secret masked; let admins optionally replace it inline."""
+    return rx.cond(
+        SettingsState.ai_conn_editing_existing,
+        rx.vstack(
+            _ai_field_label("API Key"),
+            rx.text(
+                "The saved API key is loaded in the password field. It remains masked unless you select the eye icon.",
+                font_family=FONT_BODY, size="1", color=COLORS["slate"],
+            ),
+            rx.hstack(
+                rx.input(
+                    value=SettingsState.ai_conn_api_key,
+                    placeholder="Enter API key",
+                    on_change=SettingsState.set_ai_conn_api_key,
+                    type=rx.cond(SettingsState.ai_conn_show_key, "text", "password"),
+                    flex="1", size="3", background="white",
+                    border=f"1.5px solid {COLORS['line']}",
+                    _focus={"border_color": COLORS["primary"],
+                            "box_shadow": f"0 0 0 3px {COLORS['primary_soft']}"},
+                    font_family=FONT_BODY,
+                ),
+                rx.icon_button(
+                    rx.cond(SettingsState.ai_conn_show_key,
+                            rx.icon("eye-off", size=16), rx.icon("eye", size=16)),
+                    on_click=SettingsState.toggle_ai_conn_show_key,
+                    variant="ghost", color=COLORS["slate"], size="3", cursor="pointer",
+                ),
+                spacing="1", width="100%", align_items="center",
+            ),
+            spacing="1", width="100%", align_items="stretch",
+        ),
+        rx.vstack(
+            rx.text("API Key", font_family=FONT_BODY, size="2",
+                    weight="medium", color=COLORS["ink"]),
+            rx.hstack(
+                rx.box(
+                    rx.cond(
+                        SettingsState.ai_saved_show_key,
+                        rx.text("(Key stored securely — not displayable)",
+                                font_family=FONT_BODY, size="2", color=COLORS["slate"],
+                                font_style="italic"),
+                        rx.text("••••••••••••••••••••••••",
+                                font_family=FONT_BODY, size="2", color=COLORS["ink"],
+                                letter_spacing="2px"),
+                    ),
+                    background="#F8FAFC", border=f"1.5px solid {COLORS['line']}",
+                    border_radius="8px", padding="0.65em 0.9em", flex="1",
+                ),
+                rx.icon_button(
+                    rx.cond(SettingsState.ai_saved_show_key,
+                            rx.icon("eye-off", size=16), rx.icon("eye", size=16)),
+                    on_click=SettingsState.toggle_ai_saved_show_key,
+                    variant="ghost", color=COLORS["slate"], size="3", cursor="pointer",
+                    _hover={"background": COLORS["canvas"]},
+                ),
+                spacing="1", width="100%", align_items="center",
+            ),
+            spacing="1", width="100%", align_items="stretch",
+        ),
+    )
+
+
 def _current_connection_card() -> rx.Component:
-    """Read-only card shown when user chooses Existing AI Connection."""
+    """Show the existing connection and unlock its fields inline when Edit is clicked."""
     return rx.box(
         rx.vstack(
             # ── Card header ──────────────────────────────────────
@@ -1037,83 +1152,40 @@ def _current_connection_card() -> rx.Component:
             ),
 
             # ── 1. Connection Name ────────────────────────────────
-            _ai_display_field("Connection Name", SettingsState.ai_saved_name),
+            _current_connection_edit_field(
+                "Connection Name", SettingsState.ai_saved_name,
+                SettingsState.ai_conn_name, SettingsState.set_ai_conn_name,
+            ),
 
             # ── 2. Endpoint ───────────────────────────────────────
-            _ai_display_field(
+            _current_connection_edit_field(
                 "Endpoint",
-                rx.cond(
-                    SettingsState.ai_saved_endpoint != "",
-                    SettingsState.ai_saved_endpoint,
-                    "Not configured",
-                ),
+                rx.cond(SettingsState.ai_saved_endpoint != "", SettingsState.ai_saved_endpoint, "Not configured"),
+                SettingsState.ai_conn_endpoint, SettingsState.set_ai_conn_endpoint,
             ),
 
             # ── 3. Model / Deployment ─────────────────────────────
-            _ai_display_field(
+            _current_connection_edit_field(
                 "Model / Deployment",
-                rx.cond(
-                    SettingsState.ai_saved_model != "",
-                    SettingsState.ai_saved_model,
-                    "Not configured",
-                ),
+                rx.cond(SettingsState.ai_saved_model != "", SettingsState.ai_saved_model, "Not configured"),
+                SettingsState.ai_conn_model, SettingsState.set_ai_conn_model,
             ),
 
             # ── 4. API Version ────────────────────────────────────
-            _ai_display_field(
+            _current_connection_edit_field(
                 "API Version",
-                rx.cond(
-                    SettingsState.ai_saved_api_version != "",
-                    SettingsState.ai_saved_api_version,
-                    "Not configured",
-                ),
+                rx.cond(SettingsState.ai_saved_api_version != "", SettingsState.ai_saved_api_version, "Not configured"),
+                SettingsState.ai_conn_api_version, SettingsState.set_ai_conn_api_version,
             ),
 
             # ── 5. CA Certificate ─────────────────────────────────
-            _ai_display_field("CA Certificate", SettingsState.ai_saved_cert),
-
-            # ── 6. Masked API Key ─────────────────────────────────
-            rx.vstack(
-                rx.text("API Key", font_family=FONT_BODY, size="2",
-                        weight="medium", color=COLORS["ink"]),
-                rx.hstack(
-                    rx.box(
-                        rx.cond(
-                            SettingsState.ai_saved_show_key,
-                            rx.text("(Key stored securely — not displayable)",
-                                    font_family=FONT_BODY, size="2",
-                                    color=COLORS["slate"],
-                                    font_style="italic"),
-                            rx.text("••••••••••••••••••••••••",
-                                    font_family=FONT_BODY, size="2",
-                                    color=COLORS["ink"],
-                                    letter_spacing="2px"),
-                        ),
-                        background="#F8FAFC",
-                        border=f"1.5px solid {COLORS['line']}",
-                        border_radius="8px",
-                        padding="0.65em 0.9em",
-                        flex="1",
-                    ),
-                    rx.icon_button(
-                        rx.cond(
-                            SettingsState.ai_saved_show_key,
-                            rx.icon("eye-off", size=16),
-                            rx.icon("eye", size=16),
-                        ),
-                        on_click=SettingsState.toggle_ai_saved_show_key,
-                        variant="ghost",
-                        color=COLORS["slate"],
-                        size="3",
-                        cursor="pointer",
-                        _hover={"background": COLORS["canvas"]},
-                    ),
-                    spacing="1",
-                    width="100%",
-                    align_items="center",
-                ),
-                spacing="1", width="100%", align_items="stretch",
+            _current_connection_edit_field(
+                "CA Certificate", SettingsState.ai_saved_cert,
+                SettingsState.ai_conn_cert, SettingsState.set_ai_conn_cert,
             ),
+
+            # ── 6. API Key ─────────────────────────────────────────
+            _current_connection_api_key(),
 
             # ── 7. Last Tested ────────────────────────────────────
             _ai_display_field("Last Tested", SettingsState.ai_saved_last_tested),
@@ -1176,18 +1248,23 @@ def _current_connection_card() -> rx.Component:
 
             # ── Action buttons ────────────────────────────────────
             rx.hstack(
-                rx.button(
-                    rx.icon("pencil", size=14),
-                    "Edit",
-                    on_click=SettingsState.ai_edit_connection,
-                    variant="outline",
-                    color=COLORS["ink"],
-                    border=f"1.5px solid {COLORS['line']}",
-                    background="white",
-                    font_family=FONT_BODY,
-                    size="2",
-                    cursor="pointer",
-                    _hover={"background": COLORS["canvas"]},
+                rx.cond(
+                    SettingsState.ai_conn_editing_existing,
+                    rx.button(
+                        "Cancel",
+                        on_click=SettingsState.ai_cancel_form,
+                        variant="outline", color=COLORS["slate"],
+                        border=f"1.5px solid {COLORS['line']}", background="white",
+                        font_family=FONT_BODY, size="2", cursor="pointer",
+                    ),
+                    rx.button(
+                        rx.icon("pencil", size=14), "Edit",
+                        on_click=SettingsState.ai_edit_connection,
+                        variant="outline", color=COLORS["ink"],
+                        border=f"1.5px solid {COLORS['line']}", background="white",
+                        font_family=FONT_BODY, size="2", cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                    ),
                 ),
                 rx.button(
                     rx.icon("radio", size=14),
@@ -1203,14 +1280,11 @@ def _current_connection_card() -> rx.Component:
                     _hover={"background": COLORS["canvas"]},
                 ),
                 rx.button(
-                    rx.icon("check", size=14),
-                    "Save and Use",
+                    rx.icon("check", size=14), "Save and Use",
                     on_click=SettingsState.ai_save_and_use,
-                    background=COLORS["primary"],
-                    color="white",
-                    font_family=FONT_BODY,
-                    size="2",
-                    cursor="pointer",
+                    disabled=~SettingsState.ai_conn_editing_existing,
+                    background=COLORS["primary"], color="white",
+                    font_family=FONT_BODY, size="2", cursor="pointer",
                     _hover={"background": COLORS["primary_hover"]},
                 ),
                 spacing="3",

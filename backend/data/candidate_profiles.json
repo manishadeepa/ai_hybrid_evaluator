@@ -30,5 +30,13 @@
         "grade_level": "E1 - Entry Level",
         "reporting_manager": "Kannadasan R",
         "work_location": "Hosur, IQL"
+    },
+    {
+        "emp_id": "EMP3",
+        "department": "Quality"
+    },
+    {
+        "emp_id": "EMP4",
+        "department": "PED"
     }
 ]

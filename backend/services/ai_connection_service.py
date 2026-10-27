@@ -155,8 +155,36 @@ class AIConnectionService:
 
         return client, http_client
 
-    def test_connection(self, form):
-        config = self._normalize(form)
+    def _resolve_existing_form(self, form, connection_id=None):
+        """Reuse the encrypted saved key when editing without entering a replacement."""
+        if not connection_id:
+            return dict(form), None
+
+        existing = next(
+            (row for row in self.repository.get_all()
+             if row.get("connection_id") == connection_id),
+            None,
+        )
+        if not existing:
+            raise ValueError("The AI connection no longer exists. Reload Settings and try again.")
+
+        resolved = dict(form)
+        if not str(resolved.get("api_key", "")).strip():
+            encrypted_key = existing.get("api_key_encrypted", "")
+            if not encrypted_key:
+                raise ValueError("The saved connection has no API key. Enter a new API key.")
+            try:
+                resolved["api_key"] = (
+                    self._cipher().decrypt(encrypted_key.encode("ascii")).decode("utf-8")
+                )
+            except Exception as exc:
+                raise ValueError("The saved API key could not be decrypted. Enter a replacement key.") from exc
+
+        return resolved, existing
+
+    def test_connection(self, form, *, connection_id=None):
+        resolved_form, _ = self._resolve_existing_form(form, connection_id)
+        config = self._normalize(resolved_form)
 
         client, http_client = self._make_client(config)
 
@@ -191,11 +219,12 @@ class AIConnectionService:
             ),
         }
 
-    def save_and_activate(self, form):
-        config = self._normalize(form)
+    def save_and_activate(self, form, *, connection_id=None):
+        resolved_form, existing = self._resolve_existing_form(form, connection_id)
+        config = self._normalize(resolved_form)
 
         # Always test immediately before saving.
-        self.test_connection(form)
+        self.test_connection(resolved_form)
 
         encrypted_key = (
             self._cipher()
@@ -206,7 +235,7 @@ class AIConnectionService:
         )
 
         record = {
-            "connection_id": str(uuid.uuid4()),
+            "connection_id": existing["connection_id"] if existing else str(uuid.uuid4()),
             "name": config["name"],
             "provider": config["provider"],
             "endpoint": config["endpoint"],
@@ -251,6 +280,28 @@ class AIConnectionService:
                 record.get("api_key_encrypted")
             )
         }
+
+    def get_decrypted_api_key(self, connection_id):
+        """Return a saved key for the authenticated admin edit form only."""
+        record = next(
+            (row for row in self.repository.get_all()
+             if row.get("connection_id") == connection_id),
+            None,
+        )
+        if not record:
+            raise ValueError("The saved AI connection no longer exists. Reload Settings and try again.")
+
+        encrypted_key = record.get("api_key_encrypted", "")
+        if not encrypted_key:
+            raise ValueError("The saved connection has no API key. Enter a new API key.")
+        try:
+            return (
+                self._cipher()
+                .decrypt(encrypted_key.encode("ascii"))
+                .decode("utf-8")
+            )
+        except Exception as exc:
+            raise ValueError("The saved API key could not be decrypted.") from exc
 
     def get_active_client(self):
         record = self.repository.get_active()

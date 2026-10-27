@@ -7,9 +7,9 @@
         "model": "aptde-gpt-4o-mini",
         "api_version": "2024-12-01-preview",
         "cert_path": "",
-        "api_key_encrypted": "gAAAAABqxzLyGazwYxiVkp3kweA6NzVVU-yaZXaOaA6OlX1MYsp_YudH56nN70llDv9i0QtGbXb8zJD5IHGOqD3hjFEaXu2KiXtoeKcgAwoE2jdXVI6mad3AJxjgaP0aEutKVR-tbn93GDndBettQHdJH7n7y1MPDgwF7CNjaGWyoXgC_NWknBNHFggLLPc3nDue1bm1_w0_",
+        "api_key_encrypted": "gAAAAABq4E6ZjZPIZ_vCLGTlSBw7RWnqj_CuOTy5wmRb9D-AK0PHJQlKEL3SRnSqzCZNOGPEpbLwYR2uI-qmWgXlYHXLIGWZ0HAVord4-lTh0VX-NsMGWPIokzddiIWrxsXWOHoXfL17--VzyJWi34wk0uB-TlCUzvAEv5mICvdJs9ReU6C0g1se2rlxiqSvHduZlFl50W8K",
         "key_configured": true,
-        "last_tested_at": "2026-10-08T06:06:42.962062+00:00",
+        "last_tested_at": "2026-10-27T07:11:21.231273+00:00",
         "status": "success",
         "active": true
     }

@@ -36,12 +36,21 @@
         "password_hash": "pbkdf2_sha256$600000$0bf296664299f8088ae2ee294526ad07$738504f05362ae63d9544be75550fc3ac8fbea4116664439e5906619d103d261"
     },
     {
-        "candidate_id": "1234",
-        "name": "jeny",
-        "email": "manisha@gmail.com",
-        "created_at": "2026-10-27T06:41:59.527881+00:00",
-        "updated_at": "2026-10-27T06:41:59.527881+00:00",
+        "candidate_id": "EMP3",
+        "name": "Thomas V",
+        "email": "thomas.v@tvsmotor.com",
+        "created_at": "2026-10-27T09:08:26.790274+00:00",
+        "updated_at": "2026-10-27T09:08:26.790274+00:00",
         "password": "123456",
-        "password_hash": "pbkdf2_sha256$600000$b54c01f187db2b360e3f217730d8d096$b88ab013794ce89e8f42dc5717629877fe30dfcefe4b337e168074a45c9c1d3b"
+        "password_hash": "pbkdf2_sha256$600000$14957c97f8725c97bcc4104f4361a984$0c4280aa7902de6389eb49c2865edb383f7cee9610f3430c42e92d0a50300dca"
+    },
+    {
+        "candidate_id": "EMP4",
+        "name": "Steve V",
+        "email": "steve.v@tvsmotor.com",
+        "created_at": "2026-10-27T09:09:01.773904+00:00",
+        "updated_at": "2026-10-27T09:09:01.773904+00:00",
+        "password": "123456",
+        "password_hash": "pbkdf2_sha256$600000$b733ab4e5b9105b9a02581c3160c0a9e$567d26b5994ed7df1360109716cc696c63030fa913fbec6fe41b7924ab14734e"
     }
 ]

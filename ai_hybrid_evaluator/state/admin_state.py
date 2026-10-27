@@ -15,6 +15,7 @@ import re
 import reflex as rx
 from backend.services.assessment_service import AssessmentService
 from backend.services.candidate_management_service import CandidateManagementService
+from backend.services.employee_directory_service import find_employee_by_id
 from backend.services.feedback_service import FeedbackService
 from backend.repositories.facilitator_repository import FacilitatorRepository
 
@@ -723,6 +724,26 @@ class AdminState(rx.State):
 
     def set_new_candidate_id(self, value: str):
         self.new_candidate_id = value
+        self.new_candidate_name = ""
+        self.new_candidate_department = ""
+        self.new_candidate_email = ""
+        self.candidate_form_error = ""
+        if not value:
+            return
+
+        try:
+            employee = find_employee_by_id(value)
+        except Exception as exc:
+            self.candidate_form_error = f"Unable to look up Employee ID: {exc}"
+            return
+
+        if employee is None:
+            self.candidate_form_error = "Employee ID was not found."
+            return
+
+        self.new_candidate_name = employee["name"]
+        self.new_candidate_email = employee["email"]
+        self.new_candidate_department = employee["department"]
 
     def set_new_candidate_name(self, value: str):
         self.new_candidate_name = value
@@ -3489,4 +3510,3 @@ class AdminFeedbackState(rx.State):
         count = len(self.filtered_entries)
         tab_name = "Candidate" if self.active_tab == "candidate" else "Facilitator"
         return rx.toast.success(f"{count} {tab_name} feedback records exported successfully!")
-
