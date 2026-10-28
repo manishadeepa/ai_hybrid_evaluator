@@ -25,6 +25,7 @@ from ai_hybrid_evaluator.state.candidate_state import CandidateState, CandidateP
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.pages.candidate.candidate_login import candidate_login_page
 from ai_hybrid_evaluator.pages.candidate.dashboard import candidate_dashboard_page
+from ai_hybrid_evaluator.pages.candidate.assessments import candidate_assessments_page
 from ai_hybrid_evaluator.pages.candidate.candidate_test import candidate_test_page
 from ai_hybrid_evaluator.pages.candidate.profile import candidate_profile_page
 from ai_hybrid_evaluator.pages.candidate.results import candidate_results_page
@@ -139,13 +140,23 @@ title="Candidate Sign In",
 )
 
 app.add_page(
-candidate_dashboard_page,
-route="/candidate/dashboard",
-title="Candidate Dashboard",
-on_load=[
-AdminState.load_persisted_assessments_async,
-CandidateState.on_dashboard_load,
-],
+    candidate_dashboard_page,
+    route="/candidate/dashboard",
+    title="Candidate Dashboard",
+    on_load=[
+        AdminState.load_persisted_assessments_async,
+        CandidateState.on_dashboard_load,
+    ],
+)
+
+app.add_page(
+    candidate_assessments_page,
+    route="/candidate/assessments",
+    title="My Assessments",
+    on_load=[
+        AdminState.load_persisted_assessments_async,
+        CandidateState.on_dashboard_load,
+    ],
 )
 
 app.add_page(

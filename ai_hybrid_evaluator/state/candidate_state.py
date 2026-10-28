@@ -355,6 +355,45 @@ class CandidateState(rx.State):
     candidate_test_scores: dict[str, str] = {}      # -> score_str e.g. "72%" or "-"
     candidate_test_evaluated: dict[str, bool] = {}  # -> True / False
 
+    # ── Candidate Dashboard Metrics & Visuals ────────────────────────────
+    dashboard_total_assessments: int = 0
+    dashboard_total_tests: int = 0
+    dashboard_completed_tests: int = 0
+    dashboard_not_completed_tests: int = 0
+    dashboard_evaluated_tests: int = 0
+    dashboard_pending_evaluation_tests: int = 0
+    dashboard_completion_donut_segments: list[dict] = []
+    dashboard_result_status_donut_segments: list[dict] = []
+    dashboard_assessment_summary: list[dict] = []
+    dashboard_recent_activities: list[dict] = []
+
+    # ── Candidate Dashboard Interactive Popups & Selected Assessment ────
+    dashboard_selected_assessment: str = "HoQ"
+    assigned_assessment_names: list[str] = ["HoQ"]
+
+    # Selected Assessment Donut Metrics
+    selected_total_tests: int = 0
+    selected_completed_tests: int = 0
+    selected_not_completed_tests: int = 0
+    selected_submitted_tests: int = 0
+    selected_evaluated_tests: int = 0
+    selected_pending_evaluation_tests: int = 0
+    selected_completion_donut_segments: list[dict] = []
+    selected_result_status_donut_segments: list[dict] = []
+
+    # Popup Modals Visibility
+    show_all_assessments_modal: bool = False
+    show_completed_tests_modal: bool = False
+    show_not_completed_tests_modal: bool = False
+    show_evaluated_tests_modal: bool = False
+    show_pending_evaluation_modal: bool = False
+
+    # Modal Item Lists
+    completed_tests_modal_items: list[dict] = []
+    not_completed_tests_modal_items: list[dict] = []
+    evaluated_tests_modal_items: list[dict] = []
+    pending_evaluation_modal_items: list[dict] = []
+
     # Ã¢â€â‚¬Ã¢â€â‚¬ Candidate Feedback State (Post-submission) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     show_candidate_feedback_modal: bool = False
     candidate_feedback_questions: list[dict] = []
@@ -728,6 +767,7 @@ class CandidateState(rx.State):
 
         # Refresh evaluation/score information.
         await self.refresh_candidate_scores()
+        await self.load_candidate_dashboard_data()
     async def refresh_candidate_scores(self):
         """Read evaluation results + weightages from FacilitatorState and build
         a per-assessment score snapshot for the currently logged-in candidate.
@@ -792,6 +832,423 @@ class CandidateState(rx.State):
 
         self.candidate_test_scores = new_test_scores
         self.candidate_test_evaluated = new_test_evaluated
+
+    async def load_candidate_dashboard_data(self):
+        """Compute candidate dashboard metrics, donut segments, assessment summary, and recent activity from real backend data."""
+        cand_id = await self._get_current_candidate_id()
+        import math
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from backend.services.assessment_service import AssessmentService
+        from backend.repositories.response_repository import ResponseRepository
+
+        try:
+            assessments = await asyncio.to_thread(AssessmentService().load_assessments)
+        except Exception:
+            assessments = []
+
+        assigned_assessments = [
+            a for a in assessments
+            if cand_id in a.get("assigned_candidates", [])
+        ]
+        self.dashboard_total_assessments = len(assigned_assessments)
+
+        tot_tests = 0
+        comp_tests = 0
+        not_comp_tests = 0
+        eval_tests = 0
+        pend_eval_tests = 0
+        summary_list = []
+
+        for a in assigned_assessments:
+            asmn = a.get("name", "")
+            test_names = list(a.get("tests", []) or [])
+            final_test = a.get("final_test", "")
+            if final_test:
+                test_names.append(final_test)
+
+            a_tot = len(test_names)
+            a_comp = 0
+            for t_name in test_names:
+                is_sub = (t_name in self.submitted_tests.get(asmn, {}))
+                is_dq = (t_name in self.disqualified_tests.get(asmn, {}))
+                if is_sub or is_dq:
+                    a_comp += 1
+                    flat_key = f"{asmn}::{t_name}"
+                    if self.candidate_test_evaluated.get(flat_key, False):
+                        eval_tests += 1
+                    else:
+                        pend_eval_tests += 1
+
+            a_not_comp = max(0, a_tot - a_comp)
+            tot_tests += a_tot
+            comp_tests += a_comp
+            not_comp_tests += a_not_comp
+
+            summary_list.append({
+                "name": asmn,
+                "total_tests": a_tot,
+                "completed_tests": a_comp,
+                "not_completed_tests": a_not_comp,
+            })
+
+        self.dashboard_total_tests = tot_tests
+        self.dashboard_completed_tests = comp_tests
+        self.dashboard_not_completed_tests = not_comp_tests
+        self.dashboard_evaluated_tests = eval_tests
+        self.dashboard_pending_evaluation_tests = pend_eval_tests
+        self.dashboard_assessment_summary = summary_list
+
+        def _build_donut(v1: int, v2: int, name1: str, name2: str, c1: str, c2: str, cx: float = 75.0, cy: float = 75.0, R: float = 62.0, r: float = 44.0) -> list[dict]:
+            tot = v1 + v2
+            if tot == 0:
+                d_empty = (
+                    f"M {cx:.2f} {cy - R:.2f} "
+                    f"A {R} {R} 0 1 1 {cx:.2f} {cy + R:.2f} "
+                    f"A {R} {R} 0 1 1 {cx:.2f} {cy - R:.2f} "
+                    f"M {cx:.2f} {cy - r:.2f} "
+                    f"A {r} {r} 0 1 0 {cx:.2f} {cy + r:.2f} "
+                    f"A {r} {r} 0 1 0 {cx:.2f} {cy - r:.2f} Z"
+                )
+                return [{"name": "Empty", "count": 0, "fill": "#F1F5F9", "d": d_empty}]
+            if v1 == 0:
+                spans = [0.0, 360.0]
+            elif v2 == 0:
+                spans = [360.0, 0.0]
+            else:
+                s1 = (v1 / tot) * 360.0
+                s2 = (v2 / tot) * 360.0
+                if s1 < 18.0:
+                    s1 = 18.0
+                    s2 = 342.0
+                elif s2 < 18.0:
+                    s2 = 18.0
+                    s1 = 342.0
+                spans = [s1, s2]
+
+            segments = []
+            curr_angle = 0.0
+            items = [(name1, v1, c1), (name2, v2, c2)]
+            for i, (name, cnt, fill_col) in enumerate(items):
+                span = spans[i]
+                if span <= 0.0:
+                    segments.append({"name": name, "count": cnt, "fill": fill_col, "d": ""})
+                    continue
+                a1 = curr_angle
+                a2 = curr_angle + span
+                curr_angle += span
+                if span >= 359.9:
+                    d = (
+                        f"M {cx:.2f} {cy - R:.2f} "
+                        f"A {R} {R} 0 1 1 {cx:.2f} {cy + R:.2f} "
+                        f"A {R} {R} 0 1 1 {cx:.2f} {cy - R:.2f} "
+                        f"M {cx:.2f} {cy - r:.2f} "
+                        f"A {r} {r} 0 1 0 {cx:.2f} {cy + r:.2f} "
+                        f"A {r} {r} 0 1 0 {cx:.2f} {cy - r:.2f} Z"
+                    )
+                else:
+                    t1 = math.radians(a1 - 90)
+                    t2 = math.radians(a2 - 90)
+                    x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+                    x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+                    x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+                    x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+                    large = 1 if (span % 360) > 180 else 0
+                    d = (
+                        f"M {x1_o:.2f} {y1_o:.2f} "
+                        f"A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} "
+                        f"L {x2_i:.2f} {y2_i:.2f} "
+                        f"A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+                    )
+                segments.append({"name": name, "count": cnt, "fill": fill_col, "d": d})
+            return segments
+
+        self.dashboard_completion_donut_segments = _build_donut(
+            comp_tests, not_comp_tests, "Completed", "Not Completed", "#7C3AED", "#DDD6FE"
+        )
+        self.dashboard_result_status_donut_segments = _build_donut(
+            eval_tests, pend_eval_tests, "Evaluated", "Pending Evaluation", "#10B981", "#F87171"
+        )
+
+        try:
+            responses = await asyncio.to_thread(ResponseRepository().get_all)
+        except Exception:
+            responses = []
+
+        cand_responses = [
+            r for r in responses
+            if r.get("candidate_id") == cand_id
+        ]
+
+        def _format_time(iso_str: str) -> str:
+            if not iso_str:
+                return ""
+            try:
+                dt = datetime.fromisoformat(iso_str)
+                if dt.tzinfo:
+                    dt = dt.astimezone(ZoneInfo("Asia/Kolkata"))
+                return dt.strftime("%d %b %Y, %I:%M %p")
+            except Exception:
+                return iso_str[:16].replace("T", " ")
+
+        activities = []
+        for r in cand_responses:
+            t_name = r.get("test_name", "Test")
+            status = r.get("status", "")
+            ts_raw = r.get("submitted_at") or r.get("started_at") or r.get("updated_at") or ""
+            ts_fmt = _format_time(ts_raw)
+            badge_color = "green" if status == "Submitted" else ("blue" if status == "In Progress" else "slate")
+            badge_text = "Submitted" if status == "Submitted" else ("Started" if status == "In Progress" else status)
+            activities.append({
+                "name": t_name,
+                "status": badge_text,
+                "status_color": badge_color,
+                "timestamp": ts_fmt,
+                "_raw_time": ts_raw,
+            })
+
+        activities.sort(key=lambda x: x["_raw_time"], reverse=True)
+        self.dashboard_recent_activities = activities[:6]
+
+        # Populate assigned assessment names & compute selected assessment data
+        assigned_names = [a.get("name", "") for a in assigned_assessments if a.get("name")]
+        self.assigned_assessment_names = assigned_names
+        if not self.dashboard_selected_assessment and assigned_names:
+            self.dashboard_selected_assessment = assigned_names[0]
+        elif self.dashboard_selected_assessment not in assigned_names and assigned_names:
+            self.dashboard_selected_assessment = assigned_names[0]
+
+        await self._compute_selected_assessment_data()
+
+    async def _compute_selected_assessment_data(self):
+        """Compute metrics, donut segments, and modal records for the selected assessment."""
+        cand_id = await self._get_current_candidate_id()
+        sel = self.dashboard_selected_assessment
+        if not sel:
+            return
+
+        import math
+        from backend.services.assessment_service import AssessmentService
+        from backend.repositories.response_repository import ResponseRepository
+        from backend.services.evaluation_result_service import EvaluationResultService
+
+        try:
+            assessments = await asyncio.to_thread(AssessmentService().load_assessments)
+        except Exception:
+            assessments = []
+
+        a = next((x for x in assessments if x.get("name") == sel), None)
+        if not a:
+            return
+
+        tests = list(a.get("tests", []) or [])
+        final_test = a.get("final_test", "")
+        if final_test:
+            tests.append(final_test)
+
+        try:
+            responses = await asyncio.to_thread(ResponseRepository().get_all)
+        except Exception:
+            responses = []
+
+        cand_responses = [
+            r for r in responses
+            if r.get("candidate_id") == cand_id and r.get("assessment_name") == sel
+        ]
+        subs = {
+            r.get("test_name"): r.get("submitted_at")
+            for r in cand_responses
+            if r.get("status") == "Submitted"
+        }
+        dqs = {
+            r.get("test_name"): r.get("submitted_at")
+            for r in cand_responses
+            if r.get("status") == "Disqualified"
+        }
+
+        try:
+            results_service = EvaluationResultService()
+            all_results = await asyncio.to_thread(results_service.list_results, candidate_id=cand_id)
+        except Exception:
+            all_results = []
+
+        eval_map = {
+            r.get("test_name"): r
+            for r in all_results
+            if r.get("assessment_id") == a.get("assessment_id")
+        }
+
+        completed = []
+        not_completed = []
+        evaluated = []
+        pending = []
+
+        for t in tests:
+            is_sub = (t in subs or t in self.submitted_tests.get(sel, {}))
+            is_dq = (t in dqs or t in self.disqualified_tests.get(sel, {}))
+            flat_key = f"{sel}::{t}"
+            is_eval = (t in eval_map) or self.candidate_test_evaluated.get(flat_key, False)
+
+            if is_sub or is_dq:
+                status_text = "Completed" if is_sub else "Disqualified"
+                completed.append({"test_name": t, "status": status_text})
+                if is_eval:
+                    pct = 0.0
+                    if t in eval_map:
+                        pct = float(eval_map[t].get("percentage", 0.0))
+                    elif self.candidate_test_scores.get(flat_key, "").endswith("%"):
+                        try:
+                            pct = float(self.candidate_test_scores[flat_key].replace("%", ""))
+                        except Exception:
+                            pct = 50.0
+                    res_val = "Pass" if pct >= 50.0 else "Fail"
+                    evaluated.append({"test_name": t, "result": res_val, "score": f"{pct:.1f}%"})
+                else:
+                    pending.append({"test_name": t, "result": "Pending Evaluation"})
+            else:
+                not_completed.append({"test_name": t, "status": "Not Completed"})
+
+        self.selected_total_tests = len(tests)
+        self.selected_completed_tests = len(completed)
+        self.selected_not_completed_tests = len(not_completed)
+        self.selected_submitted_tests = len(completed)
+        self.selected_evaluated_tests = len(evaluated)
+        self.selected_pending_evaluation_tests = len(pending)
+
+        self.completed_tests_modal_items = completed
+        self.not_completed_tests_modal_items = not_completed
+        self.evaluated_tests_modal_items = evaluated
+        self.pending_evaluation_modal_items = pending
+
+        def _build_donut(v1: int, v2: int, name1: str, name2: str, c1: str, c2: str, cx: float = 75.0, cy: float = 75.0, R: float = 62.0, r: float = 44.0) -> list[dict]:
+            tot = v1 + v2
+            if tot == 0:
+                d_empty = (
+                    f"M {cx:.2f} {cy - R:.2f} "
+                    f"A {R} {R} 0 1 1 {cx:.2f} {cy + R:.2f} "
+                    f"A {R} {R} 0 1 1 {cx:.2f} {cy - R:.2f} "
+                    f"M {cx:.2f} {cy - r:.2f} "
+                    f"A {r} {r} 0 1 0 {cx:.2f} {cy + r:.2f} "
+                    f"A {r} {r} 0 1 0 {cx:.2f} {cy - r:.2f} Z"
+                )
+                return [{"name": "Empty", "count": 0, "fill": "#F1F5F9", "d": d_empty}]
+            if v1 == 0:
+                spans = [0.0, 360.0]
+            elif v2 == 0:
+                spans = [360.0, 0.0]
+            else:
+                s1 = (v1 / tot) * 360.0
+                s2 = (v2 / tot) * 360.0
+                if s1 < 18.0:
+                    s1 = 18.0
+                    s2 = 342.0
+                elif s2 < 18.0:
+                    s2 = 18.0
+                    s1 = 342.0
+                spans = [s1, s2]
+
+            segments = []
+            curr_angle = 0.0
+            items = [(name1, v1, c1), (name2, v2, c2)]
+            for i, (name, cnt, fill_col) in enumerate(items):
+                span = spans[i]
+                if span <= 0.0:
+                    segments.append({"name": name, "count": cnt, "fill": fill_col, "d": ""})
+                    continue
+                a1 = curr_angle
+                a2 = curr_angle + span
+                curr_angle += span
+                if span >= 359.9:
+                    d = (
+                        f"M {cx:.2f} {cy - R:.2f} "
+                        f"A {R} {R} 0 1 1 {cx:.2f} {cy + R:.2f} "
+                        f"A {R} {R} 0 1 1 {cx:.2f} {cy - R:.2f} "
+                        f"M {cx:.2f} {cy - r:.2f} "
+                        f"A {r} {r} 0 1 0 {cx:.2f} {cy + r:.2f} "
+                        f"A {r} {r} 0 1 0 {cx:.2f} {cy - r:.2f} Z"
+                    )
+                else:
+                    t1 = math.radians(a1 - 90)
+                    t2 = math.radians(a2 - 90)
+                    x1_o, y1_o = cx + R * math.cos(t1), cy + R * math.sin(t1)
+                    x2_o, y2_o = cx + R * math.cos(t2), cy + R * math.sin(t2)
+                    x1_i, y1_i = cx + r * math.cos(t1), cy + r * math.sin(t1)
+                    x2_i, y2_i = cx + r * math.cos(t2), cy + r * math.sin(t2)
+                    large = 1 if (span % 360) > 180 else 0
+                    d = (
+                        f"M {x1_o:.2f} {y1_o:.2f} "
+                        f"A {R} {R} 0 {large} 1 {x2_o:.2f} {y2_o:.2f} "
+                        f"L {x2_i:.2f} {y2_i:.2f} "
+                        f"A {r} {r} 0 {large} 0 {x1_i:.2f} {y1_i:.2f} Z"
+                    )
+                segments.append({"name": name, "count": cnt, "fill": fill_col, "d": d})
+            return segments
+
+        self.selected_completion_donut_segments = _build_donut(
+            len(completed), len(not_completed), "Completed", "Not Completed", "#7C3AED", "#DDD6FE"
+        )
+        self.selected_result_status_donut_segments = _build_donut(
+            len(evaluated), len(pending), "Evaluated", "Pending Evaluation", "#10B981", "#F87171"
+        )
+
+    async def set_dashboard_selected_assessment(self, val: str):
+        self.dashboard_selected_assessment = val
+        await self._compute_selected_assessment_data()
+
+    def set_show_all_assessments_modal(self, val: bool):
+        self.show_all_assessments_modal = val
+
+    def set_show_completed_tests_modal(self, val: bool):
+        self.show_completed_tests_modal = val
+
+    def set_show_not_completed_tests_modal(self, val: bool):
+        self.show_not_completed_tests_modal = val
+
+    def set_show_evaluated_tests_modal(self, val: bool):
+        self.show_evaluated_tests_modal = val
+
+    def set_show_pending_evaluation_modal(self, val: bool):
+        self.show_pending_evaluation_modal = val
+
+    def open_all_assessments_modal(self):
+        self.show_all_assessments_modal = True
+
+    def close_all_assessments_modal(self):
+        self.show_all_assessments_modal = False
+
+    def open_completed_tests_modal(self):
+        self.show_completed_tests_modal = True
+
+    def close_completed_tests_modal(self):
+        self.show_completed_tests_modal = False
+
+    def open_not_completed_tests_modal(self):
+        self.show_not_completed_tests_modal = True
+
+    def close_not_completed_tests_modal(self):
+        self.show_not_completed_tests_modal = False
+
+    def open_evaluated_tests_modal(self):
+        self.show_evaluated_tests_modal = True
+
+    def close_evaluated_tests_modal(self):
+        self.show_evaluated_tests_modal = False
+
+    def open_pending_evaluation_modal(self):
+        self.show_pending_evaluation_modal = True
+
+    def close_pending_evaluation_modal(self):
+        self.show_pending_evaluation_modal = False
+
+    def handle_donut_segment_click(self, category: str):
+        if category == "Completed":
+            self.open_completed_tests_modal()
+        elif category == "Not Completed":
+            self.open_not_completed_tests_modal()
+        elif category in ("Evaluated", "Evaluations Completed"):
+            self.open_evaluated_tests_modal()
+        elif category in ("Pending Evaluation", "Pending Evaluations"):
+            self.open_pending_evaluation_modal()
 
 
     async def on_test_page_load(self):
