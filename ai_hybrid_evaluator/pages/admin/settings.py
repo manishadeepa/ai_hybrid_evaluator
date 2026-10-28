@@ -249,6 +249,12 @@ class SettingsState(rx.State):
     delete_admin_index: int = -1
     delete_admin_username: str = ""
 
+    # View Admin Dialog State
+    show_view_admin_dialog: bool = False
+    view_admin_username: str = ""
+    view_admin_password: str = ""
+    view_admin_show_password: bool = False
+
     def load_admin_accounts(self):
         """Loads administrator accounts, ensuring Master Admin (Manisha) is authoritative at #1."""
         if self.admin_accounts:
@@ -475,6 +481,28 @@ class SettingsState(rx.State):
         self.delete_admin_index = -1
         self.delete_admin_username = ""
         return rx.toast.success(f"Administrator '{uname}' deleted.")
+
+    # ── View Admin Handlers ───────────────────────────────────
+    def open_view_admin_dialog(self, index: int):
+        if not (0 <= index < len(self.admin_accounts)):
+            return
+        target = self.admin_accounts[index]
+        self.view_admin_username = target.get("username", "")
+        self.view_admin_password = target.get("password", "")
+        self.view_admin_show_password = False
+        self.show_view_admin_dialog = True
+
+    def close_view_admin_dialog(self):
+        self.show_view_admin_dialog = False
+        self.view_admin_show_password = False
+
+    def set_show_view_admin_dialog(self, v: bool):
+        self.show_view_admin_dialog = v
+        if not v:
+            self.view_admin_show_password = False
+
+    def toggle_view_admin_show_password(self):
+        self.view_admin_show_password = not self.view_admin_show_password
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1351,6 +1379,15 @@ def _admin_account_row(admin: dict, idx: int) -> rx.Component:
                         on_click=SettingsState.open_edit_admin_dialog(idx),
                     ),
                     rx.hstack(
+                        rx.icon("eye", size=14, color="#7C3AED"),
+                        rx.text("View", font_family=FONT_BODY, size="2", weight="medium", color="#7C3AED"),
+                        spacing="1",
+                        align_items="center",
+                        cursor="pointer",
+                        _hover={"opacity": 0.8},
+                        on_click=SettingsState.open_view_admin_dialog(idx),
+                    ),
+                    rx.hstack(
                         rx.icon("trash-2", size=14, color="#DC2626"),
                         rx.text("Delete", font_family=FONT_BODY, size="2", weight="medium", color="#DC2626"),
                         spacing="1",
@@ -2020,6 +2057,186 @@ def delete_admin_dialog() -> rx.Component:
     )
 
 
+def view_admin_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("eye", size=22, color="#7C3AED"),
+                            background="#F3E8FF",
+                            padding="0.65em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "View Admin Credentials",
+                                font_family=FONT_BODY,
+                                size="4",
+                                weight="bold",
+                                color=COLORS["ink"],
+                            ),
+                            rx.text(
+                                "Admin account details (read-only).",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color=COLORS["slate"]),
+                            cursor="pointer",
+                            padding="0.35em",
+                            border_radius="6px",
+                            _hover={"background": COLORS["canvas"]},
+                            transition="all 0.15s ease",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            on_click=SettingsState.close_view_admin_dialog,
+                        )
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                ),
+
+                # Username Field
+                rx.vstack(
+                    rx.text("Username", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                    rx.input(
+                        value=SettingsState.view_admin_username,
+                        read_only=True,
+                        font_family=FONT_BODY,
+                        size="2",
+                        width="100%",
+                        background="#F8FAFC",
+                        border=f"1.5px solid {COLORS['line']}",
+                        border_radius="8px",
+                        color=COLORS["ink"],
+                        cursor="default",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # Password Field
+                rx.vstack(
+                    rx.text("Password", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                    rx.input(
+                        rx.input.slot(
+                            rx.icon_button(
+                                rx.cond(
+                                    SettingsState.view_admin_show_password,
+                                    rx.icon("eye-off", size=15),
+                                    rx.icon("eye", size=15),
+                                ),
+                                size="1",
+                                variant="ghost",
+                                color=COLORS["slate"],
+                                cursor="pointer",
+                                type="button",
+                                tab_index=-1,
+                                on_click=SettingsState.toggle_view_admin_show_password,
+                                _hover={"color": COLORS["ink"], "background": "transparent"},
+                                style={
+                                    "background": "transparent",
+                                    "border": "none",
+                                    "box_shadow": "none",
+                                    "padding": "0",
+                                },
+                            ),
+                            side="right",
+                        ),
+                        type=rx.cond(SettingsState.view_admin_show_password, "text", "password"),
+                        value=rx.cond(
+                            SettingsState.view_admin_password != "",
+                            SettingsState.view_admin_password,
+                            "Password unavailable",
+                        ),
+                        read_only=True,
+                        font_family=FONT_BODY,
+                        size="2",
+                        width="100%",
+                        background="#F8FAFC",
+                        border=f"1.5px solid {COLORS['line']}",
+                        border_radius="8px",
+                        color=COLORS["ink"],
+                        cursor="default",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                    width="100%",
+                ),
+
+                # Info Box
+                rx.hstack(
+                    rx.icon("info", size=15, color="#7C3AED"),
+                    rx.text(
+                        "This is a view-only mode. You cannot edit the credentials here.",
+                        font_family=FONT_BODY,
+                        size="2",
+                        color="#5B21B6",
+                    ),
+                    background="#F5F3FF",
+                    border="1px solid #DDD6FE",
+                    border_radius="8px",
+                    padding="0.65em 0.9em",
+                    spacing="2",
+                    align_items="center",
+                    width="100%",
+                ),
+
+                # Footer
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Close",
+                        on_click=SettingsState.close_view_admin_dialog,
+                        variant="outline",
+                        color=COLORS["ink"],
+                        border=f"1.5px solid {COLORS['line']}",
+                        background="white",
+                        font_family=FONT_BODY,
+                        size="2",
+                        cursor="pointer",
+                        _hover={"background": COLORS["canvas"]},
+                        border_radius="8px",
+                        padding="0.5em 1.4em",
+                    ),
+                    width="100%",
+                    padding_top="0.4em",
+                    border_top=f"1px solid {COLORS['line']}",
+                    align_items="center",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            style={"maxWidth": "460px"},
+            background="white",
+            border_radius="14px",
+            padding="1.6em",
+        ),
+        open=SettingsState.show_view_admin_dialog,
+        on_open_change=SettingsState.set_show_view_admin_dialog,
+    )
+
+
 # ─────────────────────────────────────────────────────────────
 # Settings page entry point
 # ─────────────────────────────────────────────────────────────
@@ -2086,6 +2303,7 @@ def settings_page() -> rx.Component:
         add_admin_dialog(),
         edit_admin_dialog(),
         delete_admin_dialog(),
+        view_admin_dialog(),
 
         spacing="5",
         width="100%",
