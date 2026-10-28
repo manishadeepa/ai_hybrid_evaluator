@@ -344,7 +344,8 @@ def candidate_completion_chart_card() -> rx.Component:
         box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
         flex="1",
         width="100%",
-        min_width="0",  # allow card to shrink inside CSS grid cell
+        min_width="0",
+        height="100%",
     )
 
 
@@ -444,7 +445,8 @@ def evaluation_status_chart_card() -> rx.Component:
         box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
         flex="1",
         width="100%",
-        min_width="0",  # allow card to shrink inside CSS grid cell
+        min_width="0",
+        height="100%",
     )
 
 
@@ -479,15 +481,15 @@ def assessment_collaboration_card() -> rx.Component:
                     size="2",
                     variant="surface",
                     radius="medium",
-                    min_width="120px",
-                    max_width="180px",
+                    min_width="90px",
+                    max_width="140px",
                 ),
                 width="100%",
-                align_items="center",
-                padding_bottom="0.6em",
+                align_items="start",
+                padding_bottom="0.4em",
             ),
 
-            # Assigned Facilitators Section
+            # Assigned Facilitators Section (Vertical Stack)
             rx.vstack(
                 rx.hstack(
                     rx.text("Assigned Facilitators (", font_family=FONT_BODY, font_size="0.75rem", font_weight="bold", color="#64748B"),
@@ -496,7 +498,7 @@ def assessment_collaboration_card() -> rx.Component:
                     spacing="0",
                     align_items="center",
                 ),
-                rx.hstack(
+                rx.vstack(
                     rx.foreach(
                         FacilitatorState.collaboration_assigned_facilitators,
                         lambda fac: rx.hstack(
@@ -508,8 +510,8 @@ def assessment_collaboration_card() -> rx.Component:
                                     font_size="0.8rem",
                                     color=fac["text"],
                                 ),
-                                width="32px",
-                                height="32px",
+                                width="30px",
+                                height="30px",
                                 border_radius="50%",
                                 background=fac["bg"],
                                 display="flex",
@@ -538,12 +540,14 @@ def assessment_collaboration_card() -> rx.Component:
                             ),
                             spacing="2",
                             align_items="center",
-                            padding_right="0.8em",
+                            width="100%",
                         ),
                     ),
-                    spacing="3",
-                    align_items="center",
-                    flex_wrap="wrap",
+                    spacing="2",
+                    align_items="start",
+                    width="100%",
+                    max_height="130px",
+                    overflow_y="auto",
                 ),
                 spacing="2",
                 align_items="start",
@@ -556,20 +560,88 @@ def assessment_collaboration_card() -> rx.Component:
                 rx.table.root(
                     rx.table.header(
                         rx.table.row(
-                            rx.table.column_header_cell("#", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B", width="28px"),
-                            rx.table.column_header_cell("Test", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B"),
-                            rx.table.column_header_cell("Evaluation Status", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B"),
-                            rx.table.column_header_cell("Evaluated By", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B"),
-                            rx.table.column_header_cell("Test Lock Status", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B"),
-                            rx.table.column_header_cell("Locked By", font_family=FONT_BODY, font_size="0.72rem", font_weight="bold", color="#64748B"),
+                            rx.table.column_header_cell(
+                                "#",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                width="32px",
+                                min_width="32px",
+                                padding="0.4em 0.3em",
+                                text_align="center",
+                            ),
+                            rx.table.column_header_cell(
+                                "Test",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                min_width="110px",
+                                padding="0.4em 0.5em",
+                            ),
+                            rx.table.column_header_cell(
+                                "Evaluation Status",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                min_width="110px",
+                                padding="0.4em 0.4em",
+                                text_align="center",
+                            ),
+                            rx.table.column_header_cell(
+                                "Evaluated By",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                min_width="95px",
+                                padding="0.4em 0.4em",
+                                text_align="center",
+                            ),
+                            rx.table.column_header_cell(
+                                "Test Lock Status",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                min_width="105px",
+                                padding="0.4em 0.4em",
+                                text_align="center",
+                            ),
+                            rx.table.column_header_cell(
+                                "Locked By",
+                                font_family=FONT_BODY,
+                                font_size="0.72rem",
+                                font_weight="bold",
+                                color="#64748B",
+                                min_width="95px",
+                                padding="0.4em 0.4em",
+                                text_align="center",
+                            ),
                         ),
                     ),
                     rx.table.body(
                         rx.foreach(
                             FacilitatorState.collaboration_test_activity,
                             lambda row: rx.table.row(
-                                rx.table.cell(rx.text(row["index"], font_family=FONT_BODY, font_size="0.75rem", color="#64748B")),
-                                rx.table.cell(rx.text(row["test_name"], font_family=FONT_BODY, font_size="0.78rem", font_weight="bold", color="#0F172A")),
+                                rx.table.cell(
+                                    rx.text(row["index"], font_family=FONT_BODY, font_size="0.73rem", color="#64748B", text_align="center"),
+                                    padding="0.45em 0.3em",
+                                    text_align="center",
+                                ),
+                                rx.table.cell(
+                                    rx.text(
+                                        row["test_name"],
+                                        font_family=FONT_BODY,
+                                        font_size="0.78rem",
+                                        font_weight="bold",
+                                        color="#0F172A",
+                                        white_space="nowrap",
+                                    ),
+                                    padding="0.45em 0.5em",
+                                ),
                                 rx.table.cell(
                                     rx.badge(
                                         row["evaluation_status"],
@@ -579,10 +651,25 @@ def assessment_collaboration_card() -> rx.Component:
                                         radius="full",
                                         font_weight="600",
                                         font_size="0.7rem",
-                                        padding="0.15em 0.6em",
+                                        padding="0.15em 0.55em",
+                                        white_space="nowrap",
                                     ),
+                                    padding="0.45em 0.4em",
+                                    text_align="center",
                                 ),
-                                rx.table.cell(rx.text(row["evaluated_by"], font_family=FONT_BODY, font_size="0.75rem", color="#334155", font_weight="medium")),
+                                rx.table.cell(
+                                    rx.text(
+                                        row["evaluated_by"],
+                                        font_family=FONT_BODY,
+                                        font_size="0.73rem",
+                                        color="#334155",
+                                        font_weight="medium",
+                                        text_align="center",
+                                        white_space="nowrap",
+                                    ),
+                                    padding="0.45em 0.4em",
+                                    text_align="center",
+                                ),
                                 rx.table.cell(
                                     rx.cond(
                                         row["lock_status"] == "Locked",
@@ -598,7 +685,8 @@ def assessment_collaboration_card() -> rx.Component:
                                             size="1",
                                             radius="full",
                                             font_weight="600",
-                                            padding="0.15em 0.6em",
+                                            padding="0.15em 0.55em",
+                                            white_space="nowrap",
                                         ),
                                         rx.badge(
                                             rx.hstack(
@@ -612,26 +700,41 @@ def assessment_collaboration_card() -> rx.Component:
                                             size="1",
                                             radius="full",
                                             font_weight="500",
-                                            padding="0.15em 0.6em",
+                                            padding="0.15em 0.55em",
+                                            white_space="nowrap",
                                         ),
                                     ),
+                                    padding="0.45em 0.4em",
+                                    text_align="center",
                                 ),
-                                rx.table.cell(rx.text(row["locked_by"], font_family=FONT_BODY, font_size="0.75rem", color="#334155", font_weight="medium")),
+                                rx.table.cell(
+                                    rx.text(
+                                        row["locked_by"],
+                                        font_family=FONT_BODY,
+                                        font_size="0.73rem",
+                                        color="#334155",
+                                        font_weight="medium",
+                                        text_align="center",
+                                        white_space="nowrap",
+                                    ),
+                                    padding="0.45em 0.4em",
+                                    text_align="center",
+                                ),
                                 _hover={"background": "#F8FAFC"},
                             ),
                         ),
                     ),
                     width="100%",
+                    min_width="520px",
                     variant="surface",
                     size="1",
                 ),
                 border="1px solid #E2E8F0",
                 border_radius="10px",
-                overflow="hidden",
-                width="100%",
-                max_height="220px",
                 overflow_y="auto",
-                overflow_x="auto",  # let the table scroll horizontally inside the card
+                overflow_x="auto",
+                max_height="175px",
+                width="100%",
             ),
             spacing="3",
             width="100%",
@@ -643,7 +746,8 @@ def assessment_collaboration_card() -> rx.Component:
         box_shadow="0 1px 2px 0 rgba(0, 0, 0, 0.02)",
         flex="1",
         width="100%",
-        min_width="0",  # allow card to shrink inside CSS grid cell
+        min_width="0",
+        height="100%",
     )
 
 
@@ -1131,12 +1235,10 @@ def facilitator_dashboard_page() -> rx.Component:
             candidate_completion_chart_card(),
             evaluation_status_chart_card(),
             assessment_collaboration_card(),
-            # On desktop (≥1024 px) show all 3 cards in one row;
-            # stack vertically only on smaller screens.
             columns=rx.breakpoints(initial="1", md="1", lg="3"),
             spacing="4",
             width="100%",
-            align="stretch",  # give each card the same row height
+            align="stretch",
         ),
 
         # 3. Assessment Overview Table

@@ -2601,6 +2601,7 @@ class FacilitatorState(rx.State):
     completion_breakdown_status: str = ""  # "Completed" or "Not Completed"
     show_evaluation_breakdown_modal: bool = False
     evaluation_breakdown_status: str = ""  # "Evaluations Completed" or "Pending Evaluations"
+    show_all_facilitators_modal: bool = False
 
     def set_dashboard_completion_assessment_name(self, value: str):
         self.dashboard_completion_assessment_name = value
@@ -2642,6 +2643,15 @@ class FacilitatorState(rx.State):
 
     def set_show_evaluation_breakdown_modal(self, val: bool):
         self.show_evaluation_breakdown_modal = val
+
+    def open_all_facilitators_modal(self):
+        self.show_all_facilitators_modal = True
+
+    def close_all_facilitators_modal(self):
+        self.show_all_facilitators_modal = False
+
+    def set_show_all_facilitators_modal(self, val: bool):
+        self.show_all_facilitators_modal = val
 
     @rx.var
     async def dashboard_assessment_names(self) -> list[str]:
@@ -2692,6 +2702,7 @@ class FacilitatorState(rx.State):
             c = colors[i % len(colors)]
             initial = name[0].upper() if name else "F"
             result.append({
+                "index": str(i + 1),
                 "name": name,
                 "initial": initial,
                 "role": "Facilitator",
@@ -2704,6 +2715,23 @@ class FacilitatorState(rx.State):
     async def collaboration_assigned_count(self) -> int:
         facs = await self.collaboration_assigned_facilitators
         return len(facs)
+
+    @rx.var(cache=True)
+    async def collaboration_preview_facilitators(self) -> list[dict]:
+        """First 3 facilitators shown directly inside the card."""
+        facs = await self.collaboration_assigned_facilitators
+        return facs[:3]
+
+    @rx.var
+    async def collaboration_has_more_facilitators(self) -> bool:
+        """True when there are more than 3 assigned facilitators."""
+        return await self.collaboration_assigned_count > 3
+
+    @rx.var
+    async def collaboration_extra_count(self) -> int:
+        """Number of facilitators not shown in the card preview (total - 3)."""
+        count = await self.collaboration_assigned_count
+        return max(0, count - 3)
 
     @rx.var(cache=True)
     async def collaboration_test_activity(self) -> list[dict]:
