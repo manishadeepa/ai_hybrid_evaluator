@@ -30,12 +30,7 @@ from ai_hybrid_evaluator.pages.candidate.profile import candidate_profile_page
 from ai_hybrid_evaluator.pages.candidate.results import candidate_results_page
 
 app = rx.App(
-stylesheets=FONT_STYLESHEETS,
-theme=rx.theme(
-appearance="light",
-accent_color="indigo",
-radius="large",
-),
+    stylesheets=FONT_STYLESHEETS,
 )
 
 app.add_page(home_page, route="/", title="Gen AI Hybrid Evaluator")

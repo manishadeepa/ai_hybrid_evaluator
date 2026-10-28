@@ -150,4 +150,61 @@ class WorkspaceNavigationTests(unittest.IsolatedAsyncioTestCase):
         await self.fac.create_new_test()
         self.assertEqual(self.service.tests.repository.get_all(),[])
 
+    async def test_create_test_optional_timing(self):
+        await self.fac.open_assessment_by_id(self.second['assessment_id'])
+        await self.fac.open_add_test_modal()
+        self.fac.new_test_name = 'Timing Test'
+        self.fac.new_test_date = '2099-10-01'
+        self.fac.new_question_type = 'Objective'
+
+        # 1. Only start time provided -> validation error
+        self.fac.new_test_start_time = '10:00 AM'
+        self.fac.new_test_end_time = ''
+        result = await self.fac.create_new_test()
+        self.assertEqual(self.fac.end_time_error, 'Please enter both times or leave both empty.')
+        self.assertIn('Please enter both times or leave both empty.', str(result))
+
+        # 2. Only end time provided -> validation error
+        self.fac.new_test_start_time = ''
+        self.fac.new_test_end_time = '11:00 AM'
+        result = await self.fac.create_new_test()
+        self.assertEqual(self.fac.start_time_error, 'Please enter both times or leave both empty.')
+        self.assertIn('Please enter both times or leave both empty.', str(result))
+
+        # 3. Clear end time -> clears error
+        self.fac.clear_end_time()
+        self.assertEqual(self.fac.start_time_error, '')
+        self.assertEqual(self.fac.end_time_error, '')
+
+        # 4. End time <= start time -> validation error
+        self.fac.new_test_start_time = '11:00 AM'
+        self.fac.new_test_end_time = '10:00 AM'
+        result = await self.fac.create_new_test()
+        self.assertEqual(self.fac.end_time_error, 'End Time must be later than Start Time.')
+        self.assertIn('End Time must be later than Start Time.', str(result))
+
+        # 5. Both timing fields empty -> succeeds
+        self.fac.new_test_start_time = ''
+        self.fac.new_test_end_time = ''
+        result = await self.fac.create_new_test()
+        current_id = self.fac.selected_assessment_id
+        saved = self.service.get_assessment(current_id)
+        self.assertIn('Timing Test', saved['test_ids'])
+        self.assertEqual(self.fac.start_time_error, '')
+        self.assertEqual(self.fac.end_time_error, '')
+
+        # 6. Both timing fields filled validly -> succeeds
+        await self.fac.open_add_test_modal()
+        self.fac.new_test_name = 'Timed Test'
+        self.fac.new_test_date = '2099-10-01'
+        self.fac.new_question_type = 'Objective'
+        self.fac.new_test_start_time = '09:00 AM'
+        self.fac.new_test_end_time = '11:00 AM'
+        result = await self.fac.create_new_test()
+        saved = self.service.get_assessment(current_id)
+        self.assertIn('Timed Test', saved['test_ids'])
+        self.assertEqual(saved['test_timings']['Timed Test']['start_time'], '09:00 AM')
+        self.assertEqual(saved['test_timings']['Timed Test']['end_time'], '11:00 AM')
+
 if __name__=='__main__': unittest.main()
+

@@ -1225,6 +1225,18 @@ def tests_tab_card(test: dict) -> rx.Component:
             ),
             # Right: Action buttons + 3-dot menu
             rx.hstack(
+                # Lock Test (always visible, frontend UI only)
+                rx.button(
+                    rx.icon("lock", size=14),
+                    "Lock Test",
+                    size="2",
+                    variant="outline",
+                    color_scheme="gray",
+                    color="#1E293B",
+                    font_family=FONT_BODY,
+                    border_radius="8px",
+                    cursor="pointer",
+                ),
                 # View File (only when QP uploaded)
                 rx.cond(
                     has_file,
@@ -1378,14 +1390,13 @@ def tests_tab() -> rx.Component:
                 rx.text(
                     rx.cond(
                         FacilitatorState.selected_assessment_name != "",
-                        "Assessment: " + FacilitatorState.selected_assessment_name,
-                        "Assessment",
+                        "Assessment Name: " + FacilitatorState.selected_assessment_name,
+                        "Assessment Name",
                     ),
-                    font_family=FONT_BODY,
-                    size="1",
-                    weight="medium",
-                    color=COLORS["primary"],
-                    letter_spacing="0.01em",
+                    font_family=FONT_DISPLAY,
+                    size="3",
+                    weight="bold",
+                    color=COLORS["ink"],
                 ),
                 rx.text(
                     "Tests",
@@ -1440,14 +1451,13 @@ def tests_tab() -> rx.Component:
                     rx.text(
                         rx.cond(
                             FacilitatorState.selected_assessment_name != "",
-                            "Assessment: " + FacilitatorState.selected_assessment_name,
-                            "Assessment",
+                            "Assessment Name: " + FacilitatorState.selected_assessment_name,
+                            "Assessment Name",
                         ),
-                        font_family=FONT_BODY,
-                        size="1",
-                        weight="medium",
-                        color=COLORS["primary"],
-                        letter_spacing="0.01em",
+                        font_family=FONT_DISPLAY,
+                        size="3",
+                        weight="bold",
+                        color=COLORS["ink"],
                     ),
                     rx.text(
                         "Tests",
@@ -1520,91 +1530,409 @@ def evaluation_test_header() -> rx.Component:
     )
 
 
+def candidate_submission_popup() -> rx.Component:
+    """Popup modal titled 'Candidate Submission Status' matching reference screenshot exactly:
+    blue document icon header, subtitle, table with #/Candidate Name/Submission Status/Submitted On, Close button."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # ── Modal Header ──────────────────────────────────────────
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(
+                            rx.icon("file-text", size=22, color="#2563EB"),
+                            background="#EFF6FF",
+                            border="1px solid #DBEAFE",
+                            padding="0.5em",
+                            border_radius="10px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "Candidate Submission Status",
+                                font_family=FONT_DISPLAY,
+                                font_size="1.15rem",
+                                weight="bold",
+                                color="#0F172A",
+                            ),
+                            rx.text(
+                                "List of candidates and their test submission status.",
+                                font_family=FONT_BODY,
+                                font_size="0.8rem",
+                                color="#64748B",
+                            ),
+                            spacing="0",
+                            align_items="start",
+                        ),
+                        spacing="3",
+                        align_items="center",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.box(
+                            rx.icon("x", size=18, color="#94A3B8"),
+                            cursor="pointer",
+                            padding="0.3em",
+                            border_radius="6px",
+                            display="flex",
+                            align_items="center",
+                            justify_content="center",
+                            _hover={"color": "#475569", "background": "#F1F5F9"},
+                            on_click=FacilitatorState.close_candidate_submission_popup,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                ),
+
+                # ── Candidate Table ───────────────────────────────────────
+                rx.box(
+                    # Table Header
+                    rx.hstack(
+                        rx.text("#", font_family=FONT_BODY, font_size="0.78rem", weight="bold", color="#64748B", width="40px"),
+                        rx.text("Candidate Name", font_family=FONT_BODY, font_size="0.78rem", weight="bold", color="#64748B", flex="1"),
+                        rx.text("Submission Status", font_family=FONT_BODY, font_size="0.78rem", weight="bold", color="#64748B", width="140px"),
+                        rx.text("Submitted On", font_family=FONT_BODY, font_size="0.78rem", weight="bold", color="#64748B", width="180px"),
+                        width="100%",
+                        background="#F8FAFC",
+                        padding="0.7em 1.1em",
+                        border_bottom="1px solid #E2E8F0",
+                        align_items="center",
+                    ),
+                    # Table Body Rows
+                    rx.box(
+                        rx.cond(
+                            FacilitatorState.eval_candidate_submission_list.length() > 0,
+                            rx.vstack(
+                                rx.foreach(
+                                    FacilitatorState.eval_candidate_submission_list,
+                                    lambda item: rx.hstack(
+                                        rx.text(item["sno"], font_family=FONT_BODY, font_size="0.85rem", color="#64748B", width="40px"),
+                                        rx.text(item["name"], font_family=FONT_BODY, font_size="0.875rem", font_weight="500", color="#0F172A", flex="1"),
+                                        rx.box(
+                                            rx.badge(
+                                                item["status"],
+                                                color_scheme=rx.cond(
+                                                    item["status"] == "Submitted",
+                                                    "green",
+                                                    "orange",
+                                                ),
+                                                variant="soft",
+                                                size="1",
+                                                border_radius="4px",
+                                                padding="0.2em 0.6em",
+                                                font_weight="500",
+                                            ),
+                                            width="140px",
+                                        ),
+                                        rx.text(
+                                            item["submitted_on"],
+                                            font_family=FONT_BODY,
+                                            font_size="0.8rem",
+                                            color="#64748B",
+                                            width="180px",
+                                        ),
+                                        width="100%",
+                                        padding="0.8em 1.1em",
+                                        border_bottom="1px solid #F1F5F9",
+                                        align_items="center",
+                                        _hover={"background": "#FAFAFA"},
+                                    ),
+                                ),
+                                spacing="0",
+                                width="100%",
+                            ),
+                            # Empty state
+                            rx.box(
+                                rx.vstack(
+                                    rx.icon("users", size=24, color="#94A3B8"),
+                                    rx.text("No candidates assigned to this test.", font_family=FONT_BODY, size="2", color="#64748B"),
+                                    spacing="2",
+                                    align_items="center",
+                                    padding="2.5em 1em",
+                                ),
+                                width="100%",
+                            ),
+                        ),
+                        max_height="300px",
+                        overflow_y="auto",
+                        width="100%",
+                    ),
+                    width="100%",
+                    border="1px solid #E2E8F0",
+                    border_radius="10px",
+                    overflow="hidden",
+                ),
+
+                # ── Modal Footer with Close Button ─────────────────────────
+                rx.hstack(
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.button(
+                            "Close",
+                            font_family=FONT_BODY,
+                            font_size="0.85rem",
+                            font_weight="500",
+                            background="white",
+                            color="#374151",
+                            border="1px solid #D1D5DB",
+                            border_radius="6px",
+                            padding="0.45em 1.5em",
+                            cursor="pointer",
+                            _hover={"background": "#F9FAFB"},
+                            on_click=FacilitatorState.close_candidate_submission_popup,
+                        ),
+                    ),
+                    width="100%",
+                    padding_top="0.8em",
+                    align_items="center",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            max_width="640px",
+            width="92vw",
+            padding="1.6em",
+            border_radius="14px",
+            background="white",
+            box_shadow="0 20px 45px -10px rgba(0, 0, 0, 0.2)",
+        ),
+        open=FacilitatorState.show_candidate_submission_popup,
+        on_open_change=FacilitatorState.set_show_candidate_submission_popup,
+    )
+
+
 def evaluation_candidate_selection_card() -> rx.Component:
+    """Top section matching reference screenshot 2 exactly:
+    1. Select Test dropdown
+    2. Select Candidate dropdown
+    3. Total Candidates Assigned card (purple icon + count)
+    4. Candidate Submission Status card (blue icon + 2/2 + green underline bar)
+    5. Evaluation Status card (green circle-check + Completed pill badge)
+    6. See Report -> purple button
+    """
     return rx.box(
         rx.hstack(
-            # Col 1: Select Test Dropdown
+            # 1. Select Test Dropdown
             rx.vstack(
-                rx.text("Select Test", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                rx.text("Select Test", font_family=FONT_BODY, font_size="0.78rem", font_weight="700", color="#1E293B"),
                 rx.select(
                     FacilitatorState.evaluation_test_options,
                     value=FacilitatorState.selected_evaluation_test,
                     on_change=FacilitatorState.set_evaluation_selected_test,
                     placeholder="Choose a test…",
                     size="2",
-                    width="100%",
-                    min_width="200px",
+                    width="170px",
+                    border_radius="8px",
                 ),
                 spacing="1",
                 align_items="start",
-                flex="1",
+                flex_shrink="0",
             ),
-            # Col 2: Select Candidate Dropdown
+
+            # 2. Select Candidate Dropdown
             rx.vstack(
-                rx.text("Select Candidate", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
+                rx.text("Select Candidate", font_family=FONT_BODY, font_size="0.78rem", font_weight="700", color="#1E293B"),
                 rx.select(
                     FacilitatorState.evaluation_candidate_options,
                     value=FacilitatorState.selected_evaluation_candidate,
                     on_change=FacilitatorState.set_selected_evaluation_candidate,
                     placeholder="Choose a candidate…",
                     size="2",
-                    width="100%",
-                    min_width="220px",
+                    width="170px",
+                    border_radius="8px",
                 ),
                 spacing="1",
                 align_items="start",
-                flex="1",
+                flex_shrink="0",
             ),
-            # Right: Submission Status & Timestamp
-            rx.vstack(
+
+            rx.spacer(),
+
+            # 3. Total Candidates Assigned Card
+            rx.box(
                 rx.hstack(
-                    rx.text("Submission Status", font_family=FONT_BODY, size="1", color=COLORS["slate"]),
-                    rx.cond(
-                        FacilitatorState.is_all_candidates_evaluation,
-                        rx.badge("All Candidates", color_scheme="indigo", variant="soft", size="1"),
-                        rx.badge(
-                            rx.cond(FacilitatorState.has_submitted_response, "Submitted", "Not Submitted"),
-                            color_scheme=rx.cond(FacilitatorState.has_submitted_response, "green", "gray"),
-                            variant="soft",
-                            size="1",
-                        ),
+                    rx.box(
+                        rx.icon("users", size=20, color="#7C3AED"),
+                        background="#EDE9FE",
+                        padding="0.55em",
+                        border_radius="10px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        flex_shrink="0",
                     ),
+                    rx.vstack(
+                        rx.text(
+                            "Total Candidates\nAssigned",
+                            font_family=FONT_BODY,
+                            font_size="0.7rem",
+                            color="#64748B",
+                            font_weight="500",
+                            line_height="1.2",
+                            white_space="pre-line",
+                        ),
+                        rx.text(
+                            FacilitatorState.eval_total_assigned_count.to_string(),
+                            font_family=FONT_DISPLAY,
+                            font_size="1.35rem",
+                            font_weight="bold",
+                            color="#0F172A",
+                            line_height="1",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                background="#F8F9FE",
+                border="1px solid #EEF0FB",
+                border_radius="12px",
+                padding="0.65em 1.1em",
+                flex_shrink="0",
+            ),
+
+            # 4. Candidate Submission Status Card (Clickable to open popup)
+            rx.box(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("file-text", size=20, color="#2563EB"),
+                        background="#DBEAFE",
+                        padding="0.55em",
+                        border_radius="10px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        flex_shrink="0",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Candidate Submission\nStatus",
+                            font_family=FONT_BODY,
+                            font_size="0.7rem",
+                            color="#64748B",
+                            font_weight="500",
+                            line_height="1.2",
+                            white_space="pre-line",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                FacilitatorState.eval_submission_fraction,
+                                font_family=FONT_DISPLAY,
+                                font_size="1.25rem",
+                                font_weight="bold",
+                                color="#15803D",
+                                line_height="1",
+                            ),
+                            rx.box(
+                                width="100%",
+                                height="3px",
+                                background="#15803D",
+                                border_radius="2px",
+                                margin_top="3px",
+                            ),
+                            spacing="0",
+                            width="100%",
+                            align_items="start",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                background="#F0F7FF",
+                border="1px solid #DBEAFE",
+                border_radius="12px",
+                padding="0.65em 1.1em",
+                cursor="pointer",
+                on_click=FacilitatorState.open_candidate_submission_popup,
+                _hover={"background": "#E6F0FD", "border_color": "#BFDBFE"},
+                title="Click to view candidate submission status",
+                flex_shrink="0",
+            ),
+
+            # 5. Evaluation Status Card
+            rx.box(
+                rx.hstack(
+                    rx.box(
+                        rx.icon("circle-check", size=24, color="#16A34A"),
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        flex_shrink="0",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            "Evaluation Status",
+                            font_family=FONT_BODY,
+                            font_size="0.7rem",
+                            color="#64748B",
+                            font_weight="500",
+                        ),
+                        rx.box(
+                            rx.text(
+                                FacilitatorState.eval_status_label,
+                                font_family=FONT_BODY,
+                                font_size="0.75rem",
+                                font_weight="bold",
+                                color="white",
+                            ),
+                            background="#16A34A",
+                            padding="0.25em 0.85em",
+                            border_radius="9999px",
+                            display="inline-flex",
+                            align_items="center",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="center",
+                ),
+                background="#F0FDF4",
+                border="1px solid #DCFCE7",
+                border_radius="12px",
+                padding="0.65em 1.1em",
+                flex_shrink="0",
+            ),
+
+            # 6. See Report Button
+            rx.button(
+                rx.hstack(
+                    rx.text("See Report", font_family=FONT_BODY, font_size="0.875rem", font_weight="600"),
+                    rx.icon("arrow-right", size=16),
                     spacing="2",
                     align_items="center",
                 ),
-                rx.vstack(
-                    rx.text(
-                        rx.cond(FacilitatorState.is_all_candidates_evaluation, "Target Cohort", "Submitted On"),
-                        font_family=FONT_BODY,
-                        size="1",
-                        color=COLORS["slate"],
-                    ),
-                    rx.text(
-                        FacilitatorState.current_candidate_submitted_on,
-                        font_family=FONT_BODY,
-                        size="2",
-                        weight="medium",
-                        color=COLORS["ink"],
-                    ),
-                    spacing="0",
-                    align_items="start",
-                ),
-                spacing="1",
-                align_items="start",
-                min_width="160px",
+                background="#7C3AED",
+                color="white",
+                border_radius="10px",
+                padding="0.75em 1.25em",
+                cursor="pointer",
+                _hover={"background": "#6D28D9"},
+                on_click=FacilitatorState.set_workspace_tab("results"),
+                flex_shrink="0",
             ),
+
             spacing="4",
             width="100%",
             align_items="center",
             flex_wrap="wrap",
         ),
-        background=COLORS["surface"],
-        border=f"1px solid {COLORS['line']}",
-        border_radius="12px",
-        padding="1.2em 1.5em",
+        background="white",
+        border="1px solid #E2E8F0",
+        border_radius="14px",
+        padding="1em 1.3em",
         width="100%",
         margin_bottom="1.2em",
+        box_shadow="0 1px 3px rgba(0, 0, 0, 0.04)",
     )
+
 
 
 def evaluation_files_card() -> rx.Component:
@@ -1843,22 +2171,34 @@ def evaluation_methods_card() -> rx.Component:
                         text_align="center",
                         min_height="36px",
                     ),
-                    rx.button(
-                        rx.icon("clipboard-pen", size=14),
-                        rx.cond(
-                            FacilitatorState.is_all_candidates_evaluation,
-                            "Manual Eval (Select Candidate)",
-                            "Start Manual Evaluation",
+                    rx.hstack(
+                        rx.button(
+                            rx.icon("pencil", size=14),
+                            "Manual Evaluation",
+                            on_click=lambda: FacilitatorState.open_candidate_test_status("manual"),
+                            size="2",
+                            background=COLORS["primary"],
+                            color="white",
+                            font_family=FONT_BODY,
+                            border_radius="8px",
+                            flex="1",
+                            _hover={"background": COLORS["primary_hover"]},
                         ),
-                        on_click=FacilitatorState.open_manual_eval_modal,
-                        size="2",
-                        background=rx.cond(FacilitatorState.is_all_candidates_evaluation, COLORS["slate"], COLORS["primary"]),
-                        color="white",
-                        font_family=FONT_BODY,
+                        rx.button(
+                            rx.icon("eye", size=14),
+                            "Review Evaluation",
+                            on_click=lambda: FacilitatorState.open_review_evaluation("manual"),
+                            size="2",
+                            variant="outline",
+                            border=f"1px solid {COLORS['primary']}",
+                            color=COLORS["primary"],
+                            font_family=FONT_BODY,
+                            border_radius="8px",
+                            flex="1",
+                            _hover={"background": COLORS["primary_soft"]},
+                        ),
+                        spacing="2",
                         width="100%",
-                        border_radius="8px",
-                        _hover={"background": COLORS["primary_hover"]},
-                        disabled=FacilitatorState.is_all_candidates_evaluation,
                     ),
                     spacing="3",
                     align_items="center",
@@ -1895,21 +2235,34 @@ def evaluation_methods_card() -> rx.Component:
                         text_align="center",
                         min_height="36px",
                     ),
-                    rx.button(
-                        rx.icon("plus", size=14),
-                        rx.cond(
-                            FacilitatorState.is_all_candidates_evaluation,
-                            "Start AI Evaluation (All Candidates)",
+                    rx.hstack(
+                        rx.button(
+                            rx.icon("play", size=14),
                             "Start AI Evaluation",
+                            on_click=lambda: FacilitatorState.open_candidate_test_status("ai"),
+                            size="2",
+                            background="#027A48",
+                            color="white",
+                            font_family=FONT_BODY,
+                            border_radius="8px",
+                            flex="1",
+                            _hover={"background": "#05603A"},
                         ),
-                        on_click=FacilitatorState.open_ai_eval_modal,
-                        size="2",
-                        background="#027A48",
-                        color="white",
-                        font_family=FONT_BODY,
+                        rx.button(
+                            rx.icon("eye", size=14),
+                            "Review Evaluation",
+                            on_click=lambda: FacilitatorState.open_review_evaluation("ai"),
+                            size="2",
+                            variant="outline",
+                            border="1px solid #027A48",
+                            color="#027A48",
+                            font_family=FONT_BODY,
+                            border_radius="8px",
+                            flex="1",
+                            _hover={"background": "#ECFDF3"},
+                        ),
+                        spacing="2",
                         width="100%",
-                        border_radius="8px",
-                        _hover={"background": "#05603A"},
                     ),
                     spacing="3",
                     align_items="center",
@@ -3586,6 +3939,502 @@ def ai_eval_progress_modal() -> rx.Component:
     )
 
 
+def candidate_test_status_modal() -> rx.Component:
+    """Candidate Test Status popup displayed before proceeding to Manual or AI evaluation."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.box(
+                        rx.icon("users", size=20, color="#7C3AED"),
+                        background="#F4F3FF",
+                        padding="0.5em",
+                        border_radius="8px",
+                    ),
+                    rx.vstack(
+                        rx.dialog.title("Candidate Test Status", font_family=FONT_BODY, size="4", weight="bold", color=COLORS["ink"]),
+                        rx.dialog.description(
+                            "Review candidate completion status before proceeding with evaluation.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_candidate_test_status,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                ),
+
+                # Stat Summary Cards (4 columns)
+                rx.grid(
+                    # 1. Total Candidates
+                    rx.box(
+                        rx.vstack(
+                            rx.text("Total Candidates", font_family=FONT_BODY, size="1", color="#6941C6", weight="medium"),
+                            rx.text(FacilitatorState.candidate_test_status_total_str, font_family=FONT_DISPLAY, size="6", weight="bold", color="#53389E"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        background="#F4F3FF",
+                        border="1px solid #EDE9FE",
+                        border_radius="8px",
+                        padding="0.75em 1em",
+                        text_align="center",
+                    ),
+                    # 2. Completed
+                    rx.box(
+                        rx.vstack(
+                            rx.text("Completed", font_family=FONT_BODY, size="1", color="#027A48", weight="medium"),
+                            rx.text(FacilitatorState.candidate_test_status_completed_str, font_family=FONT_DISPLAY, size="6", weight="bold", color="#027A48"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        background="#ECFDF3",
+                        border="1px solid #D1FADF",
+                        border_radius="8px",
+                        padding="0.75em 1em",
+                        text_align="center",
+                    ),
+                    # 3. Not Completed
+                    rx.box(
+                        rx.vstack(
+                            rx.text("Not Completed", font_family=FONT_BODY, size="1", color="#B54708", weight="medium"),
+                            rx.text(FacilitatorState.candidate_test_status_not_completed_str, font_family=FONT_DISPLAY, size="6", weight="bold", color="#B54708"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        background="#FFFAEB",
+                        border="1px solid #FEDF89",
+                        border_radius="8px",
+                        padding="0.75em 1em",
+                        text_align="center",
+                    ),
+                    # 4. Absent
+                    rx.box(
+                        rx.vstack(
+                            rx.text("Absent", font_family=FONT_BODY, size="1", color="#B42318", weight="medium"),
+                            rx.text(FacilitatorState.candidate_test_status_absent_str, font_family=FONT_DISPLAY, size="6", weight="bold", color="#B42318"),
+                            spacing="1",
+                            align_items="center",
+                        ),
+                        background="#FEF3F2",
+                        border="1px solid #FECDCA",
+                        border_radius="8px",
+                        padding="0.75em 1em",
+                        text_align="center",
+                    ),
+                    columns="4",
+                    spacing="3",
+                    width="100%",
+                    margin_y="0.8em",
+                ),
+
+                # Candidates Table (Columns: #, Candidate Name, Test Status) - NO Candidate ID
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell(rx.text("#", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="50px"),
+                                rx.table.column_header_cell(rx.text("Candidate Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
+                                rx.table.column_header_cell(rx.text("Test Status", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="140px"),
+                            ),
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                FacilitatorState.candidate_test_status_rows,
+                                lambda row: rx.table.row(
+                                    rx.table.cell(rx.text(row["index"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"])),
+                                    rx.table.cell(rx.text(row["name"], font_family=FONT_BODY, size="1", weight="medium", color=COLORS["ink"])),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            row["status"] == "Completed",
+                                            rx.badge("Completed", color_scheme="green", variant="soft", size="2"),
+                                            rx.cond(
+                                                row["status"] == "Not Completed",
+                                                rx.badge("Not Completed", color_scheme="amber", variant="soft", size="2"),
+                                                rx.badge("Absent", color_scheme="red", variant="soft", size="2"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        width="100%",
+                    ),
+                    border=f"1px solid {COLORS['line']}",
+                    border_radius="8px",
+                    overflow="hidden",
+                    width="100%",
+                    max_height="280px",
+                    overflow_y="auto",
+                ),
+
+                # Info banner if incomplete or absent exist
+                rx.cond(
+                    FacilitatorState.candidate_test_status_has_incomplete,
+                    rx.box(
+                        rx.hstack(
+                            rx.icon("circle-alert", size=18, color="#7C3AED"),
+                            rx.vstack(
+                                rx.text(
+                                    "There are " + FacilitatorState.candidate_test_status_incomplete_count_str + " candidates who have not completed the test.",
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color="#53389E",
+                                    weight="bold",
+                                ),
+                                rx.text(
+                                    "Click \"Mark Incomplete/Absent as 0 and Proceed\" to assign zero marks to not completed/absent candidates and continue the evaluation.",
+                                    font_family=FONT_BODY,
+                                    size="1",
+                                    color="#6941C6",
+                                ),
+                                spacing="0",
+                                align_items="start",
+                            ),
+                            spacing="3",
+                            align_items="start",
+                        ),
+                        background="#F9F5FF",
+                        border="1px solid #D6BBFB",
+                        border_radius="8px",
+                        padding="0.75em 1em",
+                        width="100%",
+                        margin_top="0.8em",
+                    ),
+                ),
+
+                # Footer Buttons
+                rx.hstack(
+                    rx.spacer(),
+                    rx.button(
+                        "Cancel",
+                        on_click=FacilitatorState.close_candidate_test_status,
+                        size="2",
+                        variant="outline",
+                        color_scheme="gray",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                    ),
+                    rx.button(
+                        "Mark Incomplete/Absent as 0 and Proceed",
+                        on_click=FacilitatorState.proceed_from_candidate_test_status,
+                        size="2",
+                        background=COLORS["primary"],
+                        color="white",
+                        font_family=FONT_BODY,
+                        border_radius="8px",
+                        _hover={"background": COLORS["primary_hover"]},
+                    ),
+                    spacing="3",
+                    width="100%",
+                    align_items="center",
+                    padding_top="1em",
+                ),
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            max_width="620px",
+            width="90vw",
+            padding="1.5em",
+            border_radius="12px",
+            background=COLORS["surface"],
+        ),
+        open=FacilitatorState.show_candidate_test_status_modal,
+        on_open_change=FacilitatorState.close_candidate_test_status,
+    )
+
+
+def review_evaluation_modal() -> rx.Component:
+    """Question-wise Review Evaluation interface supporting both Manual and AI evaluations."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                # Header
+                rx.hstack(
+                    rx.cond(
+                        FacilitatorState.review_eval_method == "ai",
+                        rx.box(
+                            rx.icon("sparkles", size=20, color="#027A48"),
+                            background="#ECFDF3",
+                            padding="0.5em",
+                            border_radius="8px",
+                        ),
+                        rx.box(
+                            rx.icon("pencil", size=20, color=COLORS["primary"]),
+                            background=COLORS["primary_soft"],
+                            padding="0.5em",
+                            border_radius="8px",
+                        ),
+                    ),
+                    rx.vstack(
+                        rx.dialog.title(
+                            FacilitatorState.review_eval_modal_title,
+                            font_family=FONT_BODY,
+                            size="4",
+                            weight="bold",
+                            color=COLORS["ink"],
+                        ),
+                        rx.dialog.description(
+                            "Review and update candidate marks, evaluation justifications, and facilitator remarks.",
+                            font_family=FONT_BODY,
+                            size="2",
+                            color=COLORS["slate"],
+                        ),
+                        spacing="0",
+                        align_items="start",
+                    ),
+                    rx.spacer(),
+                    rx.dialog.close(
+                        rx.icon_button(
+                            rx.icon("x", size=16),
+                            size="1",
+                            variant="ghost",
+                            color_scheme="gray",
+                            cursor="pointer",
+                            on_click=FacilitatorState.close_review_evaluation,
+                        ),
+                    ),
+                    width="100%",
+                    align_items="center",
+                    padding_bottom="0.8em",
+                    border_bottom=f"1px solid {COLORS['line']}",
+                ),
+
+                # Controls Row: Select Candidate, Select Question, Previous/Next, Evaluation Method pill
+                rx.hstack(
+                    rx.hstack(
+                        rx.text("Select Candidate", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                        rx.select(
+                            FacilitatorState.review_eval_candidate_options,
+                            value=FacilitatorState.review_eval_selected_candidate,
+                            on_change=FacilitatorState.set_review_eval_selected_candidate,
+                            size="1",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                    ),
+                    rx.hstack(
+                        rx.text("Select Question", font_family=FONT_BODY, size="1", color=COLORS["slate"], weight="medium"),
+                        rx.select(
+                            FacilitatorState.review_eval_question_options,
+                            value=FacilitatorState.review_eval_selected_question_label,
+                            on_change=FacilitatorState.set_review_eval_selected_question,
+                            size="1",
+                        ),
+                        spacing="2",
+                        align_items="center",
+                        margin_left="1em",
+                    ),
+                    rx.spacer(),
+                    rx.cond(
+                        FacilitatorState.review_eval_method == "ai",
+                        rx.badge(
+                            rx.icon("sparkles", size=12),
+                            "AI Evaluation",
+                            color_scheme="green",
+                            variant="soft",
+                            size="2",
+                        ),
+                        rx.badge(
+                            rx.icon("pencil", size=12),
+                            "Manual Evaluation",
+                            color_scheme="purple",
+                            variant="soft",
+                            size="2",
+                        ),
+                    ),
+                    rx.button(
+                        rx.icon("arrow-left", size=13),
+                        "Previous",
+                        on_click=FacilitatorState.review_eval_prev_question,
+                        size="1",
+                        variant="outline",
+                        color_scheme="gray",
+                        font_family=FONT_BODY,
+                    ),
+                    rx.button(
+                        "Next",
+                        rx.icon("arrow-right", size=13),
+                        on_click=FacilitatorState.review_eval_next_question,
+                        size="1",
+                        variant="outline",
+                        color_scheme="indigo",
+                        font_family=FONT_BODY,
+                    ),
+                    spacing="2",
+                    width="100%",
+                    align_items="center",
+                    padding_y="0.6em",
+                ),
+
+                # Highlighted Question Box
+                rx.box(
+                    rx.text(
+                        FacilitatorState.review_eval_question_text,
+                        font_family=FONT_BODY,
+                        size="2",
+                        weight="bold",
+                        color="#4F46E5",
+                        line_height="1.5",
+                    ),
+                    background="#F5F3FF",
+                    border="1px solid #EDE9FE",
+                    border_radius="8px",
+                    padding="0.85em 1.2em",
+                    width="100%",
+                    margin_bottom="0.8em",
+                ),
+
+                # Results Table or Empty State
+                rx.cond(
+                    FacilitatorState.review_eval_has_results,
+                    rx.box(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(rx.text("#", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="45px"),
+                                    rx.table.column_header_cell(rx.text("Candidate Name", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="160px"),
+                                    rx.table.column_header_cell(rx.text("Candidate Response", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="150px"),
+                                    rx.table.column_header_cell(rx.text(FacilitatorState.review_eval_max_marks_label, font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="110px"),
+                                    rx.table.column_header_cell(rx.text("Score", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="80px"),
+                                    rx.table.column_header_cell(rx.text("Evaluation Justification", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), min_width="220px"),
+                                    rx.table.column_header_cell(rx.text("Facilitator Remarks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), min_width="180px"),
+                                    rx.table.column_header_cell(rx.text("Action", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), width="85px"),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    FacilitatorState.review_eval_candidate_rows,
+                                    lambda row: rx.table.row(
+                                        rx.table.cell(rx.text(row["index"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["slate"]), vertical_align="middle"),
+                                        rx.table.cell(rx.text(row["name"], font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]), vertical_align="middle"),
+                                        rx.table.cell(
+                                            rx.text(row["response"], font_family=FONT_BODY, size="1", color="#374151", weight="medium", overflow_wrap="break-word"),
+                                            vertical_align="middle",
+                                        ),
+                                        rx.table.cell(
+                                            rx.input(
+                                                value=row["marks"],
+                                                on_change=lambda val: FacilitatorState.set_review_row_mark(row["key"], val),
+                                                size="1",
+                                                width="75px",
+                                                font_family=FONT_BODY,
+                                            ),
+                                            vertical_align="middle",
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(
+                                                row["score"],
+                                                font_family=FONT_BODY,
+                                                size="1",
+                                                weight="bold",
+                                                color=rx.cond(row["score"] == "0%", "#D92D20", "#027A48"),
+                                            ),
+                                            vertical_align="middle",
+                                        ),
+                                        rx.table.cell(
+                                            rx.input(
+                                                value=row["justification"],
+                                                on_change=lambda val: FacilitatorState.set_review_row_justification(row["key"], val),
+                                                size="1",
+                                                font_family=FONT_BODY,
+                                                width="100%",
+                                            ),
+                                            vertical_align="middle",
+                                        ),
+                                        rx.table.cell(
+                                            rx.input(
+                                                value=row["remarks"],
+                                                placeholder="Facilitator remarks...",
+                                                on_change=lambda val: FacilitatorState.set_review_row_remarks(row["key"], val),
+                                                size="1",
+                                                font_family=FONT_BODY,
+                                                width="100%",
+                                            ),
+                                            vertical_align="middle",
+                                        ),
+                                        rx.table.cell(
+                                            rx.button(
+                                                "Save",
+                                                on_click=lambda: FacilitatorState.save_review_row(row["key"], row["name"], row["max_marks"]),
+                                                size="1",
+                                                background=COLORS["primary"],
+                                                color="white",
+                                                font_family=FONT_BODY,
+                                                border_radius="6px",
+                                                _hover={"background": COLORS["primary_hover"]},
+                                            ),
+                                            vertical_align="middle",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            width="100%",
+                        ),
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        overflow_x="auto",
+                        max_height="420px",
+                        overflow_y="auto",
+                        width="100%",
+                    ),
+                    # Empty state when results are unavailable
+                    rx.box(
+                        rx.vstack(
+                            rx.icon("circle-alert", size=24, color=COLORS["slate"]),
+                            rx.text(
+                                "No evaluation results available for this candidate and question.",
+                                font_family=FONT_BODY,
+                                size="2",
+                                color=COLORS["slate"],
+                                weight="medium",
+                            ),
+                            spacing="2",
+                            align_items="center",
+                            justify_content="center",
+                            padding="3.5em 1em",
+                            width="100%",
+                        ),
+                        background=COLORS["canvas"],
+                        border=f"1px solid {COLORS['line']}",
+                        border_radius="8px",
+                        width="100%",
+                    ),
+                ),
+                spacing="3",
+                width="100%",
+                align_items="stretch",
+            ),
+            max_width="1180px",
+            width="95vw",
+            max_height="90vh",
+            overflow_y="auto",
+            padding="1.8em",
+            border_radius="12px",
+            background=COLORS["surface"],
+        ),
+        open=FacilitatorState.show_review_evaluation_modal,
+        on_open_change=FacilitatorState.close_review_evaluation,
+    )
+
+
 def evaluation_tab() -> rx.Component:
     """Evaluation tab interface matching reference screenshot exactly."""
     return rx.vstack(
@@ -3593,12 +4442,14 @@ def evaluation_tab() -> rx.Component:
         evaluation_candidate_selection_card(),
         evaluation_files_card(),
         evaluation_methods_card(),
-        evaluation_ai_results_card(),
         candidate_response_modal(),
         manual_evaluation_modal(),
         answer_key_upload_modal(),
         ai_evaluation_trigger_modal(),
         ai_eval_progress_modal(),
+        candidate_test_status_modal(),
+        review_evaluation_modal(),
+        candidate_submission_popup(),
         spacing="4",
         width="100%",
         align_items="stretch",
@@ -7721,12 +8572,7 @@ def time_picker_combobox(
     close_all,
 ) -> rx.Component:
     return rx.vstack(
-        rx.hstack(
-            rx.text(label, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
-            rx.text("*", font_family=FONT_BODY, size="1", weight="bold", color="#EF4444"),
-            spacing="1",
-            align_items="center",
-        ),
+        rx.text(label, font_family=FONT_BODY, size="1", weight="medium", color=COLORS["slate"]),
         rx.box(
             # Input with clock icon on left and clear/chevron on right
             rx.input(
@@ -8139,12 +8985,7 @@ def add_new_test_dialog() -> rx.Component:
 
                 # ── Test Timing ─────────────────────────────────────────
                 rx.vstack(
-                    rx.hstack(
-                        rx.text("Test Timing", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
-                        rx.text("*", font_family=FONT_BODY, size="2", weight="bold", color="#EF4444"),
-                        spacing="1",
-                        align_items="center",
-                    ),
+                    rx.text("Test Timing", font_family=FONT_BODY, size="2", weight="bold", color=COLORS["ink"]),
                     rx.hstack(
                         # Start Time
                         time_picker_combobox(

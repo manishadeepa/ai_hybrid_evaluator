@@ -14,6 +14,7 @@ for _package in ("ai_hybrid_evaluator", "backend"):
         _reload_files.append(_relative.as_posix())
 
 os.environ["REFLEX_HOT_RELOAD_OVERRIDE_PATHS"] = ":".join(_reload_files)
+os.environ["REFLEX_USE_GRANIAN"] = "false"
 import reflex as rx
 
 config = rx.Config(
@@ -22,5 +23,12 @@ config = rx.Config(
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),
+        rx.plugins.RadixThemesPlugin(
+            theme=rx.theme(
+                appearance="light",
+                accent_color="indigo",
+                radius="large",
+            )
+        ),
     ]
 )

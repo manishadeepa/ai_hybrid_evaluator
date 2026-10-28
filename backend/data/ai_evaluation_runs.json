@@ -6173,5 +6173,697 @@
         "failed_questions": 0,
         "pending_questions": 0,
         "percentage": 100.0
+    },
+    {
+        "run_id": "27ddb96d1686447da688a2d1eb1e3de1",
+        "candidate_ids": [
+            "CAND-1234"
+        ],
+        "candidate_id": null,
+        "candidate_scope": "all",
+        "candidate_labels": {
+            "CAND-5678": "Manisha N (CAND-5678)",
+            "CAND-1234": "Shivani R (CAND-1234)"
+        },
+        "assessment_name": "QFD",
+        "test_name": "Formative 1",
+        "assessment_id": "c2efae21170245578323187ea1e6d981",
+        "test_id": "16b2aca071da490daeaad9b03c2658ac",
+        "evaluation_type": "ai",
+        "status": "failed",
+        "questions": [
+            {
+                "pair_id": "43a1fb38a3a04f6b825ca052f6a66021",
+                "record": {
+                    "response_id": "17443cbe6f4a44eba337048836e3a664",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q1",
+                    "question": "In a House of Quality (HoQ), what is the main purpose of the matrix?\nA) To translate customer requirements into technical requirements\nB) To calculate product cost only\nC) To schedule production activities\nD) To select suppliers only",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) To translate customer requirements into technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            },
+            {
+                "pair_id": "94f2c443f2884d0fb76f4d5421f453c8",
+                "record": {
+                    "response_id": "c8de68f4393f43a5bd90bf4145bf573b",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q2",
+                    "question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Customer Requirements (WHATs)",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q2",
+                    "question": "Which section of the HoQ contains the customer's needs?\nA) Technical Correlation\nB) Customer Requirements (WHATs)\nC) Technical Requirements (HOWs)\nD) Roof",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "94f2c443f2884d0fb76f4d5421f453c8",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "objective",
+                    "test_type": "objective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "1",
+                    "lo": "1.2",
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Remember"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "265c5f691f7a4d3db55ffaae163dd1a3",
+                "record": {
+                    "response_id": "3626c76b0f614b12892efe0ea4bd753a",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q3",
+                    "question": "What do the technical requirements in an HoQ represent?\nA) Customer complaints only\nB) Measurable engineering characteristics that address customer needs\nC) Marketing slogans\nD) Production employee details",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) Measurable engineering characteristics that address customer needs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            },
+            {
+                "pair_id": "5d9d7ce49e1f4f5c89de23bcf55f0fb9",
+                "record": {
+                    "response_id": "7fabd69ea3fb41f382beead68b5d12e7",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q4",
+                    "question": "In HoQ terminology, what are the customer requirements commonly called?\nA) HOWs\nB) WHATs\nC) ROIs\nD) KPIs",
+                    "candidate_answer": "B",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "B) WHATs",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.1",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            },
+            {
+                "pair_id": "3a9cacb9c40842b5be9464158dd84f5c",
+                "record": {
+                    "response_id": "4019340caf5d45e3b069a85713931423",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q5",
+                    "question": "Which part of the HoQ shows the relationship between customer requirements and technical requirements?\nA) Relationship Matrix\nB) Roof Matrix\nC) Competitive Analysis\nD) Target Value Table",
+                    "candidate_answer": "A",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Relationship Matrix",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            },
+            {
+                "pair_id": "54784db9e7f646beafcc4e85284e2155",
+                "record": {
+                    "response_id": "e7c14cef5d9c4a2b88b33a0d516fa1e0",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q6",
+                    "question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "B) To show correlations among technical requirements",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.3",
+                        "knowledge_type": "Concept",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q6",
+                    "question": "What is the primary purpose of the roof of the House of Quality?\nA) To list customer complaints\nB) To show correlations among technical requirements\nC) To calculate employee performance\nD) To display product advertisements",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "54784db9e7f646beafcc4e85284e2155",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "objective",
+                    "test_type": "objective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "2",
+                    "lo": "2.3",
+                    "knowledge_type": "Concept",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Understand"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "b2232d98e935428e9c234c55ba0fafd2",
+                "record": {
+                    "response_id": "315c70e28af24c8a8881b939bca1e7d9",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q7",
+                    "question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "A) Importance rating",
+                    "question_type": "objective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.1",
+                        "knowledge_type": "Procedure",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q7",
+                    "question": "Which of the following is typically used to rate the importance of customer requirements?\nA) Importance rating\nB) Machine utilization\nC) Inventory turnover\nD) Cycle time only",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "b2232d98e935428e9c234c55ba0fafd2",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "objective",
+                    "test_type": "objective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "3",
+                    "lo": "3.1",
+                    "knowledge_type": "Procedure",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Apply"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "15c2ef1569e14a76945547fce3742a15",
+                "record": {
+                    "response_id": "c86e0f966b274a2c8f2b8317bebca07e",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q8",
+                    "question": "Why is safety important in High-Voltage EV systems?",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "Safety prevents electric shock, arc flash, and ensures user protection.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.1",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Remember"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q8",
+                    "question": "Why is safety important in High-Voltage EV systems?",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "15c2ef1569e14a76945547fce3742a15",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "subjective",
+                    "test_type": "subjective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "1",
+                    "lo": "1.1",
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Remember"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "d28f328826474440b8d25826f4172e65",
+                "record": {
+                    "response_id": "1daf9b1217694ad58fb33a70f5d2bd03",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q9",
+                    "question": "Name three common hazards in HV EV systems.",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "Electrical shock, arc flash, thermal runaway, and fire.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.2",
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q9",
+                    "question": "Name three common hazards in HV EV systems.",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "d28f328826474440b8d25826f4172e65",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "subjective",
+                    "test_type": "subjective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "1",
+                    "lo": "1.2",
+                    "knowledge_type": "Concept",
+                    "domain": "Affective",
+                    "rbt_level": "C-Apply"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "2e7f7ec9bddb4dfdb98673da2b9f22bb",
+                "record": {
+                    "response_id": "e927d6edee0a40d2a2cee79533b85b99",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q10",
+                    "question": "What standards regulate HV safety in EVs?",
+                    "candidate_answer": "bfjbb3i43bii",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "ISO 6469, ISO 26262, IEC 61851.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "1",
+                        "lo": "1.3",
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            },
+            {
+                "pair_id": "cbc00c0a9c8c4c43a74fe511f8cc8ebe",
+                "record": {
+                    "response_id": "28010e56bd8c48ad943e6a27867467c0",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q11",
+                    "question": "What are basic electrical hazards in HV systems?",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "Electric shock, arc flash, and potential ground faults.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.1",
+                        "knowledge_type": "Procedure",
+                        "domain": "Affective",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q11",
+                    "question": "What are basic electrical hazards in HV systems?",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "cbc00c0a9c8c4c43a74fe511f8cc8ebe",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "subjective",
+                    "test_type": "subjective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "2",
+                    "lo": "2.1",
+                    "knowledge_type": "Procedure",
+                    "domain": "Affective",
+                    "rbt_level": "C-Apply"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "4886391516fa4e89b0b218ee3a971496",
+                "record": {
+                    "response_id": "2fec408c1c9b44ac8ab5132689a48096",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q12",
+                    "question": "How does safety differ between LV and HV systems?",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "HV requires higher insulation, specialized PPE, and strict procedures compared to LV.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.2",
+                        "knowledge_type": "Fact",
+                        "domain": "Cognitive",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q12",
+                    "question": "How does safety differ between LV and HV systems?",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "4886391516fa4e89b0b218ee3a971496",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "subjective",
+                    "test_type": "subjective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "2",
+                    "lo": "2.2",
+                    "knowledge_type": "Fact",
+                    "domain": "Cognitive",
+                    "rbt_level": "C-Understand"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "c03555a0d41545088eb45949951a4ac8",
+                "record": {
+                    "response_id": "e885ef38ba5b4c0e84dd4e54ff215781",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q13",
+                    "question": "How are HV safety zones identified in vehicles?",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "max_marks": 2.0,
+                    "answer_key": "Safety zones are color-coded, labeled, and have restricted access points.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "2",
+                        "lo": "2.3",
+                        "knowledge_type": "Fact",
+                        "domain": "Psychomotor",
+                        "rbt_level": "C-Apply"
+                    }
+                },
+                "status": "completed",
+                "result": {
+                    "question_no": "Q13",
+                    "question": "How are HV safety zones identified in vehicles?",
+                    "maximum_marks": 2.0,
+                    "awarded_marks": 0,
+                    "percentage": 0.0,
+                    "evaluation": {
+                        "correctness": "N/A",
+                        "relevance": "N/A",
+                        "completeness": "N/A",
+                        "strengths": [],
+                        "missing_points": [
+                            "No answer provided"
+                        ],
+                        "incorrect_points": []
+                    },
+                    "justification": "Question not attempted by the candidate.",
+                    "response_id": "c03555a0d41545088eb45949951a4ac8",
+                    "status": "unanswered",
+                    "attempts": 0,
+                    "assessment_id": "c2efae21170245578323187ea1e6d981",
+                    "test_id": "16b2aca071da490daeaad9b03c2658ac",
+                    "question_type": "subjective",
+                    "test_type": "subjective",
+                    "candidate_id": "CAND-1234",
+                    "candidate_answer": null,
+                    "unanswered": true,
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "co": "2",
+                    "lo": "2.3",
+                    "knowledge_type": "Fact",
+                    "domain": "Psychomotor",
+                    "rbt_level": "C-Apply"
+                },
+                "error": ""
+            },
+            {
+                "pair_id": "c3d0b4e3160b4f6a9efbbf32bbb52be2",
+                "record": {
+                    "response_id": "fa0e54185284423c8119b7b82b61fa65",
+                    "candidate_id": "CAND-1234",
+                    "candidate_name": "Shivani R",
+                    "assessment_name": "QFD",
+                    "test_name": "Formative 1",
+                    "question_no": "Q14",
+                    "question": "What PPE is required for HV handling?",
+                    "candidate_answer": "hiwehijnc,",
+                    "unanswered": false,
+                    "max_marks": 2.0,
+                    "answer_key": "Insulated gloves, boots, face shields.",
+                    "question_type": "subjective",
+                    "metadata": {
+                        "co": "3",
+                        "lo": "3.1",
+                        "knowledge_type": "Concept",
+                        "domain": "Affective",
+                        "rbt_level": "C-Understand"
+                    }
+                },
+                "status": "failed",
+                "result": null,
+                "error": "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
+            }
+        ],
+        "current_question": null,
+        "created_at": "2026-10-27T09:13:17.598115+00:00",
+        "updated_at": "2026-10-27T09:13:19.454507+00:00",
+        "stop_requested": false,
+        "restarted_from_run_id": null,
+        "superseded_by_run_id": null,
+        "execution_token": "b95d4e5220cf47999fd8130ff5a58482",
+        "owner_process": "4e7c0a992fb34de086206950b93992dd",
+        "owner_pid": 138868,
+        "skipped": [
+            {
+                "candidate_id": "CAND-5678",
+                "status": "skipped",
+                "error": "No readable assessment-verified submission."
+            }
+        ],
+        "error": "",
+        "total_questions": 14,
+        "completed_questions": 8,
+        "failed_questions": 6,
+        "pending_questions": 0,
+        "percentage": 57.142857142857146
     }
 ]

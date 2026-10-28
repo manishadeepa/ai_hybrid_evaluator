@@ -152,5 +152,49 @@
         "updated_at": "2026-10-23T06:59:45.618150+00:00",
         "started_at": "2026-10-23T06:58:24.189051+00:00",
         "submitted_at": "2026-10-23T06:59:45.618150+00:00"
+    },
+    {
+        "candidate_id": "CAND-5678",
+        "assessment_id": "4ab287c2e9fc42678c50f3ef626b01f2",
+        "test_id": "2306b3515cdd439a8159842b478ae6b2",
+        "status": "Assigned",
+        "assigned_at": "2026-10-27T10:11:55.223699+00:00",
+        "created_at": "2026-10-27T10:11:55.223699+00:00",
+        "updated_at": "2026-10-27T10:11:55.223699+00:00",
+        "started_at": null,
+        "submitted_at": null
+    },
+    {
+        "candidate_id": "CAND-1234",
+        "assessment_id": "4ab287c2e9fc42678c50f3ef626b01f2",
+        "test_id": "2306b3515cdd439a8159842b478ae6b2",
+        "status": "Assigned",
+        "assigned_at": "2026-10-27T10:11:55.223699+00:00",
+        "created_at": "2026-10-27T10:11:55.223699+00:00",
+        "updated_at": "2026-10-27T10:11:55.223699+00:00",
+        "started_at": null,
+        "submitted_at": null
+    },
+    {
+        "candidate_id": "CAND-1234",
+        "assessment_id": "d9519d27196f4198a7d914f6499e1d83",
+        "test_id": "4488ae6014014344b6237a070b22133a",
+        "status": "Assigned",
+        "assigned_at": "2026-10-27T10:40:10.777904+00:00",
+        "created_at": "2026-10-27T10:40:10.777904+00:00",
+        "updated_at": "2026-10-27T10:40:10.777904+00:00",
+        "started_at": null,
+        "submitted_at": null
+    },
+    {
+        "candidate_id": "CAND-5678",
+        "assessment_id": "d9519d27196f4198a7d914f6499e1d83",
+        "test_id": "4488ae6014014344b6237a070b22133a",
+        "status": "Assigned",
+        "assigned_at": "2026-10-27T10:40:10.777904+00:00",
+        "created_at": "2026-10-27T10:40:10.777904+00:00",
+        "updated_at": "2026-10-27T10:40:10.777904+00:00",
+        "started_at": null,
+        "submitted_at": null
     }
 ]

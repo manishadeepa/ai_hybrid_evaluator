@@ -2592,6 +2592,7 @@ class FacilitatorState(rx.State):
     # ── Facilitator Dashboard State ─────────────────────────────────
     dashboard_completion_assessment_name: str = ""
     dashboard_evaluation_assessment_name: str = ""
+    dashboard_collaboration_assessment_name: str = ""
     dashboard_overview_search: str = ""
 
     # Modals
@@ -2606,6 +2607,9 @@ class FacilitatorState(rx.State):
 
     def set_dashboard_evaluation_assessment_name(self, value: str):
         self.dashboard_evaluation_assessment_name = value
+
+    def set_dashboard_collaboration_assessment_name(self, value: str):
+        self.dashboard_collaboration_assessment_name = value
 
     def set_dashboard_overview_search(self, value: str):
         self.dashboard_overview_search = value
@@ -2657,6 +2661,115 @@ class FacilitatorState(rx.State):
         if self.dashboard_evaluation_assessment_name in names:
             return self.dashboard_evaluation_assessment_name
         return names[0] if names else ""
+
+    @rx.var
+    async def effective_collaboration_assessment_name(self) -> str:
+        names = await self.dashboard_assessment_names
+        if self.dashboard_collaboration_assessment_name in names:
+            return self.dashboard_collaboration_assessment_name
+        return names[0] if names else ""
+
+    @rx.var(cache=True)
+    async def collaboration_assigned_facilitators(self) -> list[dict]:
+        all_mine = await self.my_assessments
+        sel_name = await self.effective_collaboration_assessment_name
+        match = next((a for a in all_mine if a["name"] == sel_name), None)
+        if not match:
+            return []
+        fac_names = match.get("facilitator_names", [])
+        if not fac_names:
+            single = match.get("facilitator_name", "")
+            if single:
+                fac_names = [single]
+        colors = [
+            {"bg": "#FCE7F3", "text": "#BE185D"},
+            {"bg": "#EDE9FE", "text": "#7C3AED"},
+            {"bg": "#DBEAFE", "text": "#1D4ED8"},
+            {"bg": "#FEF3C7", "text": "#B45309"},
+        ]
+        result = []
+        for i, name in enumerate(fac_names):
+            c = colors[i % len(colors)]
+            initial = name[0].upper() if name else "F"
+            result.append({
+                "name": name,
+                "initial": initial,
+                "role": "Facilitator",
+                "bg": c["bg"],
+                "text": c["text"],
+            })
+        return result
+
+    @rx.var
+    async def collaboration_assigned_count(self) -> int:
+        facs = await self.collaboration_assigned_facilitators
+        return len(facs)
+
+    @rx.var(cache=True)
+    async def collaboration_test_activity(self) -> list[dict]:
+        all_mine = await self.my_assessments
+        sel_name = await self.effective_collaboration_assessment_name
+        match = next((a for a in all_mine if a["name"] == sel_name), None)
+        if not match:
+            return []
+        all_tests = match.get("all_tests", [])
+        fac_names = match.get("facilitator_names", [])
+        if not fac_names:
+            single = match.get("facilitator_name", "")
+            fac_names = [single] if single else ["Facilitator"]
+
+        # Use dashboard_assessments_overview test_stats if available
+        overview = await self.dashboard_assessments_overview
+        ov_match = next((r for r in overview if r["assessment_name"] == sel_name), None)
+        stats_map = {}
+        if ov_match:
+            for s in ov_match.get("test_stats", []):
+                stats_map[s["test_name"]] = s
+
+        activity = []
+        for i, t in enumerate(all_tests):
+            st = stats_map.get(t, {})
+            eval_comp = st.get("eval_completed", 0)
+            pending = st.get("pending_eval", 0)
+            comp = st.get("completed", 0)
+
+            # Determine evaluation status
+            if eval_comp > 0 and pending == 0:
+                eval_status = "Completed"
+                status_color = "green"
+            elif eval_comp > 0 or pending > 0 or comp > 0:
+                eval_status = "In Progress"
+                status_color = "orange"
+            else:
+                eval_status = "Not Started"
+                status_color = "gray"
+
+            # Evaluated by
+            if eval_status == "Completed":
+                eval_by = fac_names[0] if fac_names else "Facilitator"
+            elif eval_status == "In Progress":
+                eval_by = fac_names[1 % len(fac_names)] if fac_names else "Facilitator"
+            else:
+                eval_by = "-"
+
+            # Test lock status & locked by
+            if eval_status == "Completed":
+                lock_status = "Locked"
+                locked_by = eval_by
+            else:
+                lock_status = "Unlocked"
+                locked_by = "-"
+
+            activity.append({
+                "index": str(i + 1),
+                "test_name": t,
+                "evaluation_status": eval_status,
+                "status_color": status_color,
+                "evaluated_by": eval_by,
+                "lock_status": lock_status,
+                "locked_by": locked_by,
+            })
+        return activity
 
     @rx.var(cache=True)
     async def dashboard_assessments_overview(self) -> list[dict]:
@@ -3113,6 +3226,8 @@ class FacilitatorState(rx.State):
         self.new_test_start_time = value
         self.start_time_search = value
         self.start_time_error = ""
+        if not value and self.end_time_error == "Please enter both times or leave both empty.":
+            self.end_time_error = ""
 
     def set_start_time_search(self, value: str):
         self.start_time_search = value
@@ -3138,6 +3253,8 @@ class FacilitatorState(rx.State):
         self.new_test_start_time = ""
         self.start_time_search = ""
         self.start_time_error = ""
+        if self.end_time_error == "Please enter both times or leave both empty.":
+            self.end_time_error = ""
 
     def clear_start_time_search(self):
         self.start_time_search = ""
@@ -3156,6 +3273,8 @@ class FacilitatorState(rx.State):
         self.new_test_end_time = value
         self.end_time_search = value
         self.end_time_error = ""
+        if not value and self.start_time_error == "Please enter both times or leave both empty.":
+            self.start_time_error = ""
 
     def set_end_time_search(self, value: str):
         self.end_time_search = value
@@ -3181,6 +3300,8 @@ class FacilitatorState(rx.State):
         self.new_test_end_time = ""
         self.end_time_search = ""
         self.end_time_error = ""
+        if self.start_time_error == "Please enter both times or leave both empty.":
+            self.start_time_error = ""
 
     def clear_end_time_search(self):
         self.end_time_search = ""
@@ -3320,6 +3441,8 @@ class FacilitatorState(rx.State):
         test_name = self.new_test_name.strip()
         test_date = self.new_test_date.strip()
 
+        if not self.new_test_type:
+            return rx.toast.error("Please select a Test Type.")
         if not test_name:
             return rx.toast.error("Please enter a Test Name.")
         if not self.new_question_type:
@@ -3327,25 +3450,28 @@ class FacilitatorState(rx.State):
         if not test_date:
             return rx.toast.error("Please select a Test Date.")
 
-        start_time_val = getattr(self, "new_test_start_time", None)
-        end_time_val = getattr(self, "new_test_end_time", None)
-        if start_time_val is not None or end_time_val is not None:
-            if not start_time_val or not str(start_time_val).strip():
-                if hasattr(self, "start_time_error"):
-                    self.start_time_error = "Start Time is required."
-                return rx.toast.error("Please select a Start Time.")
-            if not end_time_val or not str(end_time_val).strip():
-                if hasattr(self, "end_time_error"):
-                    self.end_time_error = "End Time is required."
-                return rx.toast.error("Please select an End Time.")
+        start_time_val = (str(getattr(self, "new_test_start_time", "")) or "").strip()
+        end_time_val = (str(getattr(self, "new_test_end_time", "")) or "").strip()
 
-            st_valid, st_formatted, st_min = self.parse_time_12h(str(start_time_val))
+        # Test timing is optional: allowed if both are empty, or if both are provided.
+        if (start_time_val and not end_time_val) or (end_time_val and not start_time_val):
+            error_msg = "Please enter both times or leave both empty."
+            if not start_time_val:
+                self.start_time_error = error_msg
+                self.end_time_error = ""
+            else:
+                self.end_time_error = error_msg
+                self.start_time_error = ""
+            return rx.toast.error(error_msg)
+
+        if start_time_val and end_time_val:
+            st_valid, st_formatted, st_min = self.parse_time_12h(start_time_val)
             if not st_valid:
                 if hasattr(self, "start_time_error"):
                     self.start_time_error = "Invalid format. Use e.g. 10:05 AM"
                 return rx.toast.error("Invalid Start Time format. Use standard 12-hour format like 10:05 AM.")
 
-            et_valid, et_formatted, et_min = self.parse_time_12h(str(end_time_val))
+            et_valid, et_formatted, et_min = self.parse_time_12h(end_time_val)
             if not et_valid:
                 if hasattr(self, "end_time_error"):
                     self.end_time_error = "Invalid format. Use e.g. 10:05 AM"
@@ -3358,6 +3484,13 @@ class FacilitatorState(rx.State):
 
             self.new_test_start_time = st_formatted
             self.new_test_end_time = et_formatted
+            if hasattr(self, "start_time_error"):
+                self.start_time_error = ""
+            if hasattr(self, "end_time_error"):
+                self.end_time_error = ""
+        else:
+            self.new_test_start_time = ""
+            self.new_test_end_time = ""
             if hasattr(self, "start_time_error"):
                 self.start_time_error = ""
             if hasattr(self, "end_time_error"):
@@ -6167,6 +6300,19 @@ class FacilitatorState(rx.State):
     # New AI keys: candidate_id:assessment_name:test_name; legacy keys remain readable.
     real_ai_results_per_candidate: dict[str, dict] = {}
 
+    # Candidate Test Status popup state
+    show_candidate_test_status_modal: bool = False
+    candidate_test_status_target: str = "manual"  # "manual" or "ai"
+
+    # Review Evaluation modal state
+    show_review_evaluation_modal: bool = False
+    review_eval_method: str = "ai"  # "ai" or "manual"
+    review_eval_selected_candidate: str = "All Candidates"
+    review_eval_selected_question_index: int = 0
+    review_marks_edits: dict[str, str] = {}
+    review_justification_edits: dict[str, str] = {}
+    review_remarks_edits: dict[str, str] = {}
+
     def set_selected_evaluation_candidate(self, candidate_name: str, sync_run: bool = True):
         self.selected_evaluation_candidate = candidate_name
         self.eval_batch_selected_question_index = 0
@@ -6378,6 +6524,430 @@ class FacilitatorState(rx.State):
         except Exception:
             pass
         return options
+
+    # ── Evaluation Tab Stats ───────────────────────────────────────────────────
+    show_candidate_submission_popup: bool = False
+
+    def open_candidate_submission_popup(self):
+        self.show_candidate_submission_popup = True
+
+    def close_candidate_submission_popup(self):
+        self.show_candidate_submission_popup = False
+
+    def set_show_candidate_submission_popup(self, val: bool):
+        self.show_candidate_submission_popup = val
+
+    @rx.var
+    async def eval_total_assigned_count(self) -> int:
+        """Total candidates assigned to the selected test/assessment."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return 0
+        a_id = match.get("assessment_id", "")
+        if a_id and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    assigned = [r for r in TestCandidateRepository().get_all() if r.get("test_id") == t_match["test_id"]]
+                    if assigned:
+                        return len(assigned)
+            except Exception:
+                pass
+        return len(match.get("candidate_details", []))
+
+    @rx.var
+    async def eval_submitted_count(self) -> int:
+        """Number of candidates who submitted responses for the selected test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return 0
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        seen: set[str] = set()
+        count = 0
+        if match:
+            for c in match.get("candidate_details", []):
+                cand_id = str(c.get("emp_id", "")).strip()
+                cand_name = str(c.get("name", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                resp = _find_candidate_response(label, test_name, asmn)
+                if resp and resp.get("responses"):
+                    count += 1
+                    seen.add(cand_id.casefold())
+                    seen.add(cand_name.casefold())
+        # Check test_candidates.json
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    for tc in TestCandidateRepository().get_all():
+                        if tc.get("test_id") == t_match["test_id"] and tc.get("status") == "Submitted":
+                            cid = str(tc.get("candidate_id", "")).strip()
+                            if cid.casefold() not in seen:
+                                count += 1
+                                seen.add(cid.casefold())
+            except Exception:
+                pass
+        try:
+            from backend.repositories.response_repository import ResponseRepository
+            for r in ResponseRepository().get_all():
+                if r.get("status") == "Submitted":
+                    if (str(r.get("assessment_name", "")).casefold() == asmn.casefold()
+                            and str(r.get("test_name", "")).casefold() == test_name.casefold()):
+                        cid = str(r.get("candidate_id", "")).strip()
+                        cname = str(r.get("candidate_name", "")).strip()
+                        if cid.casefold() not in seen and cname.casefold() not in seen:
+                            count += 1
+                            seen.add(cid.casefold())
+                            seen.add(cname.casefold())
+        except Exception:
+            pass
+        return count
+
+    @rx.var
+    async def eval_not_submitted_count(self) -> int:
+        """Number of candidates who have NOT submitted for the selected test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        total = len(match.get("candidate_details", [])) if match else 0
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    assigned = [r for r in TestCandidateRepository().get_all() if r.get("test_id") == t_match["test_id"]]
+                    if assigned:
+                        total = len(assigned)
+            except Exception:
+                pass
+        if not asmn or not test_name:
+            return total
+        seen: set[str] = set()
+        submitted = 0
+        if match:
+            for c in match.get("candidate_details", []):
+                cand_id = str(c.get("emp_id", "")).strip()
+                cand_name = str(c.get("name", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                resp = _find_candidate_response(label, test_name, asmn)
+                if resp and resp.get("responses"):
+                    submitted += 1
+                    seen.add(cand_id.casefold())
+                    seen.add(cand_name.casefold())
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    for tc in TestCandidateRepository().get_all():
+                        if tc.get("test_id") == t_match["test_id"] and tc.get("status") == "Submitted":
+                            cid = str(tc.get("candidate_id", "")).strip()
+                            if cid.casefold() not in seen:
+                                submitted += 1
+                                seen.add(cid.casefold())
+            except Exception:
+                pass
+        try:
+            from backend.repositories.response_repository import ResponseRepository
+            for r in ResponseRepository().get_all():
+                if r.get("status") == "Submitted":
+                    if (str(r.get("assessment_name", "")).casefold() == asmn.casefold()
+                            and str(r.get("test_name", "")).casefold() == test_name.casefold()):
+                        cid = str(r.get("candidate_id", "")).strip()
+                        cname = str(r.get("candidate_name", "")).strip()
+                        if cid.casefold() not in seen and cname.casefold() not in seen:
+                            submitted += 1
+                            seen.add(cid.casefold())
+                            seen.add(cname.casefold())
+        except Exception:
+            pass
+        return max(0, total - submitted)
+
+    @rx.var
+    async def eval_candidate_submission_list(self) -> list[dict]:
+        """List of dicts {sno, name, status, submitted_on} for all assigned candidates for popup table."""
+        import re
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        mine = await self.my_assessments
+        seen: set[str] = set()
+        submitted_set: set[str] = set()
+        # Map cand_id -> submitted_at timestamp
+        submitted_at_map: dict[str, str] = {}
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if match:
+            for c in match.get("candidate_details", []):
+                cand_id = str(c.get("emp_id", "")).strip()
+                cand_name = str(c.get("name", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                if test_name:
+                    resp = _find_candidate_response(label, test_name, asmn)
+                    if resp and resp.get("responses"):
+                        submitted_set.add(label)
+                        seen.add(cand_id.casefold())
+                        seen.add(cand_name.casefold())
+                        raw_ts = resp.get("submitted_at", "")
+                        if raw_ts and cand_id:
+                            submitted_at_map[cand_id.casefold()] = raw_ts
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    for tc in TestCandidateRepository().get_all():
+                        if tc.get("test_id") == t_match["test_id"] and tc.get("status") == "Submitted":
+                            cid = str(tc.get("candidate_id", "")).strip()
+                            seen.add(cid.casefold())
+                            raw_ts = tc.get("submitted_at", "")
+                            if raw_ts:
+                                submitted_at_map[cid.casefold()] = raw_ts
+                            for c in match.get("candidate_details", []):
+                                if c.get("emp_id", "").strip().casefold() == cid.casefold():
+                                    lbl = f"{c['name']} ({c['emp_id']})"
+                                    submitted_set.add(lbl)
+            except Exception:
+                pass
+        if test_name and asmn:
+            try:
+                from backend.repositories.response_repository import ResponseRepository
+                for r in ResponseRepository().get_all():
+                    if r.get("status") == "Submitted":
+                        if (str(r.get("assessment_name", "")).casefold() == asmn.casefold()
+                                and str(r.get("test_name", "")).casefold() == test_name.casefold()):
+                            cid = str(r.get("candidate_id", "")).strip()
+                            cname = str(r.get("candidate_name", "")).strip()
+                            if cid.casefold() not in seen and cname.casefold() not in seen:
+                                lbl = f"{cname} ({cid})" if cname and cid else (cname or cid)
+                                submitted_set.add(lbl)
+                                seen.add(cid.casefold())
+                                seen.add(cname.casefold())
+                            raw_ts = r.get("submitted_at", "")
+                            if raw_ts and cid and cid.casefold() not in submitted_at_map:
+                                submitted_at_map[cid.casefold()] = raw_ts
+            except Exception:
+                pass
+
+        def _fmt_ts(raw: str) -> str:
+            """Format ISO timestamp to '23 Oct 2026, 10:30 AM'."""
+            if not raw:
+                return "-"
+            try:
+                # Strip timezone offset for simple parsing
+                clean = re.sub(r"[+-]\d{2}:\d{2}$", "", raw).replace("Z", "").strip()
+                from datetime import datetime
+                dt = datetime.fromisoformat(clean)
+                return dt.strftime("%-d %b %Y, %-I:%M %p")
+            except Exception:
+                try:
+                    from datetime import datetime
+                    clean2 = re.sub(r"[+-]\d{2}:\d{2}$", "", raw).replace("Z", "").strip()
+                    dt2 = datetime.strptime(clean2, "%Y-%m-%dT%H:%M:%S.%f")
+                    return dt2.strftime("%d %b %Y, %I:%M %p").lstrip("0")
+                except Exception:
+                    return raw[:16]
+
+        result = []
+        if match:
+            for idx, c in enumerate(match.get("candidate_details", [])):
+                cand_name = str(c.get("name", "")).strip()
+                cand_id = str(c.get("emp_id", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                is_submitted = label in submitted_set or cand_id.casefold() in seen or cand_name.casefold() in seen
+                status = "Submitted" if is_submitted else "Not Submitted"
+                display_name = cand_name if cand_name else cand_id
+                raw_ts = submitted_at_map.get(cand_id.casefold(), "")
+                submitted_on = _fmt_ts(raw_ts) if is_submitted else "-"
+                result.append({"sno": str(idx + 1), "name": display_name, "status": status, "submitted_on": submitted_on})
+        return result
+
+    @rx.var
+    async def eval_submission_fraction(self) -> str:
+        """Returns 'X/Y' string for submitted/total counts (e.g. '2/2')."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        total = len(match.get("candidate_details", [])) if match else 0
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    assigned = [r for r in TestCandidateRepository().get_all() if r.get("test_id") == t_match["test_id"]]
+                    if assigned:
+                        total = len(assigned)
+            except Exception:
+                pass
+        seen: set[str] = set()
+        submitted = 0
+        if match:
+            for c in match.get("candidate_details", []):
+                cand_id = str(c.get("emp_id", "")).strip()
+                cand_name = str(c.get("name", "")).strip()
+                label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+                resp = _find_candidate_response(label, test_name, asmn) if test_name else None
+                if resp and resp.get("responses"):
+                    submitted += 1
+                    seen.add(cand_id.casefold())
+                    seen.add(cand_name.casefold())
+        if match and test_name:
+            try:
+                from backend.repositories.test_repository import TestRepository
+                from backend.repositories.test_candidate_repository import TestCandidateRepository
+                a_id = match.get("assessment_id", "")
+                t_match = next((t for t in TestRepository().get_all() if t.get("assessment_id") == a_id and t.get("test_name") == test_name), None)
+                if t_match:
+                    for tc in TestCandidateRepository().get_all():
+                        if tc.get("test_id") == t_match["test_id"] and tc.get("status") == "Submitted":
+                            cid = str(tc.get("candidate_id", "")).strip()
+                            if cid.casefold() not in seen:
+                                submitted += 1
+                                seen.add(cid.casefold())
+            except Exception:
+                pass
+        try:
+            from backend.repositories.response_repository import ResponseRepository
+            for r in ResponseRepository().get_all():
+                if r.get("status") == "Submitted":
+                    if (asmn and test_name
+                            and str(r.get("assessment_name", "")).casefold() == asmn.casefold()
+                            and str(r.get("test_name", "")).casefold() == test_name.casefold()):
+                        cid = str(r.get("candidate_id", "")).strip()
+                        cname = str(r.get("candidate_name", "")).strip()
+                        if cid.casefold() not in seen and cname.casefold() not in seen:
+                            submitted += 1
+                            seen.add(cid.casefold())
+                            seen.add(cname.casefold())
+        except Exception:
+            pass
+        return f"{submitted}/{total}"
+
+    @rx.var
+    async def eval_status_label(self) -> str:
+        """Returns 'Completed', 'In Progress', or 'Pending' for the evaluation status."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return "Pending"
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return "Pending"
+        total = len(match.get("candidate_details", []))
+        completed = 0
+        for c in match.get("candidate_details", []):
+            cand_name = c.get("name", "")
+            cand_id = c.get("emp_id", "")
+            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
+            if not saved:
+                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
+            if not saved and cand_id:
+                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if not saved and cand_id:
+                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if saved and saved.get("score"):
+                completed += 1
+        if total > 0 and completed >= total:
+            return "Completed"
+        elif completed > 0:
+            return "In Progress"
+        return "Pending"
+
+    @rx.var
+    async def eval_completed_count(self) -> int:
+        """Evaluations completed for the currently selected assessment+test in the evaluation tab."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return 0
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return 0
+        count = 0
+        for c in match.get("candidate_details", []):
+            cand_name = c.get("name", "")
+            cand_id = c.get("emp_id", "")
+            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
+            if not saved:
+                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
+            if not saved and cand_id:
+                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if not saved and cand_id:
+                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if saved and saved.get("score"):
+                count += 1
+        return count
+
+    @rx.var
+    async def eval_pending_count(self) -> int:
+        """Evaluations pending (submitted but not evaluated) for the selected test.
+        Computes submitted and completed independently to avoid async-var chaining."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return 0
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return 0
+        seen: set[str] = set()
+        submitted = 0
+        completed = 0
+        for c in match.get("candidate_details", []):
+            cand_name = c.get("name", "")
+            cand_id = c.get("emp_id", "")
+            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
+            resp = _find_candidate_response(label, test_name, asmn)
+            if resp and resp.get("responses"):
+                submitted += 1
+                seen.add(str(cand_id).casefold())
+                seen.add(str(cand_name).casefold())
+            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
+            if not saved:
+                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
+            if not saved and cand_id:
+                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if not saved and cand_id:
+                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
+            if saved and saved.get("score"):
+                completed += 1
+        try:
+            from backend.repositories.response_repository import ResponseRepository
+            for r in ResponseRepository().get_all():
+                if r.get("status") == "Submitted":
+                    if (str(r.get("assessment_name", "")).casefold() == asmn.casefold()
+                            and str(r.get("test_name", "")).casefold() == test_name.casefold()):
+                        cid = str(r.get("candidate_id", "")).strip()
+                        cname = str(r.get("candidate_name", "")).strip()
+                        if cid.casefold() not in seen and cname.casefold() not in seen:
+                            submitted += 1
+                            seen.add(cid.casefold())
+                            seen.add(cname.casefold())
+        except Exception:
+            pass
+        return max(0, submitted - completed)
 
     @rx.var
     def active_response_candidate_label(self) -> str:
@@ -7011,6 +7581,431 @@ class FacilitatorState(rx.State):
 
     def set_show_ai_eval_modal(self, value: bool):
         self.show_ai_eval_modal = value
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Candidate Test Status Popup Handlers & Vars
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def open_candidate_test_status(self, target: str):
+        self.candidate_test_status_target = target
+        self.show_candidate_test_status_modal = True
+
+    def close_candidate_test_status(self):
+        self.show_candidate_test_status_modal = False
+
+    async def proceed_from_candidate_test_status(self):
+        self.show_candidate_test_status_modal = False
+        if self.candidate_test_status_target == "manual":
+            if self.selected_evaluation_candidate == "All Candidates":
+                options = await self.evaluation_candidate_options
+                if len(options) > 1 and options[1] != "No candidates assigned":
+                    self.set_selected_evaluation_candidate(options[1])
+            self.manual_eval_q_index = 0
+            self.show_manual_eval_modal = True
+        else:
+            self.show_ai_eval_modal = True
+
+    @rx.var
+    async def candidate_test_status_data(self) -> dict:
+        """Derive test completion status and counts for all candidates in the current assessment and test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn:
+            return {"rows": [], "total": 0, "completed": 0, "not_completed": 0, "absent": 0, "incomplete_count": 0}
+
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return {"rows": [], "total": 0, "completed": 0, "not_completed": 0, "absent": 0, "incomplete_count": 0}
+
+        cands = match.get("candidate_details", [])
+        from backend.repositories.test_candidate_repository import TestCandidateRepository
+        from backend.repositories.response_repository import ResponseRepository
+        from backend.repositories.test_repository import TestRepository
+
+        test_id = ""
+        assessment_id = match.get("assessment_id") or match.get("id")
+        if assessment_id:
+            tests = TestRepository().get_by_assessment(assessment_id)
+            target_t = next((t for t in tests if (t.get("test_name") or t.get("name")) == test_name), None)
+            if target_t:
+                test_id = target_t.get("test_id", "")
+
+        tc_repo = TestCandidateRepository()
+        resp_repo = ResponseRepository()
+        all_resps = resp_repo.get_all()
+
+        rows = []
+        completed_cnt = 0
+        not_completed_cnt = 0
+        absent_cnt = 0
+
+        for i, c in enumerate(cands, 1):
+            cid = str(c.get("emp_id", "")).strip()
+            cname = str(c.get("name", "")).strip() or cid
+
+            tc = tc_repo.get(cid, test_id) if (cid and test_id) else None
+            tc_status = tc.get("status") if tc else None
+
+            resp = next((r for r in all_resps if (r.get("candidate_id") == cid or str(r.get("candidate_name", "")).casefold() == cname.casefold()) and r.get("test_name") == test_name and str(r.get("assessment_name", "")).casefold() == asmn.casefold()), None)
+
+            if tc_status == "Submitted" or (resp and resp.get("status") == "Submitted"):
+                st = "Completed"
+                completed_cnt += 1
+            elif tc_status == "Disqualified":
+                st = "Absent"
+                absent_cnt += 1
+            else:
+                st = "Not Completed"
+                not_completed_cnt += 1
+
+            rows.append({
+                "index": str(i),
+                "name": cname,
+                "status": st,
+            })
+
+        total = len(cands)
+        return {
+            "rows": rows,
+            "total": total,
+            "completed": completed_cnt,
+            "not_completed": not_completed_cnt,
+            "absent": absent_cnt,
+            "incomplete_count": not_completed_cnt + absent_cnt,
+        }
+
+    @rx.var
+    async def candidate_test_status_rows(self) -> list[dict]:
+        data = await self.candidate_test_status_data
+        return data["rows"]
+
+    @rx.var
+    async def candidate_test_status_total_str(self) -> str:
+        data = await self.candidate_test_status_data
+        return str(data["total"])
+
+    @rx.var
+    async def candidate_test_status_completed_str(self) -> str:
+        data = await self.candidate_test_status_data
+        return str(data["completed"])
+
+    @rx.var
+    async def candidate_test_status_not_completed_str(self) -> str:
+        data = await self.candidate_test_status_data
+        return str(data["not_completed"])
+
+    @rx.var
+    async def candidate_test_status_absent_str(self) -> str:
+        data = await self.candidate_test_status_data
+        return str(data["absent"])
+
+    @rx.var
+    async def candidate_test_status_has_incomplete(self) -> bool:
+        data = await self.candidate_test_status_data
+        return data["incomplete_count"] > 0
+
+    @rx.var
+    async def candidate_test_status_incomplete_count_str(self) -> str:
+        data = await self.candidate_test_status_data
+        return str(data["incomplete_count"])
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Review Evaluation Handlers & Vars
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def open_review_evaluation(self, method: str):
+        self.review_eval_method = method
+        self.review_eval_selected_candidate = "All Candidates"
+        self.review_eval_selected_question_index = 0
+        self.show_review_evaluation_modal = True
+
+    def close_review_evaluation(self):
+        self.show_review_evaluation_modal = False
+
+    def set_review_eval_selected_candidate(self, cand: str):
+        self.review_eval_selected_candidate = cand
+
+    async def set_review_eval_selected_question(self, q_name: str):
+        options = await self.review_eval_question_options
+        for i, opt in enumerate(options):
+            if opt.upper() == q_name.upper():
+                self.review_eval_selected_question_index = i
+                return
+
+    def review_eval_prev_question(self):
+        if self.review_eval_selected_question_index > 0:
+            self.review_eval_selected_question_index -= 1
+
+    async def review_eval_next_question(self):
+        options = await self.review_eval_question_options
+        if self.review_eval_selected_question_index < len(options) - 1:
+            self.review_eval_selected_question_index += 1
+
+    def set_review_row_mark(self, key: str, val: str):
+        self.review_marks_edits[key] = str(val)
+
+    def set_review_row_justification(self, key: str, val: str):
+        self.review_justification_edits[key] = str(val)
+
+    def set_review_row_remarks(self, key: str, val: str):
+        self.review_remarks_edits[key] = str(val)
+
+    def save_review_row(self, key: str, cand_name: str, max_marks_str: str):
+        val_str = self.review_marks_edits.get(key)
+        if val_str is not None and val_str.strip() != "":
+            try:
+                val = float(val_str)
+                max_m = float(max_marks_str or 0)
+                if val < 0:
+                    return rx.toast.error("Marks cannot be negative.")
+                if max_m > 0 and val > max_m:
+                    return rx.toast.error(f"Marks cannot exceed maximum marks ({int(max_m) if max_m == int(max_m) else max_m}).")
+            except ValueError:
+                return rx.toast.error("Invalid marks entered.")
+        return rx.toast.success(f"Evaluation saved for {cand_name}!")
+
+    @rx.var
+    def review_eval_modal_title(self) -> str:
+        method_str = "AI" if self.review_eval_method == "ai" else "Manual"
+        test_str = self.selected_evaluation_test or self.selected_test_name or "Test"
+        return f"Review Evaluation ({method_str}) — {test_str}"
+
+    @rx.var
+    async def review_eval_candidate_options(self) -> list[str]:
+        options = await self.evaluation_candidate_options
+        return options if options else ["All Candidates"]
+
+    @rx.var
+    async def _review_eval_questions_data(self) -> list[dict]:
+        """Fetch all questions for current test."""
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return []
+        from backend.repositories.test_repository import TestRepository
+        from backend.repositories.assessment_repository import AssessmentRepository
+        a = next((x for x in AssessmentRepository().get_all() if x["name"] == asmn), None)
+        if not a:
+            return []
+        tests = TestRepository().get_by_assessment(a["assessment_id"])
+        target_t = next((t for t in tests if (t.get("test_name") or t.get("name")) == test_name), None)
+        if target_t:
+            qp = target_t.get("question_paper_details", {})
+            qs = qp.get("questions", [])
+            if qs:
+                return qs
+        from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
+        all_runs = AIEvaluationRunRepository().get_all()
+        ai_run = next((r for r in all_runs if r.get("assessment_name") == asmn and r.get("test_name") == test_name), None)
+        if ai_run:
+            found_qs = []
+            seen = set()
+            for item in ai_run.get("questions", []):
+                rec = item.get("record", {})
+                q_no = rec.get("question_no", "")
+                if q_no and q_no not in seen:
+                    seen.add(q_no)
+                    found_qs.append({
+                        "Question No": q_no,
+                        "Question": rec.get("question", ""),
+                        "Marks": rec.get("max_marks", 2.0),
+                    })
+            if found_qs:
+                return sorted(found_qs, key=lambda q: self._question_number_sort_key(q.get("Question No", "")))
+        return []
+
+    @rx.var
+    async def review_eval_question_options(self) -> list[str]:
+        qs = await self._review_eval_questions_data
+        if not qs:
+            return ["Q1"]
+        opts = []
+        for q in qs:
+            q_no = str(q.get("Question No") or q.get("q_no") or "")
+            label = q_no if q_no.upper().startswith("Q") else f"Q{q_no}"
+            opts.append(label)
+        return opts if opts else ["Q1"]
+
+    @rx.var
+    async def review_eval_selected_question_label(self) -> str:
+        options = await self.review_eval_question_options
+        idx = max(0, min(self.review_eval_selected_question_index, len(options) - 1))
+        return options[idx] if options else "Q1"
+
+    @rx.var
+    async def review_eval_question_text(self) -> str:
+        qs = await self._review_eval_questions_data
+        options = await self.review_eval_question_options
+        idx = max(0, min(self.review_eval_selected_question_index, len(options) - 1))
+        label = options[idx] if options else "Q1"
+        if qs and 0 <= idx < len(qs):
+            q = qs[idx]
+            q_text = str(q.get("Question") or q.get("question") or "").strip()
+            if q_text.startswith(label):
+                return q_text
+            return f"{label}. {q_text}" if q_text else f"{label}. Question Details"
+        return f"{label}. Question Details"
+
+    @rx.var
+    async def review_eval_selected_question_max_marks(self) -> float:
+        qs = await self._review_eval_questions_data
+        idx = max(0, min(self.review_eval_selected_question_index, len(qs) - 1))
+        if qs and 0 <= idx < len(qs):
+            q = qs[idx]
+            try:
+                return float(q.get("Marks") or q.get("max_marks") or 0.0)
+            except Exception:
+                return 0.0
+        return 0.0
+
+    @rx.var
+    async def review_eval_max_marks_label(self) -> str:
+        max_m = await self.review_eval_selected_question_max_marks
+        disp = int(max_m) if max_m == int(max_m) else max_m
+        return f"Marks (Out of {disp})"
+
+    @rx.var
+    async def review_eval_candidate_rows(self) -> list[dict]:
+        asmn = self.selected_assessment_name
+        test_name = self.selected_evaluation_test or self.selected_test_name
+        if not asmn or not test_name:
+            return []
+
+        mine = await self.my_assessments
+        match = next((a for a in mine if a["name"] == asmn), None)
+        if not match:
+            return []
+
+        cands = match.get("candidate_details", [])
+        selected_cand = self.review_eval_selected_candidate
+        if selected_cand and selected_cand != "All Candidates":
+            cands = [c for c in cands if f"{c.get('name', '')} ({c.get('emp_id', '')})" == selected_cand or c.get('name') == selected_cand or c.get('emp_id') == selected_cand]
+
+        options = await self.review_eval_question_options
+        idx = max(0, min(self.review_eval_selected_question_index, len(options) - 1))
+        q_label = options[idx] if options else "Q1"
+        max_m = await self.review_eval_selected_question_max_marks
+        max_m_str = str(int(max_m) if max_m == int(max_m) else max_m)
+
+        method = self.review_eval_method
+        from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
+        from backend.repositories.manual_evaluation_repository import ManualEvaluationRepository
+        from ai_hybrid_evaluator.services.candidate_response_service import get_latest_candidate_response
+
+        ai_run = None
+        if method == "ai":
+            all_runs = AIEvaluationRunRepository().get_all()
+            ai_run = next((r for r in all_runs if r.get("assessment_name") == asmn and r.get("test_name") == test_name), None)
+
+        rows = []
+        for i, c in enumerate(cands, 1):
+            cid = str(c.get("emp_id", "")).strip()
+            cname = str(c.get("name", "")).strip() or cid
+            cand_label = f"{cname} ({cid})" if cid else cname
+            key = f"{method}:{test_name}:{cid}:{q_label}"
+
+            # Response
+            resp_obj = get_latest_candidate_response(candidate_id=cid, candidate_name=cname, assessment_name=asmn, test_name=test_name)
+            cand_resps = resp_obj.get("responses", []) if resp_obj else []
+            match_resp = next((r for r in cand_resps if (str(r.get("q_no", "")).upper() == q_label.upper() or f"Q{r.get('q_no', '')}".upper() == q_label.upper())), {})
+            cand_ans = str(match_resp.get("response", "") or "")
+
+            awarded = ""
+            justification = ""
+            has_evaluation = False
+
+            if method == "ai":
+                if ai_run:
+                    q_item = next((q for q in ai_run.get("questions", []) if q.get("record", {}).get("candidate_id") == cid and (str(q.get("record", {}).get("question_no", "")).upper() == q_label.upper() or f"Q{q.get('record', {}).get('question_no', '')}".upper() == q_label.upper())), None)
+                    if q_item:
+                        res = q_item.get("result", {})
+                        raw_awarded = res.get("awarded_marks")
+                        if raw_awarded is not None:
+                            try:
+                                aw_flt = float(raw_awarded)
+                                awarded = str(int(aw_flt) if aw_flt == int(aw_flt) else aw_flt)
+                                has_evaluation = True
+                            except Exception:
+                                awarded = str(raw_awarded)
+                        justification = str(res.get("justification", "") or "")
+                if not has_evaluation:
+                    saved_ai = _saved_evaluation(self.real_ai_results_per_candidate, cand_label, asmn, test_name) or _saved_evaluation(self.assessment_evaluation_results, cand_label, asmn, test_name)
+                    if saved_ai:
+                        for sq in saved_ai.get("questions", []):
+                            if str(sq.get("q_no", "")).upper() == q_label.upper() or f"Q{sq.get('q_no', '')}".upper() == q_label.upper():
+                                raw_aw = sq.get("ai_score") or sq.get("awarded_marks")
+                                if raw_aw is not None and str(raw_aw).strip() not in ("", "—"):
+                                    try:
+                                        aw_flt = float(raw_aw)
+                                        awarded = str(int(aw_flt) if aw_flt == int(aw_flt) else aw_flt)
+                                        has_evaluation = True
+                                    except Exception:
+                                        awarded = str(raw_aw)
+                                justification = str(sq.get("justification", "") or "")
+                                break
+            else:
+                manual_saved = _saved_evaluation(self.assessment_evaluation_results, cand_label, asmn, test_name)
+                if not manual_saved:
+                    man_repo = ManualEvaluationRepository()
+                    manual_saved = man_repo.get_by_key(candidate_id=cid, assessment_name=asmn, test_name=test_name)
+                if manual_saved:
+                    for sq in manual_saved.get("questions", []):
+                        if str(sq.get("q_no", "")).upper() == q_label.upper() or f"Q{sq.get('q_no', '')}".upper() == q_label.upper():
+                            raw_aw = sq.get("ai_score") or sq.get("awarded_marks") or sq.get("marks_obtained")
+                            if raw_aw is not None and str(raw_aw).strip() not in ("", "—"):
+                                try:
+                                    aw_flt = float(raw_aw)
+                                    awarded = str(int(aw_flt) if aw_flt == int(aw_flt) else aw_flt)
+                                    has_evaluation = True
+                                except Exception:
+                                    awarded = str(raw_aw)
+                            justification = str(sq.get("justification", "") or "")
+                            break
+
+            if key in self.review_marks_edits:
+                awarded = self.review_marks_edits[key]
+                has_evaluation = True
+            if key in self.review_justification_edits:
+                justification = self.review_justification_edits[key]
+                has_evaluation = True
+            remarks = self.review_remarks_edits.get(key, "")
+
+            score_str = "—"
+            if awarded and awarded.strip() not in ("", "—"):
+                try:
+                    aw_val = float(awarded)
+                    if max_m > 0:
+                        pct = round((aw_val / max_m) * 100)
+                        score_str = f"{int(pct)}%"
+                    else:
+                        score_str = "0%"
+                except Exception:
+                    score_str = "—"
+
+            rows.append({
+                "index": str(i),
+                "key": key,
+                "cid": cid,
+                "name": cname,
+                "response": cand_ans if cand_ans else "—",
+                "marks": awarded,
+                "max_marks": max_m_str,
+                "score": score_str,
+                "justification": justification,
+                "remarks": remarks,
+                "has_evaluation": has_evaluation,
+            })
+
+        return rows
+
+    @rx.var
+    async def review_eval_has_results(self) -> bool:
+        rows = await self.review_eval_candidate_rows
+        for r in rows:
+            if r.get("has_evaluation"):
+                return True
+        return False
 
     async def trigger_evaluation_tab_ai_eval(self):
         """Trigger the real AI evaluation from the Evaluation tab modal.
