@@ -63,6 +63,168 @@ def candidate_row(c: dict, idx: int) -> rx.Component:
     )
 
 
+def employee_suggestion_item(emp: dict) -> rx.Component:
+    return rx.box(
+        rx.hstack(
+            rx.box(
+                rx.icon("user", size=15, color="#7C3AED"),
+                background="#F3E8FF",
+                padding="6px",
+                border_radius="6px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+            ),
+            rx.vstack(
+                rx.text(emp["emp_id"], font_size="13px", font_weight="600", color="#0F172A", font_family=FONT_BODY),
+                rx.text(emp["name"], font_size="12px", color="#64748B", font_family=FONT_BODY),
+                spacing="0",
+                align_items="start",
+            ),
+            rx.spacer(),
+            rx.text(emp["department"], font_size="12px", color="#64748B", font_family=FONT_BODY),
+            width="100%",
+            align_items="center",
+            spacing="3",
+        ),
+        padding="8px 12px",
+        border_radius="6px",
+        cursor="pointer",
+        _hover={"background": "#F5F3FF"},
+        on_click=AdminState.select_employee_suggestion_by_id(emp["emp_id"]),
+        width="100%",
+    )
+
+
+def search_employee_section() -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.hstack(
+                rx.box(
+                    rx.icon("user", size=18, color="#7C3AED"),
+                    background="#F3E8FF",
+                    padding="6px",
+                    border_radius="8px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                ),
+                rx.vstack(
+                    rx.text("Search Employee", font_size="13.5px", font_weight="600", color="#0F172A", font_family=FONT_BODY),
+                    rx.text("Search by Employee ID, Name, or Department", font_size="11.5px", color="#64748B", font_family=FONT_BODY),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
+                align_items="center",
+                width="100%",
+            ),
+            rx.input(
+                rx.input.slot(
+                    rx.icon("search", size=16, color="#64748B"),
+                    side="left",
+                ),
+                rx.input.slot(
+                    rx.cond(
+                        AdminState.employee_search_query != "",
+                        rx.icon_button(
+                            rx.icon("x", size=14),
+                            size="1",
+                            variant="ghost",
+                            color="#64748B",
+                            cursor="pointer",
+                            type="button",
+                            on_click=AdminState.clear_employee_search,
+                            _hover={"color": "#0F172A", "background": "transparent"},
+                            style={
+                                "background": "transparent",
+                                "border": "none",
+                                "box_shadow": "none",
+                                "padding": "0",
+                            },
+                        ),
+                        rx.box(),
+                    ),
+                    side="right",
+                ),
+                placeholder="Search by Employee ID, Name, or Department",
+                value=AdminState.employee_search_query,
+                on_change=AdminState.set_employee_search_query,
+                on_focus=AdminState.open_employee_search_dropdown,
+                width="100%",
+                background="white",
+                border="1px solid #8B5CF6",
+                border_radius="8px",
+                font_family=FONT_BODY,
+                font_size="13px",
+            ),
+            rx.cond(
+                AdminState.show_employee_search_dropdown,
+                rx.box(
+                    rx.cond(
+                        AdminState.has_employee_matches,
+                        rx.vstack(
+                            rx.vstack(
+                                rx.foreach(
+                                    AdminState.filtered_employee_suggestions,
+                                    employee_suggestion_item,
+                                ),
+                                spacing="1",
+                                width="100%",
+                                max_height="160px",
+                                overflow_y="auto",
+                                padding="4px",
+                            ),
+                            rx.box(
+                                rx.text(
+                                    "Showing " + AdminState.employee_matches_count.to_string() + ' results for "' + AdminState.employee_search_query + '"',
+                                    font_size="11px",
+                                    color="#64748B",
+                                    font_family=FONT_BODY,
+                                    text_align="center",
+                                ),
+                                padding="7px 10px",
+                                border_top="1px solid #F1F5F9",
+                                background="#FAF9FC",
+                                border_bottom_left_radius="8px",
+                                border_bottom_right_radius="8px",
+                                width="100%",
+                            ),
+                            spacing="0",
+                            width="100%",
+                        ),
+                        rx.box(
+                            rx.text(
+                                "No matching employees found.",
+                                font_size="12.5px",
+                                color="#64748B",
+                                font_family=FONT_BODY,
+                                text_align="center",
+                            ),
+                            padding="14px 12px",
+                            width="100%",
+                        ),
+                    ),
+                    background="white",
+                    border="1px solid #EDE9FE",
+                    border_radius="10px",
+                    box_shadow="0 4px 16px -2px rgba(124, 58, 237, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)",
+                    width="100%",
+                ),
+            ),
+            spacing="3",
+            width="100%",
+            align_items="stretch",
+        ),
+        background="#FAF8FF",
+        border="1px solid #EDE9FE",
+        border_radius="12px",
+        padding="14px",
+        margin_bottom="1.2em",
+        width="100%",
+    )
+
+
 def add_candidate_dialog() -> rx.Component:
     return rx.dialog.root(
         rx.dialog.trigger(
@@ -77,15 +239,37 @@ def add_candidate_dialog() -> rx.Component:
             ),
         ),
         rx.dialog.content(
-            rx.dialog.title("Add Candidate", font_family=FONT_BODY, color=COLORS["ink"]),
-            rx.dialog.description(
-                "The candidate will be able to sign in once created.",
-                size="2", color=COLORS["slate"], font_family=FONT_BODY, padding_bottom="1.2em",
+            rx.hstack(
+                rx.vstack(
+                    rx.dialog.title("Add Candidate", font_family=FONT_BODY, color=COLORS["ink"], margin="0"),
+                    rx.dialog.description(
+                        "The candidate will be able to sign in once created.",
+                        size="2", color=COLORS["slate"], font_family=FONT_BODY, margin="0",
+                    ),
+                    spacing="1",
+                    align_items="start",
+                ),
+                rx.spacer(),
+                rx.dialog.close(
+                    rx.icon_button(
+                        rx.icon("x", size=18),
+                        variant="ghost",
+                        color=COLORS["slate"],
+                        cursor="pointer",
+                        _hover={"color": COLORS["ink"], "background": "#F1F5F9"},
+                        border_radius="6px",
+                        size="2",
+                    ),
+                ),
+                width="100%",
+                align_items="start",
+                padding_bottom="1.2em",
             ),
+            search_employee_section(),
             rx.vstack(
                 rx.text("Employee ID", size="2", weight="medium", color=COLORS["ink"], font_family=FONT_BODY),
                 rx.input(
-                    placeholder="Enter eid",
+                    placeholder="21234",
                     value=AdminState.new_candidate_id,
                     on_change=AdminState.set_new_candidate_id,
                     width="100%",
@@ -158,7 +342,7 @@ def add_candidate_dialog() -> rx.Component:
                 ),
                 spacing="3", justify="end", padding_top="1.6em", width="100%",
             ),
-            style={"maxWidth": "420px"},
+            style={"maxWidth": "460px"},
         ),
         open=AdminState.show_add_candidate,
         on_open_change=AdminState.set_show_add_candidate,

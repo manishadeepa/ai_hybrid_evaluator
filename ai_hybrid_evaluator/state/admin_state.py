@@ -18,11 +18,13 @@ from backend.services.candidate_management_service import CandidateManagementSer
 from backend.services.employee_directory_service import find_employee_by_id
 from backend.services.feedback_service import FeedbackService
 from backend.repositories.facilitator_repository import FacilitatorRepository
+from backend.repositories.json_repository import JSONRepository
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
     SHARED_CANDIDATES, SHARED_FACILITATORS,
     get_facilitator_profile, get_candidate_profile, save_candidate_profile,
+    CANDIDATE_PROFILE_FILE, FACILITATOR_PROFILE_FILE,
 )
 
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -708,6 +710,10 @@ class AdminState(rx.State):
     new_candidate_show_password: bool = False
     candidate_form_error: str = ""
 
+    # Employee search state
+    employee_search_query: str = ""
+    employee_selected: bool = False
+
     def set_show_add_candidate(self, value: bool):
         self.show_add_candidate = value
         if not value:
@@ -718,9 +724,156 @@ class AdminState(rx.State):
             self.new_candidate_password = ""
             self.new_candidate_show_password = False
             self.candidate_form_error = ""
+            self.employee_search_query = ""
+            self.employee_selected = False
 
     def toggle_new_candidate_password(self):
         self.new_candidate_show_password = not self.new_candidate_show_password
+
+    def set_employee_search_query(self, value: str):
+        self.employee_search_query = value
+        self.employee_selected = False
+
+    def open_employee_search_dropdown(self):
+        if self.employee_search_query.strip():
+            self.employee_selected = False
+
+    def clear_employee_search(self):
+        self.employee_search_query = ""
+        self.employee_selected = False
+        self.new_candidate_id = ""
+        self.new_candidate_name = ""
+        self.new_candidate_department = ""
+        self.new_candidate_email = ""
+        self.candidate_form_error = ""
+
+    @rx.var
+    def available_directory_employees(self) -> list[dict]:
+        """Aggregate employee identities already available in the frontend and state."""
+        employees: list[dict] = []
+        seen = set()
+
+        # 1. From candidate profiles in JSON store
+        try:
+            cand_profiles = JSONRepository(CANDIDATE_PROFILE_FILE).get_all()
+            for prof in cand_profiles:
+                eid = str(prof.get("emp_id", "")).strip()
+                name = str(prof.get("full_name", "")).strip()
+                dept = str(prof.get("department", "")).strip()
+                email = str(prof.get("email", "")).strip()
+                if eid and eid.casefold() not in seen:
+                    seen.add(eid.casefold())
+                    employees.append({
+                        "emp_id": eid,
+                        "name": name,
+                        "department": dept or "General",
+                        "email": email,
+                    })
+        except Exception:
+            pass
+
+        # 2. From candidate list loaded in state
+        for c in self.candidates:
+            eid = str(c.get("emp_id", "")).strip()
+            name = str(c.get("name", "")).strip()
+            dept = str(c.get("department", "")).strip()
+            email = str(c.get("email", "")).strip()
+            if eid and eid.casefold() not in seen:
+                seen.add(eid.casefold())
+                employees.append({
+                    "emp_id": eid,
+                    "name": name,
+                    "department": dept or "General",
+                    "email": email,
+                })
+            elif eid:
+                for emp in employees:
+                    if emp["emp_id"].casefold() == eid.casefold():
+                        if not emp["name"] and name:
+                            emp["name"] = name
+                        if (not emp["department"] or emp["department"] == "General") and dept:
+                            emp["department"] = dept
+                        if not emp["email"] and email:
+                            emp["email"] = email
+
+        # 3. From facilitator profiles in JSON store
+        try:
+            fac_profiles = JSONRepository(FACILITATOR_PROFILE_FILE).get_all()
+            for prof in fac_profiles:
+                eid = str(prof.get("emp_id", "")).strip()
+                name = str(prof.get("full_name", "")).strip()
+                dept = str(prof.get("department", "")).strip()
+                email = str(prof.get("email", "")).strip()
+                if eid and eid.casefold() not in seen:
+                    seen.add(eid.casefold())
+                    employees.append({
+                        "emp_id": eid,
+                        "name": name,
+                        "department": dept or "Evaluations",
+                        "email": email,
+                    })
+        except Exception:
+            pass
+
+        # 4. From facilitator list loaded in state
+        for f in self.facilitators:
+            eid = str(f.get("emp_id", "")).strip()
+            name = str(f.get("name", "")).strip()
+            email = str(f.get("email", "")).strip()
+            if eid and eid.casefold() not in seen:
+                seen.add(eid.casefold())
+                employees.append({
+                    "emp_id": eid,
+                    "name": name,
+                    "department": "Evaluations",
+                    "email": email,
+                })
+
+        return employees
+
+    @rx.var
+    def filtered_employee_suggestions(self) -> list[dict]:
+        query = self.employee_search_query.strip().casefold()
+        if not query:
+            return []
+
+        matches = []
+        for emp in self.available_directory_employees:
+            eid = emp.get("emp_id", "").casefold()
+            name = emp.get("name", "").casefold()
+            dept = emp.get("department", "").casefold()
+            if query in eid or query in name or query in dept:
+                matches.append(emp)
+        return matches
+
+    @rx.var
+    def employee_matches_count(self) -> int:
+        return len(self.filtered_employee_suggestions)
+
+    @rx.var
+    def has_employee_matches(self) -> bool:
+        return len(self.filtered_employee_suggestions) > 0
+
+    @rx.var
+    def show_employee_search_dropdown(self) -> bool:
+        return (self.employee_search_query.strip() != "") and (not self.employee_selected)
+
+    def select_employee_suggestion_by_id(self, emp_id: str):
+        target = None
+        for emp in self.available_directory_employees:
+            if str(emp.get("emp_id", "")).casefold() == str(emp_id).casefold():
+                target = emp
+                break
+        if target is None:
+            return
+
+        self.new_candidate_id = target.get("emp_id", "")
+        self.new_candidate_name = target.get("name", "")
+        self.new_candidate_department = target.get("department", "")
+        if target.get("email"):
+            self.new_candidate_email = target.get("email", "")
+        self.employee_selected = True
+        self.candidate_form_error = ""
 
     def set_new_candidate_id(self, value: str):
         self.new_candidate_id = value
@@ -731,19 +884,24 @@ class AdminState(rx.State):
         if not value:
             return
 
+        employee = None
         try:
             employee = find_employee_by_id(value)
-        except Exception as exc:
-            self.candidate_form_error = f"Unable to look up Employee ID: {exc}"
-            return
+        except Exception:
+            pass
 
         if employee is None:
-            self.candidate_form_error = "Employee ID was not found."
+            for emp in self.available_directory_employees:
+                if str(emp.get("emp_id", "")).casefold() == value.strip().casefold():
+                    employee = emp
+                    break
+
+        if employee is None:
             return
 
-        self.new_candidate_name = employee["name"]
-        self.new_candidate_email = employee["email"]
-        self.new_candidate_department = employee["department"]
+        self.new_candidate_name = employee.get("name", "")
+        self.new_candidate_email = employee.get("email", "")
+        self.new_candidate_department = employee.get("department", "")
 
     def set_new_candidate_name(self, value: str):
         self.new_candidate_name = value
