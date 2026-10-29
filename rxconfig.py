@@ -1,19 +1,17 @@
 import os
 from pathlib import Path
 
-# Development reload should watch source code, not saved answers,
+# Development reload should watch source code directories, not saved answers,
 # feedback JSON, generated Excel files, or temporary persistence files.
+# Uvicorn expects valid directory paths in reload_dirs, not individual file paths.
 _project_root = Path(__file__).resolve().parent
-_reload_files = ["rxconfig.py"]
+_reload_dirs = [
+    _dir.relative_to(_project_root).as_posix()
+    for _package in ("ai_hybrid_evaluator", "backend")
+    if (_dir := _project_root / _package).is_dir()
+]
 
-for _package in ("ai_hybrid_evaluator", "backend"):
-    for _source in sorted((_project_root / _package).rglob("*.py")):
-        _relative = _source.relative_to(_project_root)
-        if "data" in _relative.parts or "__pycache__" in _relative.parts:
-            continue
-        _reload_files.append(_relative.as_posix())
-
-os.environ["REFLEX_HOT_RELOAD_OVERRIDE_PATHS"] = ":".join(_reload_files)
+os.environ["REFLEX_HOT_RELOAD_OVERRIDE_PATHS"] = ":".join(_reload_dirs)
 os.environ["REFLEX_USE_GRANIAN"] = "false"
 import reflex as rx
 
