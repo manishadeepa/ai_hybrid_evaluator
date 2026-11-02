@@ -1,18 +1,107 @@
 import json
 from copy import deepcopy
 from datetime import datetime
-from threading import RLock
+import errno
+import hashlib
+import os
+from pathlib import Path
+import tempfile
+import time
+from threading import RLock, local
 from uuid import uuid4
 from backend.repositories.assessment_repository import AssessmentRepository
 from backend.services.test_service import TestService
+from backend.repositories.test_repository import LOCKED_TEST_ERROR
 from backend.services.assessment_approval import (
     aggregate_facilitator_approval_status,
     all_facilitators_approved,
 )
 
-# Serialize assessment/test read-modify-write operations within the Reflex process.
-_PERSISTENCE_LOCK = RLock()
-_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers", "test_types", "test_timings"}
+class _PersistenceLock:
+    """Reentrant thread lock plus an OS lock shared by app worker processes."""
+
+    def __init__(self):
+        self._thread_lock = RLock()
+        self._local = local()
+
+    @staticmethod
+    def _lock_path():
+        from backend.data_paths import get_active_data_dir
+
+        identity = os.path.normcase(str(get_active_data_dir().resolve())).encode("utf-8")
+        filename = hashlib.sha256(identity).hexdigest()
+        return Path(tempfile.gettempdir()) / f"gen-ai-hybrid-eval-{filename}.lock"
+
+    @staticmethod
+    def _acquire_file_lock(lock_file):
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    return
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK, errno.EAGAIN):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+    @staticmethod
+    def _release_file_lock(lock_file):
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def __enter__(self):
+        self._thread_lock.acquire()
+        depth = getattr(self._local, "depth", 0)
+        try:
+            if depth == 0:
+                lock_file = self._lock_path().open("a+b")
+                try:
+                    self._acquire_file_lock(lock_file)
+                except Exception:
+                    lock_file.close()
+                    raise
+                self._local.lock_file = lock_file
+            self._local.depth = depth + 1
+            return self
+        except Exception:
+            self._thread_lock.release()
+            raise
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        depth = self._local.depth - 1
+        try:
+            if depth == 0:
+                lock_file = self._local.lock_file
+                try:
+                    self._release_file_lock(lock_file)
+                finally:
+                    lock_file.close()
+                    del self._local.lock_file
+        finally:
+            self._local.depth = depth
+            self._thread_lock.release()
+
+
+_PERSISTENCE_LOCK = _PersistenceLock()
+_TEST_FIELDS = {"tests", "final_test", "test_ids", "test_dates", "test_descriptions", "question_papers", "test_types", "test_timings", "test_lock_states"}
 
 
 class AssessmentService:
@@ -47,7 +136,7 @@ class AssessmentService:
                     self.repository.save_all([])
             return self.load_assessments()
 
-    def save_assessment(self, assessment):
+    def save_assessment(self, assessment, *, test_created_by=""):
         with _PERSISTENCE_LOCK:
             if not isinstance(assessment, dict):
                 raise ValueError("Assessment details must be an object.")
@@ -55,6 +144,12 @@ class AssessmentService:
             if "assessment_id" in value:
                 previous = self.get_assessment(value["assessment_id"])
                 value = {**previous, **value}
+                if value.get("name") != previous.get("name"):
+                    if any(test.get("is_locked") for test in self.tests.get_tests(value["assessment_id"])):
+                        raise ValueError(LOCKED_TEST_ERROR)
+                if value.get("assigned_candidates", []) != previous.get("assigned_candidates", []):
+                    if any(test.get("is_locked") for test in self.tests.get_tests(value["assessment_id"])):
+                        raise ValueError(LOCKED_TEST_ERROR)
             name = value.get("name", "")
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("Assessment name is required.")
@@ -79,7 +174,7 @@ class AssessmentService:
                     self._unique_ids(value[field], field)
             if not isinstance(value.get("final_test", ""), str):
                 raise ValueError("final_test must be a string.")
-            tests = self.tests.prepare_tests(identity, value)
+            tests = self.tests.prepare_tests(identity, value, created_by=test_created_by)
             record = {k: v for k, v in value.items() if k not in _TEST_FIELDS}
             # Validate serialization before either store changes.
             try:
@@ -91,6 +186,15 @@ class AssessmentService:
             assignments = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json")
             previous_assignments = assignments.get_all()
             planned = CandidateAssignmentService.plan_assessment_assignments(record, tests, assignments)
+            locked_test_ids = {
+                test["test_id"] for test in tests if test.get("is_locked")
+            }
+            if [
+                row for row in previous_assignments if row.get("test_id") in locked_test_ids
+            ] != [
+                row for row in planned if row.get("test_id") in locked_test_ids
+            ]:
+                raise ValueError(LOCKED_TEST_ERROR)
             previous_tests = self.tests.repository.get_all()
             self.tests.replace_tests(identity, tests)
             try:
@@ -109,6 +213,8 @@ class AssessmentService:
             self._require_id(assessment_id)
             if self.repository.get_by_id(assessment_id) is None:
                 return False
+            if any(test.get("is_locked") for test in self.tests.get_tests(assessment_id)):
+                raise ValueError(LOCKED_TEST_ERROR)
             from backend.repositories.test_candidate_repository import TestCandidateRepository
             from backend.services.candidate_assignment_service import CandidateAssignmentService
             assignments = TestCandidateRepository(self.repository.file_path.parent / "test_candidates.json")
@@ -304,7 +410,7 @@ class AssessmentService:
         raise ValueError("Test does not belong to this assessment or does not exist.")
 
     def add_test(self, assessment_id, test_name, *, date="", description="", is_final=False, test_type=None,
-                 start_time="", end_time=""):
+                 start_time="", end_time="", created_by=""):
         """Existing workflow creates owned tests; it never moves another assessment's test."""
         with _PERSISTENCE_LOCK:
             self.tests._validate_fields({"test_name": test_name, "date": date,
@@ -335,7 +441,7 @@ class AssessmentService:
                     "start_time": start_time,
                     "end_time": end_time,
                 }
-            return self.save_assessment(record)
+            return self.save_assessment(record, test_created_by=created_by)
 
     def update_test(self, assessment_id, test_id, changes):
         with _PERSISTENCE_LOCK:

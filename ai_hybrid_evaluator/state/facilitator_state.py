@@ -9,9 +9,11 @@ and to enrich it with resolved candidate details.
 """
 
 import asyncio
+import logging
 import math
 import base64
 import re
+import traceback
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
@@ -27,7 +29,12 @@ from backend.services.assessment_approval import (
 )
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
 from backend.services.feedback_service import FeedbackService
+from backend.data_paths import active_data_file
 from backend.services.report_service import ReportService
+from backend.services.facilitator_dashboard_service import (
+    FacilitatorDashboardService,
+    assessment_is_assigned_to_facilitator,
+)
 from pathlib import Path
 import reflex as rx
 from ai_hybrid_evaluator.state.admin_state import AdminState
@@ -57,6 +64,7 @@ from ai_hybrid_evaluator.services.pdf_report_generator import (
     generate_iframe_print_script,
 )
 
+logger = logging.getLogger(__name__)
 
 
 def load_latest_candidate_response(candidate_id: str = "") -> dict:
@@ -436,9 +444,24 @@ class FacilitatorState(rx.State):
         if snapshot["errors"]:
             yield rx.toast.error("Unable to refresh assessment data: " + "; ".join(snapshot["errors"]))
 
+    async def _refresh_after_locked_mutation(self):
+        admin_state = await self.get_state(AdminState)
+        error = await admin_state.load_persisted_assessments_async(self.question_papers)
+        if error:
+            return error
+        self.question_papers = {
+            a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments
+        }
+        return FacilitatorState.refresh_workspace_snapshot()
+
+    @rx.event(background=True)
+    async def refresh_locked_test_state(self):
+        return await self._refresh_after_locked_mutation()
+
     selected_assessment_index: int = -1
     selected_assessment_name: str = ""
     selected_assessment_id: str = ""
+    selected_test_id: str = ""
     expanded_assessment: str | None = None
 
     @property
@@ -1140,10 +1163,7 @@ class FacilitatorState(rx.State):
 
     @staticmethod
     def _get_weightages_file_path() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "assessment_weightages.json"
+        return active_data_file("assessment_weightages.json")
 
     def _load_saved_weightages(self) -> dict[str, dict[str, int]]:
         """Load saved weightages from disk."""
@@ -1160,19 +1180,13 @@ class FacilitatorState(rx.State):
     def _persist_weightages(self):
         """Persist saved weightages to disk."""
         fp = self._get_weightages_file_path()
-        try:
-            import json
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(self.saved_assessment_weightages, f, indent=2)
-        except Exception:
-            pass
+        import json
+        with open(fp, "w", encoding="utf-8") as f:
+            json.dump(self.saved_assessment_weightages, f, indent=2)
 
     @staticmethod
     def _get_pass_percentages_file_path() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "assessment_pass_percentages.json"
+        return active_data_file("assessment_pass_percentages.json")
 
     def _load_saved_pass_percentages(self) -> dict[str, dict[str, int]]:
         """Load saved test-level pass percentages from disk."""
@@ -1189,12 +1203,9 @@ class FacilitatorState(rx.State):
     def _persist_pass_percentages(self):
         """Persist saved test-level pass percentages to disk."""
         fp = self._get_pass_percentages_file_path()
-        try:
-            import json
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(self.saved_assessment_pass_percentages, f, indent=2)
-        except Exception:
-            pass
+        import json
+        with open(fp, "w", encoding="utf-8") as f:
+            json.dump(self.saved_assessment_pass_percentages, f, indent=2)
 
     # â”€â”€ Assessment Completion State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Tracks which assessments the facilitator has explicitly marked as Complete.
@@ -1204,10 +1215,7 @@ class FacilitatorState(rx.State):
 
     @staticmethod
     def _get_completion_file_path() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "assessment_completions.json"
+        return active_data_file("assessment_completions.json")
 
     def _load_saved_completions(self) -> dict[str, bool]:
         """Load persisted assessment completion flags from disk."""
@@ -1488,10 +1496,7 @@ class FacilitatorState(rx.State):
 
     @staticmethod
     def _get_feedback_file_path() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "facilitator_feedbacks.json"
+        return active_data_file("facilitator_feedbacks.json")
 
     def _load_saved_feedbacks(self) -> dict[str, dict]:
         """Load persisted facilitator feedbacks from disk."""
@@ -2002,16 +2007,32 @@ class FacilitatorState(rx.State):
         asmn = self.selected_assessment_name
         if not asmn:
             return
+        if self._is_test_locked(asmn, test_name):
+            return rx.toast.error("This test is locked and is view-only.")
         await self.sync_assessment_weightage(asmn, edited_test=test_name, new_value=value)
 
     def set_pass_percentage_input(self, test_name: str, value: str):
         """Update the pass percentage string for a specific test in the current assessment."""
         asmn = self.selected_assessment_name
+        if self._is_test_locked(asmn, test_name):
+            return rx.toast.error("This test is locked and is view-only.")
         cur = dict(self.pass_percentage_inputs.get(asmn, {}))
         cur[test_name] = value
         updated = dict(self.pass_percentage_inputs)
         updated[asmn] = cur
         self.pass_percentage_inputs = updated
+
+    @staticmethod
+    def _is_test_locked(assessment_name: str, test_name: str) -> bool:
+        from backend.services.assessment_service import AssessmentService
+
+        service = AssessmentService()
+        assessment = next((row for row in service.repository.get_all()
+                           if row.get("name") == assessment_name), None)
+        if not assessment:
+            return False
+        test = service.tests.find_test(assessment_name, test_name)
+        return bool(test and test.get("is_locked"))
 
     @rx.var
     async def current_assessment_total_weightage(self) -> int:
@@ -2153,6 +2174,7 @@ class FacilitatorState(rx.State):
                 "date": d,
                 "is_final": is_final,
                 "has_qp": t.get("has_qp", False),
+                "is_locked": t.get("is_locked", False),
                 "weightage": w_val,
                 "pass_percentage": p_val,
             })
@@ -2208,15 +2230,66 @@ class FacilitatorState(rx.State):
                 p_int = 50
             parsed_pass[t_name] = max(0, min(100, p_int))
 
-        updated_saved = dict(self.saved_assessment_weightages)
-        updated_saved[asmn] = parsed_weights
-        self.saved_assessment_weightages = updated_saved
-        self._persist_weightages()
+        from backend.services.assessment_service import _PERSISTENCE_LOCK, AssessmentService
 
-        updated_pass = dict(self.saved_assessment_pass_percentages)
-        updated_pass[asmn] = parsed_pass
-        self.saved_assessment_pass_percentages = updated_pass
-        self._persist_pass_percentages()
+        try:
+            with _PERSISTENCE_LOCK:
+                service = AssessmentService()
+                assessment_records = service.repository.get_all()
+                matching_assessments = [
+                    record for record in assessment_records if record.get("name") == asmn
+                ]
+                if len(matching_assessments) != 1:
+                    raise ValueError("Selected assessment could not be resolved; refresh and try again.")
+                assessment_id = matching_assessments[0].get("assessment_id")
+                if not assessment_id:
+                    raise ValueError("Selected assessment could not be resolved; refresh and try again.")
+
+                import json
+
+                def read_saved_values(path: Path, label: str) -> dict[str, dict[str, int]]:
+                    if not path.exists():
+                        return {}
+                    try:
+                        with open(path, "r", encoding="utf-8") as saved_file:
+                            value = json.load(saved_file)
+                    except (OSError, ValueError) as exc:
+                        raise ValueError(f"Unable to read stored {label}; refresh and try again.") from exc
+                    if not isinstance(value, dict) or any(
+                        not isinstance(assessment_values, dict)
+                        for assessment_values in value.values()
+                    ):
+                        raise ValueError(f"Stored {label} data is invalid; refresh and try again.")
+                    return value
+
+                persisted_weights = read_saved_values(
+                    self._get_weightages_file_path(), "weightage"
+                )
+                persisted_pass = read_saved_values(
+                    self._get_pass_percentages_file_path(), "pass percentage"
+                )
+                for test in service.tests.get_tests(assessment_id):
+                    if test.get("is_locked") and (
+                        persisted_weights.get(asmn, {}).get(test["test_name"])
+                        != parsed_weights.get(test["test_name"])
+                        or persisted_pass.get(asmn, {}).get(test["test_name"])
+                        != parsed_pass.get(test["test_name"])
+                    ):
+                        raise ValueError("This test is locked and is view-only.")
+
+                updated_saved = dict(persisted_weights)
+                updated_saved[asmn] = parsed_weights
+                self.saved_assessment_weightages = updated_saved
+                self._persist_weightages()
+
+                updated_pass = dict(persisted_pass)
+                updated_pass[asmn] = parsed_pass
+                self.saved_assessment_pass_percentages = updated_pass
+                self._persist_pass_percentages()
+        except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), await self._refresh_after_locked_mutation()]
+            return rx.toast.error(str(exc))
 
         if total == 100:
             return rx.toast.success("Weightage and pass percentage configuration saved successfully.")
@@ -2277,6 +2350,7 @@ class FacilitatorState(rx.State):
         """Select a test to view/upload question paper for in the workspace."""
         self.selected_test_name = test_name
         self.selected_evaluation_test = test_name  # keep Evaluation tab dropdown in sync
+        self.selected_test_id = self._resolve_selected_test_id(test_name)
         self.is_replacing_qp = False
         saved = _saved_evaluation(self.real_ai_results_per_candidate, self.selected_evaluation_candidate, self.selected_assessment_name, test_name)
         if saved:
@@ -2295,6 +2369,20 @@ class FacilitatorState(rx.State):
             self.real_ai_evaluation_date = "Not evaluated"
             self.real_ai_eval_questions = []
         return FacilitatorState.refresh_workspace_snapshot(False)
+
+    def _resolve_selected_test_id(self, test_name):
+        assessments = AssessmentService().load_assessments()
+        assessment = next(
+            (row for row in assessments if row.get("assessment_id") == self.selected_assessment_id),
+            None,
+        )
+        if assessment is None:
+            assessment = next(
+                (row for row in assessments if row.get("name") == self.selected_assessment_name),
+                None,
+            )
+        test_ids = assessment.get("test_ids") if assessment else None
+        return test_ids.get(test_name, "") if isinstance(test_ids, dict) else ""
 
     def start_replacing_qp(self, test_name: str = ""):
         """Switch active view to the upload dropzone to replace the existing question paper."""
@@ -2334,6 +2422,9 @@ class FacilitatorState(rx.State):
             self.qp_validation_error = str(exc) if isinstance(exc, ValueError) else "Unable to save question paper; please try again."
             # Do not label dependency/storage failures as an invalid workbook.
             self.qp_validation_popup_open = not isinstance(exc, (QuestionPaperDependencyError, OSError))
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(self.qp_validation_error, duration=10000),
+                        await self._refresh_after_locked_mutation()]
             return rx.toast.error(self.qp_validation_error, duration=10000)
         self.is_replacing_qp = False
         self.qp_validation_error = ""
@@ -2356,6 +2447,8 @@ class FacilitatorState(rx.State):
             self.is_replacing_qp = False
             return [rx.toast.info(f"Question paper removed for {test_name}."), FacilitatorState.refresh_workspace_snapshot()]
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), await self._refresh_after_locked_mutation()]
             return rx.toast.error(str(exc) if isinstance(exc, ValueError) else "Unable to remove question paper; please try again.")
 
     async def remove_current_test_question_paper(self):
@@ -2409,6 +2502,44 @@ class FacilitatorState(rx.State):
             if a["name"] == name:
                 return a.get("test_items", [])
         return []
+
+    @rx.var(cache=True)
+    async def is_selected_test_locked(self) -> bool:
+        for item in await self.current_assessment_test_items:
+            if item.get("name") == self.selected_test_name:
+                return bool(item.get("is_locked"))
+        return False
+
+    @rx.var(cache=True)
+    async def is_selected_evaluation_test_locked(self) -> bool:
+        target = self.selected_evaluation_test or self.selected_test_name
+        for item in await self.current_assessment_test_items:
+            if item.get("name") == target:
+                return bool(item.get("is_locked"))
+        return False
+
+    @rx.var
+    async def can_evaluate_selected_test(self) -> bool:
+        auth_state = await self.get_state(AuthState)
+        if not auth_state.is_facilitator_authenticated or not auth_state.facilitator_emp_id:
+            return False
+        target = self.selected_evaluation_test or self.selected_test_name
+        for item in await self.current_assessment_test_items:
+            if item.get("name") == target:
+                return bool(
+                    item.get("created_by")
+                    and item.get("created_by") == auth_state.facilitator_emp_id
+                    and not item.get("is_locked")
+                )
+        return False
+
+    @rx.var
+    async def evaluation_permission_tooltip(self) -> str:
+        if await self.is_selected_evaluation_test_locked:
+            return "This test is locked and is view-only."
+        if not await self.can_evaluate_selected_test:
+            return "Only the facilitator who created this test can evaluate or lock it."
+        return ""
 
     @rx.var(cache=True)
     async def has_any_tests(self) -> bool:
@@ -2484,8 +2615,11 @@ class FacilitatorState(rx.State):
         admin_state = await self.get_state(AdminState)
 
         fac_id = auth_state.facilitator_emp_id
-        if not fac_id:
+        if not auth_state.is_facilitator_authenticated or not fac_id:
             return []
+        test_records = {
+            row["test_id"]: row for row in AssessmentService().tests.repository.get_all()
+        }
         cur_fac_name = auth_state.facilitator_name
         if not cur_fac_name and fac_id:
             match = next((f for f in admin_state.facilitators if f["emp_id"].lower() == fac_id.lower()), None)
@@ -2494,11 +2628,7 @@ class FacilitatorState(rx.State):
 
         result: list[AssessmentDetail] = []
         for a in admin_state.assessments:
-            # Support multi-facilitator: check facilitator_ids list first, fall back to legacy field
-            assigned_ids = a.get("facilitator_ids", [])
-            if not assigned_ids:
-                assigned_ids = [a.get("facilitator_id", "")]
-            if fac_id not in assigned_ids:
+            if not assessment_is_assigned_to_facilitator(a, fac_id):
                 continue
             candidate_details = [
                 {"name": c["name"], "emp_id": c["emp_id"], "email": c["email"]}
@@ -2511,6 +2641,7 @@ class FacilitatorState(rx.State):
             if final_test_name:
                 all_tests_list.append(final_test_name)
             test_dates = a.get("test_dates", {})
+            test_ids = a.get("test_ids", {})
             qp_dict = self.question_papers.get(a["name"], {})
             admin_qp_dict = a.get("question_papers", {})
 
@@ -2524,10 +2655,18 @@ class FacilitatorState(rx.State):
                 d = test_dates.get(t_name, "")
                 has_qp = bool(qp_dict.get(t_name, "") or admin_qp_dict.get(t_name, ""))
                 w_val = cur_w.get(t_name, str(saved_w.get(t_name, "")))
+                test_record = test_records.get(test_ids.get(t_name), {})
                 test_items.append({
                     "name": t_name,
                     "date": d,
                     "is_final": False,
+                    "test_id": test_ids.get(t_name, ""),
+                    "created_by": test_record.get("created_by", ""),
+                    "is_locked": test_record.get("is_locked", False),
+                    "can_lock": bool(
+                        auth_state.is_facilitator_authenticated
+                        and test_record.get("created_by") == fac_id
+                    ),
                     "has_qp": has_qp,
                     "weightage": w_val,
                 })
@@ -2536,10 +2675,18 @@ class FacilitatorState(rx.State):
                 final_d = test_dates.get(final_test_name, "")
                 has_qp = bool(qp_dict.get(final_test_name, "") or admin_qp_dict.get(final_test_name, ""))
                 w_val = cur_w.get(final_test_name, str(saved_w.get(final_test_name, "")))
+                test_record = test_records.get(test_ids.get(final_test_name), {})
                 test_items.append({
                     "name": final_test_name,
                     "date": final_d,
                     "is_final": True,
+                    "test_id": test_ids.get(final_test_name, ""),
+                    "created_by": test_record.get("created_by", ""),
+                    "is_locked": test_record.get("is_locked", False),
+                    "can_lock": bool(
+                        auth_state.is_facilitator_authenticated
+                        and test_record.get("created_by") == fac_id
+                    ),
                     "has_qp": has_qp,
                     "weightage": w_val,
                 })
@@ -2604,12 +2751,17 @@ class FacilitatorState(rx.State):
     show_all_facilitators_modal: bool = False
 
     def set_dashboard_completion_assessment_name(self, value: str):
-        self.dashboard_completion_assessment_name = value
+        self._set_dashboard_assessment_name(value)
 
     def set_dashboard_evaluation_assessment_name(self, value: str):
-        self.dashboard_evaluation_assessment_name = value
+        self._set_dashboard_assessment_name(value)
 
     def set_dashboard_collaboration_assessment_name(self, value: str):
+        self._set_dashboard_assessment_name(value)
+
+    def _set_dashboard_assessment_name(self, value: str):
+        self.dashboard_completion_assessment_name = value
+        self.dashboard_evaluation_assessment_name = value
         self.dashboard_collaboration_assessment_name = value
 
     def set_dashboard_overview_search(self, value: str):
@@ -2741,12 +2893,7 @@ class FacilitatorState(rx.State):
         if not match:
             return []
         all_tests = match.get("all_tests", [])
-        fac_names = match.get("facilitator_names", [])
-        if not fac_names:
-            single = match.get("facilitator_name", "")
-            fac_names = [single] if single else ["Facilitator"]
 
-        # Use dashboard_assessments_overview test_stats if available
         overview = await self.dashboard_assessments_overview
         ov_match = next((r for r in overview if r["assessment_name"] == sel_name), None)
         stats_map = {}
@@ -2761,7 +2908,6 @@ class FacilitatorState(rx.State):
             pending = st.get("pending_eval", 0)
             comp = st.get("completed", 0)
 
-            # Determine evaluation status
             if eval_comp > 0 and pending == 0:
                 eval_status = "Completed"
                 status_color = "green"
@@ -2772,13 +2918,7 @@ class FacilitatorState(rx.State):
                 eval_status = "Not Started"
                 status_color = "gray"
 
-            # Evaluated by
-            if eval_status == "Completed":
-                eval_by = fac_names[0] if fac_names else "Facilitator"
-            elif eval_status == "In Progress":
-                eval_by = fac_names[1 % len(fac_names)] if fac_names else "Facilitator"
-            else:
-                eval_by = "-"
+            eval_by = ", ".join(st.get("evaluators", [])) or "-"
 
             # Test lock status & locked by
             if eval_status == "Completed":
@@ -2804,78 +2944,16 @@ class FacilitatorState(rx.State):
         all_mine = await self.my_assessments
         if not all_mine:
             return []
-        from backend.services.evaluation_result_service import EvaluationResultService
-        from backend.services.assessment_progress_service import AssessmentProgressService
         from backend.repositories.json_repository import repository_read_scope
-        service = EvaluationResultService()
-        rows = []
         with repository_read_scope():
-            for a in all_mine:
-                aid = a.get("assessment_id", "")
-                name = a.get("name", "")
-                all_tests = a.get("all_tests", [])
-                total_tests = len(all_tests)
-                if aid:
-                    try:
-                        prog = AssessmentProgressService(service.assessments).get_progress(aid, self.ai_results_per_candidate)
-                    except Exception:
-                        prog = {}
-                    tot = prog.get("total_candidate_tests", 0)
-                    sub = prog.get("submitted_candidate_tests", 0)
-                    ev = prog.get("evaluated_candidate_tests", 0)
-                    not_comp = tot - sub
-                    pend = sub - ev
-                    
-                    test_stats = {}
-                    for t in all_tests:
-                        test_stats[t] = {
-                            "test_name": t,
-                            "completed": 0,
-                            "not_completed": 0,
-                            "eval_completed": 0,
-                            "pending_eval": 0,
-                        }
-                    for p in prog.get("pairs", []):
-                        t = p.get("test_name", "")
-                        if t not in test_stats:
-                            test_stats[t] = {
-                                "test_name": t,
-                                "completed": 0,
-                                "not_completed": 0,
-                                "eval_completed": 0,
-                                "pending_eval": 0,
-                            }
-                        if p.get("submitted", False):
-                            test_stats[t]["completed"] += 1
-                            if p.get("evaluated", False):
-                                test_stats[t]["eval_completed"] += 1
-                            else:
-                                test_stats[t]["pending_eval"] += 1
-                        else:
-                            test_stats[t]["not_completed"] += 1
-                else:
-                    tot, sub, ev, not_comp, pend = 0, 0, 0, 0, 0
-                    test_stats = {t: {"test_name": t, "completed": 0, "not_completed": 0, "eval_completed": 0, "pending_eval": 0} for t in all_tests}
-                rows.append({
-                    "assessment_id": aid,
-                    "assessment_name": name,
-                    "total_tests": total_tests,
-                    "candidate_tests_completed": sub,
-                    "not_completed": not_comp,
-                    "pending_evaluations": pend,
-                    "evaluations_completed": ev,
-                    "total_candidate_tests": tot,
-                    "test_stats": list(test_stats.values()),
-                })
-        return rows
+            return FacilitatorDashboardService().get_assessments_overview(all_mine)
 
     @rx.var(cache=True)
     async def filtered_dashboard_overview(self) -> list[dict]:
         overview = await self.dashboard_assessments_overview
-        q = self.dashboard_overview_search.strip().lower()
-        if not q:
-            return overview
-        return [r for r in overview if q in r["assessment_name"].lower()]
+        return FacilitatorDashboardService.filter_overview(
+            overview, self.dashboard_overview_search
+        )
 
     @rx.var
     async def all_assessments_modal_items(self) -> list[dict]:
@@ -3080,6 +3158,7 @@ class FacilitatorState(rx.State):
         self.selected_assessment_final_test = final_test
         self.selected_test_name = tests[0] if tests else ""
         self.selected_evaluation_test = self.selected_test_name
+        self.selected_test_id = self._resolve_selected_test_id(self.selected_test_name) if tests else ""
         self._current_assessment_candidates = [
             {"name": c["name"], "emp_id": c["emp_id"]} for c in admin_state.candidates
             if c["emp_id"] in assessment.get("assigned_candidates", [])]
@@ -3209,6 +3288,76 @@ class FacilitatorState(rx.State):
         return await self.open_assessment_by_id(assessment["assessment_id"])
 
     # â”€â”€ Facilitator Test Management & Add Test Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    show_lock_test_confirmation: bool = False
+    lock_test_confirmation_id: str = ""
+    lock_test_request_in_progress: bool = False
+
+    async def open_lock_test_confirmation(self, test_id: str):
+        auth_state = await self.get_state(AuthState)
+        if not auth_state.is_facilitator_authenticated or not auth_state.facilitator_emp_id:
+            return rx.toast.error("Only authenticated facilitators can lock tests.")
+        try:
+            service = AssessmentService()
+            test = service.tests.get_test(test_id)
+            if not any(row.get("assessment_id") == test["assessment_id"]
+                       for row in await self.my_assessments):
+                return rx.toast.error("Test is not available in your assigned assessments.")
+            if not test.get("created_by"):
+                return rx.toast.error("Test creator is unknown; ownership must be resolved before locking.")
+            if test["created_by"] != auth_state.facilitator_emp_id:
+                return rx.toast.error("Only the test creator can lock this test.")
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
+        self.lock_test_confirmation_id = test_id
+        self.show_lock_test_confirmation = True
+
+    def set_show_lock_test_confirmation(self, value: bool):
+        if not self.lock_test_request_in_progress:
+            self.show_lock_test_confirmation = value
+            if not value:
+                self.lock_test_confirmation_id = ""
+
+    async def confirm_lock_test(self):
+        if self.lock_test_request_in_progress:
+            return
+        self.lock_test_request_in_progress = True
+        try:
+            auth_state = await self.get_state(AuthState)
+            if not auth_state.is_facilitator_authenticated or not auth_state.facilitator_emp_id:
+                raise ValueError("Only authenticated facilitators can lock tests.")
+            service = AssessmentService()
+            test = service.tests.get_test(self.lock_test_confirmation_id)
+            if not any(row.get("assessment_id") == test["assessment_id"]
+                       for row in await self.my_assessments):
+                raise ValueError("Test is not available in your assigned assessments.")
+            locked = service.tests.lock_test(
+                self.lock_test_confirmation_id,
+                auth_state.facilitator_emp_id,
+                "facilitator",
+            )
+            self.selected_test_name = test["test_name"]
+            self.selected_evaluation_test = test["test_name"]
+            self.active_workspace_tab = "question_paper"
+            self.is_replacing_qp = False
+            self.show_lock_test_confirmation = False
+            self.lock_test_confirmation_id = ""
+            admin_state = await self.get_state(AdminState)
+            refresh_error = await admin_state.load_persisted_assessments_async(self.question_papers)
+            self.question_papers = {
+                row["name"]: dict(row.get("question_papers", {}))
+                for row in admin_state.assessments
+            }
+            message = "Test is already locked." if locked.get("already_locked") else "Test locked. It is now view-only."
+            if refresh_error:
+                return [rx.toast.success(message), refresh_error]
+            return [rx.toast.success(message), FacilitatorState.refresh_workspace_snapshot()]
+        except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), await self._refresh_after_locked_mutation()]
+            return rx.toast.error(str(exc))
+        finally:
+            self.lock_test_request_in_progress = False
+
     show_add_test_modal: bool = False
     new_test_type: str = "Formative"  # "Formative" | "Summative"
     new_test_name: str = ""
@@ -3552,6 +3701,9 @@ class FacilitatorState(rx.State):
             return rx.toast.error(str(exc))
         if not all_facilitators_approved(assessment):
             return rx.toast.error("All assigned facilitators must approve this assessment before tests can be created.")
+        auth_state = await self.get_state(AuthState)
+        if not auth_state.is_facilitator_authenticated or not auth_state.facilitator_emp_id:
+            return rx.redirect("/signin")
         if self.new_question_type not in ("Objective", "Subjective", "Hybrid"):
             return rx.toast.error("Please select a Question Type.")
         admin_state = await self.get_state(AdminState)
@@ -3567,9 +3719,12 @@ class FacilitatorState(rx.State):
                         self.new_test_type == "Summative",
                         test_type={"Objective": "objective", "Subjective": "subjective", "Hybrid": "mixed"}[self.new_question_type],
                         start_time=getattr(self, "new_test_start_time", "") or "",
-                        end_time=getattr(self, "new_test_end_time", "") or "")
+                        end_time=getattr(self, "new_test_end_time", "") or "",
+                        created_by=auth_state.facilitator_emp_id)
                     print(f"[CREATE TEST TIMING] _add_assessment_test: {time.perf_counter() - _step:.3f}s", flush=True)
                 except (ValueError, OSError) as exc:
+                    if "locked" in str(exc).casefold():
+                        return [rx.toast.error(str(exc)), await self._refresh_after_locked_mutation()]
                     return rx.toast.error(str(exc))
                 self.selected_test_name = test_name
 
@@ -3620,6 +3775,8 @@ class FacilitatorState(rx.State):
                     updated = service.delete_test(a["assessment_id"], a["test_ids"][test_name])
                     admin_state._apply_assessment_records(await asyncio.to_thread(service.load_assessments))
                 except (ValueError, OSError) as exc:
+                    if "locked" in str(exc).casefold():
+                        return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
                     return rx.toast.error(str(exc))
                 self.question_papers = {a["name"]: dict(a.get("question_papers", {})) for a in admin_state.assessments}
 
@@ -3809,25 +3966,74 @@ class FacilitatorState(rx.State):
         """Hide the modal while evaluation continues in the background."""
         self.show_eval_progress_modal = False
 
-    def stop_ai_evaluation(self):
+    async def _authorize_selected_evaluation_test(self, test_name=None):
+        auth_state = await self.get_state(AuthState)
+        facilitator_id = auth_state.facilitator_emp_id
+        if not auth_state.is_facilitator_authenticated or not facilitator_id:
+            raise ValueError("An authenticated facilitator is required to evaluate this test.")
+        name = test_name or self.selected_evaluation_test or self.selected_test_name
+        assessments = await self.my_assessments
+        if not isinstance(assessments, list):
+            raise ValueError("Assigned assessment data is unavailable; reload the workspace and try again.")
+        assessment = next(
+            (row for row in assessments
+             if row.get("assessment_id") == self.selected_assessment_id
+             or (not self.selected_assessment_id and row.get("name") == self.selected_assessment_name)),
+            None,
+        )
+        if assessment is None:
+            raise ValueError("This assessment is not available to the authenticated facilitator.")
+        test_ids = assessment.get("test_ids")
+        if not isinstance(test_ids, dict):
+            raise ValueError("Assessment test identities are missing; reload the assessment and try again.")
+        test_id = test_ids.get(name)
+        if not isinstance(test_id, str) or not test_id:
+            raise ValueError("The selected test identity is missing; reload the assessment and try again.")
+        test = AssessmentService().tests.authorize_evaluation(
+            test_id,
+            facilitator_id,
+            "facilitator",
+        )
+        if test.get("assessment_id") != assessment.get("assessment_id") or test.get("test_name") != name:
+            raise ValueError("Selected test identity does not match the assigned assessment.")
+        return facilitator_id, "facilitator", test
+
+    async def stop_ai_evaluation(self):
         try:
-            run = AIEvaluationRunService().request_stop(self.active_ai_run_id)
+            facilitator_id, role, _ = await self._authorize_selected_evaluation_test()
+            run = AIEvaluationRunService().request_stop(
+                self.active_ai_run_id,
+                facilitator_id=facilitator_id,
+                role=role,
+            )
             self._apply_ai_run(run)
             return rx.toast.info("Stop requested. The in-flight question will finish and be saved before pausing.")
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
             return rx.toast.error(str(exc))
 
-    def resume_ai_evaluation(self):
+    async def resume_ai_evaluation(self):
         try:
+            facilitator_id, role, _ = await self._authorize_selected_evaluation_test()
             service = AIEvaluationRunService()
             run = self._selected_ai_run(service)
             if not run or run['status'] != 'paused':
                 return rx.toast.error("Select a paused run to resume.")
+            run = service.recover_interrupted(
+                run['run_id'],
+                facilitator_id=facilitator_id,
+                role=role,
+            )
+            if run['status'] != 'paused':
+                return rx.toast.error("The selected evaluation run is not paused.")
             self.active_ai_run_id = run['run_id']
             self.show_eval_progress_modal = True
             self._apply_ai_run(run)
             return FacilitatorState.execute_ai_run(run['run_id'])
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
             return rx.toast.error(str(exc))
 
     def open_restart_confirm_modal(self):
@@ -3838,19 +4044,26 @@ class FacilitatorState(rx.State):
         """Dismiss the restart confirmation dialog."""
         self.show_restart_confirm_modal = False
 
-    def restart_ai_evaluation(self):
+    async def restart_ai_evaluation(self):
         self.show_restart_confirm_modal = False
         try:
+            facilitator_id, role, _ = await self._authorize_selected_evaluation_test()
             service = AIEvaluationRunService()
             old = self._selected_ai_run(service)
             if not old:
                 return rx.toast.error("No evaluation run selected to restart.")
-            run = service.restart(old['run_id'])
+            run = service.restart(
+                old['run_id'],
+                facilitator_id=facilitator_id,
+                role=role,
+            )
             self.active_ai_run_id = run['run_id']
             self.show_eval_progress_modal = True
             self._apply_ai_run(run)
             return FacilitatorState.execute_ai_run(run['run_id'])
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
             return rx.toast.error(str(exc))
 
     @rx.var
@@ -3866,11 +4079,24 @@ class FacilitatorState(rx.State):
     def _selected_ai_run(self, service):
         all_candidates = self.selected_evaluation_candidate == "All Candidates"
         ids = None if all_candidates else [_evaluation_candidate_id(self.selected_evaluation_candidate)]
+        if not self.selected_test_id:
+            raise ValueError("Canonical test identity is missing; reload the selected assessment and test.")
         run = service.find_run(self.selected_assessment_name, self.selected_test_name, ids,
-                               'all' if all_candidates else 'single')
-        return service.recover_interrupted(run['run_id']) if run else None
+                               'all' if all_candidates else 'single',
+                               assessment_id=self.selected_assessment_id,
+                               test_id=self.selected_test_id)
+        return run
 
     def _apply_ai_run(self, run, restore=False):
+        if not isinstance(run, dict):
+            raise ValueError("Stored evaluation run is missing; refresh the selected test and try again.")
+        if (not isinstance(run.get("questions"), list)
+                or not isinstance(run.get("candidate_labels"), dict)
+                or not isinstance(run.get("skipped"), list)
+                or any(not isinstance(question, dict)
+                       or not isinstance(question.get("record"), dict)
+                       for question in run["questions"])):
+            raise ValueError("Stored evaluation run data is incomplete or invalid; preserve the saved results and start a new run.")
         # A late old worker may save its own history but cannot replace newer UI state.
         if self.active_ai_run_id != run['run_id'] or run.get('superseded_by_run_id'):
             return
@@ -3964,19 +4190,26 @@ class FacilitatorState(rx.State):
     async def _start_ai_run(self, all_candidates):
         self.ai_evaluation_done = False
         try:
+            facilitator_id, role, selected_test = await self._authorize_selected_evaluation_test()
             service = AIEvaluationRunService()
             existing = await asyncio.to_thread(self._selected_ai_run, service)
             if existing:
                 self.active_ai_run_id = existing['run_id']
                 self._apply_ai_run(existing)
+                if existing['status'] == 'completed':
+                    yield rx.toast.info("EVALUATION ALREADY COMPLETED")
+                    return
                 if existing['status'] not in ('idle', 'paused', 'restarting'):
-                    yield rx.toast.info("This run is already active or finished. Use Restart for a fresh evaluation.")
+                    yield rx.toast.info("This run is active or failed. Resume paused work or restart a failed run.")
                     return
                 self.show_eval_progress_modal = True
                 yield FacilitatorState.execute_ai_run(existing['run_id'])
                 return
             assessment, test = self.selected_assessment_name, self.selected_test_name
-            filename = self.question_papers.get(assessment, {}).get(test, '')
+            paper_map = self.question_papers.get(assessment)
+            if not isinstance(paper_map, dict):
+                raise ValueError("Question-paper mapping is missing; reload the selected assessment and try again.")
+            filename = paper_map.get(test, '')
             if not filename:
                 raise ValueError("Upload a question paper for the selected assessment and test.")
             paper = Path(rx.get_upload_dir()) / filename
@@ -4010,16 +4243,30 @@ class FacilitatorState(rx.State):
             if assessment_record is None:
                 assessment_record = next(
                     (a for a in mine if a.get('name') == assessment),
-                    {},
+                    None,
                 )
+            if not isinstance(assessment_record, dict):
+                raise ValueError("Assigned assessment details are missing; reload the workspace and try again.")
+            test_ids = assessment_record.get('test_ids')
+            if not isinstance(test_ids, dict):
+                raise ValueError("Assessment test identities are missing; reload the assessment and try again.")
+            candidate_details = assessment_record.get('candidate_details')
+            if not isinstance(candidate_details, list) or any(not isinstance(candidate, dict) for candidate in candidate_details):
+                raise ValueError("Candidate assignment data is missing or invalid; reload the assessment and try again.")
 
             identities = {
                 'assessment_id': assessment_record.get('assessment_id', ''),
-                'test_id': assessment_record.get('test_ids', {}).get(test, ''),
+                'test_id': test_ids.get(test, ''),
             }
+            if identities['assessment_id'] != selected_test.get('assessment_id') or identities['test_id'] != selected_test['test_id']:
+                raise ValueError("Selected assessment/test identities changed; reload the workspace and try again.")
             if all_candidates:
                 records, labels, errors = [], {}, []
-                for candidate in assessment_record.get('candidate_details', []):
+                if not candidate_details:
+                    raise ValueError("No candidates are assigned to the selected test.")
+                for candidate in candidate_details:
+                    if not candidate.get('emp_id') or not candidate.get('name'):
+                        raise ValueError("Candidate identity data is incomplete; reload assignments before evaluating.")
                     candidate_id = str(candidate['emp_id'])
                     if candidate_id in labels:
                         continue
@@ -4038,17 +4285,41 @@ class FacilitatorState(rx.State):
                 if not records:
                     yield rx.toast.warning("No assessment-verified candidate responses are available for evaluation.")
                     return
-                run = await asyncio.to_thread(service.prepare_batch, assessment, test, records, labels, paper, answer_key, skipped=errors, **identities)
+                run = await asyncio.to_thread(
+                    service.prepare_batch,
+                    assessment,
+                    test,
+                    records,
+                    labels,
+                    paper,
+                    answer_key,
+                    skipped=errors,
+                    facilitator_id=facilitator_id,
+                    role=role,
+                    **identities,
+                )
             else:
                 label = self.selected_evaluation_candidate
                 candidate_id = _evaluation_candidate_id(label)
                 if (not candidate_id or label == 'No candidates assigned'
-                        or candidate_id not in [str(c['emp_id']) for c in assessment_record.get('candidate_details', [])]):
+                        or candidate_id not in [str(c['emp_id']) for c in candidate_details]):
                     raise ValueError("Select an assigned candidate.")
                 response = await asyncio.to_thread(_find_response_file_path, label, test, assessment, require_assessment_scope=True)
                 if response is None:
                     raise FileNotFoundError("No candidate response found for this assessment/test.")
-                run = await asyncio.to_thread(service.prepare_single, assessment, test, candidate_id, label, paper, response, answer_key, **identities)
+                run = await asyncio.to_thread(
+                    service.prepare_single,
+                    assessment,
+                    test,
+                    candidate_id,
+                    label,
+                    paper,
+                    response,
+                    answer_key,
+                    facilitator_id=facilitator_id,
+                    role=role,
+                    **identities,
+                )
             self.active_ai_run_id = run['run_id']
             self.show_eval_progress_modal = True
             self._apply_ai_run(run)
@@ -4057,16 +4328,51 @@ class FacilitatorState(rx.State):
             self.ai_evaluation_done = False
             self.is_ai_evaluating = False
             yield rx.toast.error(f"AI evaluation could not start: {exc}")
+            if "locked" in str(exc).casefold():
+                yield FacilitatorState.refresh_locked_test_state()
 
     @rx.event(background=True)
     async def execute_ai_run(self, run_id: str):
         # No state lock is held while Azure runs, so Stop/Resume/Restart events can execute.
+        async with self:
+            auth_state = await self.get_state(AuthState)
+            facilitator_id = auth_state.facilitator_emp_id
+            is_authenticated = auth_state.is_facilitator_authenticated
+            active_run_id = self.active_ai_run_id
+            selected_assessment_id = self.selected_assessment_id
+            selected_test_id = self.selected_test_id
+        if not is_authenticated or not facilitator_id:
+            yield rx.toast.error(
+                "An authenticated facilitator is required to evaluate this test."
+            )
+            return
+        if not run_id or active_run_id != run_id:
+            yield rx.toast.error(
+                "The selected evaluation run changed. Refresh the test and try again."
+            )
+            return
+
         service = AIEvaluationRunService()
-        future = asyncio.create_task(asyncio.to_thread(service.execute, run_id))
         try:
+            run_snapshot = await asyncio.to_thread(service.get_run, run_id)
+            if (
+                run_snapshot.get("assessment_id") != selected_assessment_id
+                or run_snapshot.get("test_id") != selected_test_id
+            ):
+                raise ValueError(
+                    "The evaluation run no longer matches the selected test. Refresh and try again."
+                )
+            future = asyncio.create_task(asyncio.to_thread(
+                service.execute,
+                run_id,
+                facilitator_id=facilitator_id,
+                role="facilitator",
+            ))
             while not future.done():
                 run = await asyncio.to_thread(service.get_run, run_id)
                 async with self:
+                    if self.active_ai_run_id != run_id:
+                        return
                     self._apply_ai_run(run)
                 await asyncio.sleep(0.1)
             run = await future
@@ -4085,6 +4391,29 @@ class FacilitatorState(rx.State):
                                else rx.toast.error(f"AI evaluation incomplete. {details}"))
             yield [message, FacilitatorState.refresh_workspace_snapshot()]
         except Exception as exc:
+            stack = "".join(traceback.format_tb(exc.__traceback__))
+            if type(exc).__name__ == "ImmutableStateError":
+                safe_message = (
+                    "Background task StateProxy is immutable outside of a context manager. "
+                    "Use `async with self` to modify state."
+                )
+                logger.error(
+                    "AI evaluation background event failed: ImmutableStateError: %s\n%s",
+                    safe_message,
+                    stack,
+                )
+            else:
+                safe_message = (
+                    str(exc)
+                    if isinstance(exc, ValueError)
+                    else f"AI evaluation failed ({type(exc).__name__}). "
+                    "Check Admin Settings or contact an administrator."
+                )
+                logger.error(
+                    "AI evaluation background event failed (%s)\n%s",
+                    type(exc).__name__,
+                    stack,
+                )
             async with self:
                 if self.active_ai_run_id != run_id:
                     return
@@ -4095,7 +4424,11 @@ class FacilitatorState(rx.State):
                 except (ValueError, OSError):
                     self.is_ai_evaluating = False
                     self.ai_run_status = 'failed'
-            yield rx.toast.error(f"AI evaluation error: {exc}")
+            message = rx.toast.error(f"AI evaluation error: {safe_message}")
+            if "locked" in safe_message.casefold():
+                yield [message, FacilitatorState.refresh_locked_test_state()]
+            else:
+                yield message
 
     def open_ai_candidate_detail(self, candidate_id: str):
         """Open the detailed AI score & feedback breakdown modal for a candidate."""
@@ -4577,8 +4910,12 @@ class FacilitatorState(rx.State):
                     assessment_id,
                 )
 
+                self.show_facilitator_feedback_modal = False
+                self.close_assessment_feedback_answers = {}
+                self.close_assessment_feedback_additional = ""
+                self.close_assessment_feedback_additional_error = ""
                 return rx.toast.success(
-                    "Assessment closed successfully."
+                    "Feedback was already submitted. Assessment closed successfully."
                 )
 
             self.close_assessment_feedback_title = pending_form.get(
@@ -4679,8 +5016,20 @@ class FacilitatorState(rx.State):
             )
 
             if pending_form is None:
-                return rx.toast.error(
-                    "No pending facilitator feedback form was found."
+                active_form = feedback_service.resolve_form(assessment_id, "facilitator")
+                if active_form is None:
+                    return rx.toast.error(
+                        "No active facilitator feedback form is configured. Please contact Admin."
+                    )
+                # A successful submit can precede a retry/double-click or a
+                # failed close. Preserve its immutable response and retry close.
+                feedback_service.close_assessment(facilitator_id, assessment_id)
+                self.show_facilitator_feedback_modal = False
+                self.close_assessment_feedback_answers = {}
+                self.close_assessment_feedback_additional = ""
+                self.close_assessment_feedback_additional_error = ""
+                return rx.toast.success(
+                    "Feedback was already submitted. Assessment closed successfully."
                 )
 
             # FeedbackService.submit() validates required questions and
@@ -4691,6 +5040,8 @@ class FacilitatorState(rx.State):
                 assessment_id,
                 pending_form["feedback_form_id"],
                 dict(self.close_assessment_feedback_answers),
+                ratings={str(q["id"]): q.get("rating", 0) for q in self.close_assessment_feedback_questions},
+                additional_feedback=self.close_assessment_feedback_additional,
             )
 
             # Only close the assessment AFTER feedback was saved successfully.
@@ -6438,6 +6789,7 @@ class FacilitatorState(rx.State):
     def set_evaluation_selected_test(self, test_name: str):
         """Select a test from the Evaluation page dropdown and sync state so all evaluation data updates."""
         self.selected_evaluation_test = test_name
+        self.selected_test_id = self._resolve_selected_test_id(test_name)
         self.eval_files_selected_candidate = ""
         # Keep the workspace-level selected_test_name in sync so all evaluation queries use this test
         self.selected_test_name = test_name
@@ -7342,12 +7694,16 @@ class FacilitatorState(rx.State):
         self.show_candidate_response_modal = value
 
     def open_answer_key_upload(self):
+        if self._is_test_locked(self.selected_assessment_name, self.selected_evaluation_test or self.selected_test_name):
+            return rx.toast.error("This test is locked and is view-only.")
         self.show_answer_key_upload_modal = True
 
     def set_show_answer_key_upload_modal(self, value: bool):
         self.show_answer_key_upload_modal = value
 
     def simulate_upload_answer_key(self):
+        if self._is_test_locked(self.selected_assessment_name, self.selected_evaluation_test or self.selected_test_name):
+            return rx.toast.error("This test is locked and is view-only.")
         self.answer_key_uploaded = True
         self.show_answer_key_upload_modal = False
         return rx.toast.success(f"Answer Key '{self.answer_key_filename}' uploaded successfully!")
@@ -7382,19 +7738,49 @@ class FacilitatorState(rx.State):
             out_dir.mkdir(parents=True, exist_ok=True)
 
             out_path = out_dir / filename
-            with open(out_path, "wb") as f:
-                f.write(upload_data)
+            import os
+            import tempfile
+            from backend.services.test_service import test_mutation_guard
+
+            staged_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=out_dir,
+                    prefix=f".{filename}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as staged:
+                    staged_path = Path(staged.name)
+                    staged.write(upload_data)
+                    staged.flush()
+                    os.fsync(staged.fileno())
+
+                test = AssessmentService().tests.find_test(
+                    self.selected_assessment_name,
+                    self.selected_evaluation_test or self.selected_test_name,
+                )
+                with test_mutation_guard(
+                    test_id=test.get("test_id") if test else None,
+                    assessment_id=self.selected_assessment_id or None,
+                    assessment_name=self.selected_assessment_name,
+                    test_name=self.selected_evaluation_test or self.selected_test_name,
+                ):
+                    os.replace(staged_path, out_path)
+                    staged_path = None
+            finally:
+                if staged_path is not None:
+                    staged_path.unlink(missing_ok=True)
 
             if not out_path.exists() or out_path.stat().st_size == 0:
-                raise OSError(
-                    "Answer Key could not be persisted."
-                )
+                raise OSError("Answer Key could not be persisted.")
 
         except (OSError, ValueError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
             self.answer_key_uploaded = False
             self.answer_key_filename = ""
             self.answer_key_uploaded_path = ""
-
             return rx.toast.error(
                 f"Answer Key upload failed: {exc}"
             )
@@ -7416,7 +7802,11 @@ class FacilitatorState(rx.State):
         match = re.search(r"\d+", str(q_no or ""))
         return int(match.group()) if match else 999999
 
-    def open_manual_eval_modal(self):
+    async def open_manual_eval_modal(self):
+        try:
+            await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
         if self.selected_evaluation_candidate == "All Candidates":
             return rx.toast.warning("Select one candidate for manual evaluation.")
         self.manual_eval_q_index = 0
@@ -7433,7 +7823,7 @@ class FacilitatorState(rx.State):
         if self.manual_eval_q_index > 0:
             self.manual_eval_q_index -= 1
 
-    def save_manual_evaluation(self):
+    async def save_manual_evaluation(self):
         """Save the current candidate's manual evaluation through the backend service."""
         if self.selected_evaluation_candidate == "All Candidates":
             return rx.toast.warning("Select one candidate for manual evaluation.")
@@ -7506,14 +7896,20 @@ class FacilitatorState(rx.State):
             )
 
         try:
+            facilitator_id, role, test = await self._authorize_selected_evaluation_test(test_name)
             service = ManualEvaluationService()
             evaluation = service.evaluate_and_save(
                 candidate_id=candidate_id,
                 assessment_name=assessment_name,
                 test_name=test_name,
                 responses=responses,
+                test_id=test["test_id"],
+                facilitator_id=facilitator_id,
+                role=role,
             )
         except ValueError as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
             return rx.toast.error(str(exc))
         except Exception as exc:
             return rx.toast.error(f"Manual evaluation failed: {exc}")
@@ -7614,7 +8010,12 @@ class FacilitatorState(rx.State):
     # Candidate Test Status Popup Handlers & Vars
     # ──────────────────────────────────────────────────────────────────────────
 
-    def open_candidate_test_status(self, target: str):
+    async def open_candidate_test_status(self, target: str):
+        if target in ("manual", "ai"):
+            try:
+                await self._authorize_selected_evaluation_test()
+            except ValueError as exc:
+                return rx.toast.error(str(exc))
         self.candidate_test_status_target = target
         self.show_candidate_test_status_modal = True
 
@@ -7622,6 +8023,11 @@ class FacilitatorState(rx.State):
         self.show_candidate_test_status_modal = False
 
     async def proceed_from_candidate_test_status(self):
+        try:
+            await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            self.show_candidate_test_status_modal = False
+            return rx.toast.error(str(exc))
         self.show_candidate_test_status_modal = False
         if self.candidate_test_status_target == "manual":
             if self.selected_evaluation_candidate == "All Candidates":
@@ -7770,16 +8176,32 @@ class FacilitatorState(rx.State):
         if self.review_eval_selected_question_index < len(options) - 1:
             self.review_eval_selected_question_index += 1
 
-    def set_review_row_mark(self, key: str, val: str):
+    async def set_review_row_mark(self, key: str, val: str):
+        try:
+            await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
         self.review_marks_edits[key] = str(val)
 
-    def set_review_row_justification(self, key: str, val: str):
+    async def set_review_row_justification(self, key: str, val: str):
+        try:
+            await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
         self.review_justification_edits[key] = str(val)
 
-    def set_review_row_remarks(self, key: str, val: str):
+    async def set_review_row_remarks(self, key: str, val: str):
+        try:
+            await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
         self.review_remarks_edits[key] = str(val)
 
-    def save_review_row(self, key: str, cand_name: str, max_marks_str: str):
+    async def save_review_row(self, key: str, cand_name: str, max_marks_str: str):
+        try:
+            facilitator_id, role, test = await self._authorize_selected_evaluation_test()
+        except ValueError as exc:
+            return rx.toast.error(str(exc))
         val_str = self.review_marks_edits.get(key)
         if val_str is not None and val_str.strip() != "":
             try:
@@ -7791,7 +8213,44 @@ class FacilitatorState(rx.State):
                     return rx.toast.error(f"Marks cannot exceed maximum marks ({int(max_m) if max_m == int(max_m) else max_m}).")
             except ValueError:
                 return rx.toast.error("Invalid marks entered.")
-        return rx.toast.success(f"Evaluation saved for {cand_name}!")
+        try:
+            method, test_name, candidate_id, question_no = key.split(":", 3)
+            if test_name != test["test_name"]:
+                raise ValueError("Review row does not match the selected test.")
+            updates = {
+                "awarded_marks": val_str if val_str is not None and val_str.strip() else None,
+                "justification": self.review_justification_edits.get(key),
+                "remarks": self.review_remarks_edits.get(key),
+                "facilitator_id": facilitator_id,
+                "role": role,
+            }
+            if method == "ai":
+                AIEvaluationRunService().update_review_result(
+                    test["test_id"],
+                    test["assessment_id"],
+                    candidate_id,
+                    question_no,
+                    **updates,
+                )
+            elif method == "manual":
+                ManualEvaluationService().update_review_result(
+                    candidate_id,
+                    self.selected_assessment_name,
+                    test_name,
+                    test["test_id"],
+                    question_no,
+                    **updates,
+                )
+            else:
+                raise ValueError("Unknown evaluation review type.")
+        except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                return [rx.toast.error(str(exc)), FacilitatorState.refresh_locked_test_state()]
+            return rx.toast.error(str(exc))
+        return [
+            rx.toast.success(f"Evaluation saved for {cand_name}!"),
+            FacilitatorState.refresh_workspace_snapshot(),
+        ]
 
     @rx.var
     def review_eval_modal_title(self) -> str:
@@ -7825,7 +8284,16 @@ class FacilitatorState(rx.State):
                 return qs
         from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
         all_runs = AIEvaluationRunRepository().get_all()
-        ai_run = next((r for r in all_runs if r.get("assessment_name") == asmn and r.get("test_name") == test_name), None)
+        test_id = next(
+            (item.get("test_id") for item in tests if item.get("test_name") == test_name),
+            "",
+        )
+        ai_run = next(
+            (r for r in all_runs
+             if test_id and r.get("assessment_id") == a.get("assessment_id")
+             and r.get("test_id") == test_id),
+            None,
+        )
         if ai_run:
             found_qs = []
             seen = set()
@@ -7924,7 +8392,17 @@ class FacilitatorState(rx.State):
         ai_run = None
         if method == "ai":
             all_runs = AIEvaluationRunRepository().get_all()
-            ai_run = next((r for r in all_runs if r.get("assessment_name") == asmn and r.get("test_name") == test_name), None)
+            test_id = next(
+                (item.get("test_id") for item in match.get("test_items", [])
+                 if item.get("name") == test_name),
+                "",
+            )
+            ai_run = next(
+                (r for r in all_runs
+                 if test_id and r.get("assessment_id") == match.get("assessment_id")
+                 and r.get("test_id") == test_id),
+                None,
+            )
 
         rows = []
         for i, c in enumerate(cands, 1):
@@ -7947,16 +8425,25 @@ class FacilitatorState(rx.State):
                 if ai_run:
                     q_item = next((q for q in ai_run.get("questions", []) if q.get("record", {}).get("candidate_id") == cid and (str(q.get("record", {}).get("question_no", "")).upper() == q_label.upper() or f"Q{q.get('record', {}).get('question_no', '')}".upper() == q_label.upper())), None)
                     if q_item:
-                        res = q_item.get("result", {})
-                        raw_awarded = res.get("awarded_marks")
-                        if raw_awarded is not None:
-                            try:
-                                aw_flt = float(raw_awarded)
-                                awarded = str(int(aw_flt) if aw_flt == int(aw_flt) else aw_flt)
-                                has_evaluation = True
-                            except Exception:
-                                awarded = str(raw_awarded)
-                        justification = str(res.get("justification", "") or "")
+                        result = q_item.get("result")
+                        if result is None and q_item.get("status") not in ("pending", "evaluating", "failed"):
+                            raise ValueError(
+                                "A finalized AI question is missing its saved result; preserve the run and contact an administrator."
+                            )
+                        if result is not None and not isinstance(result, dict):
+                            raise ValueError(
+                                "A saved AI question result is invalid; preserve the run and contact an administrator."
+                            )
+                        if isinstance(result, dict):
+                            raw_awarded = result.get("awarded_marks")
+                            if raw_awarded is not None:
+                                try:
+                                    aw_flt = float(raw_awarded)
+                                    awarded = str(int(aw_flt) if aw_flt == int(aw_flt) else aw_flt)
+                                    has_evaluation = True
+                                except (TypeError, ValueError):
+                                    awarded = str(raw_awarded)
+                            justification = str(result.get("justification", "") or "")
                 if not has_evaluation:
                     saved_ai = _saved_evaluation(self.real_ai_results_per_candidate, cand_label, asmn, test_name) or _saved_evaluation(self.assessment_evaluation_results, cand_label, asmn, test_name)
                     if saved_ai:
@@ -8530,6 +9017,3 @@ class FacilitatorProfileState(rx.State):
         # Save photo to shared store
         save_facilitator_profile(self.emp_id, {"profile_photo_url": self.profile_photo_url})
         return rx.toast.success(f"Profile photo updated: {file.filename}")
-
-
-

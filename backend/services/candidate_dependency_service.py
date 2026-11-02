@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class CandidateDependencyService:
@@ -18,11 +19,11 @@ class CandidateDependencyService:
         if any(matches(r) for r in test_assignments):
             raise ValueError("Candidate cannot be deleted because test assignments exist.")
         for name in ("manual_evaluations.json", "ai_evaluation_runs.json"):
-            path = self.data_dir / name
+            path = resolve_data_path(self.data_dir / name)
             if path.exists() and any(matches(r) for r in JSONRepository(path).get_all()):
                 raise ValueError("Candidate cannot be deleted because evaluation data exists.")
         for name in ("candidate_feedbacks.json", "facilitator_feedbacks.json"):
-            path = self.app_data_dir / name
+            path = resolve_data_path(self.app_data_dir / name)
             if path.exists():
                 try:
                     records = json.loads(path.read_text(encoding="utf-8-sig"))

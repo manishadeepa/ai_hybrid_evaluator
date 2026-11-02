@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import math
 from pathlib import Path
 
+from backend.data_paths import active_data_file, resolve_data_path
 from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
 from backend.repositories.manual_evaluation_repository import ManualEvaluationRepository
 from backend.repositories.response_repository import ResponseRepository
@@ -38,20 +39,20 @@ class EvaluationResultService:
     def _read(repository):
         # Some existing repositories create missing files on read. Avoid that here.
         path = getattr(repository, 'file_path', None)
-        if path is not None and not Path(path).exists():
+        if path is not None and not resolve_data_path(Path(path)).exists():
             return []
         return repository.get_all()
 
     def _manual_rows(self):
         if self.manual_repository is not None:
             return self.manual_repository.get_all()
-        path = Path(__file__).resolve().parents[1] / 'data' / 'manual_evaluations.json'
+        path = active_data_file("manual_evaluations.json")
         return ManualEvaluationRepository().get_all() if path.exists() else []
 
     def _candidate_rows(self):
         if self.candidates is not None:
             return self.candidates.list_candidates()
-        path = Path(__file__).resolve().parents[1] / 'data' / 'candidates.json'
+        path = active_data_file("candidates.json")
         if path.exists():
             return CandidateManagementService().list_candidates()
         return CandidateManagementService._shared_candidates()
@@ -167,13 +168,19 @@ class EvaluationResultService:
         total = round(sum(q['awarded_marks'] for q in normalized), 2)
         maximum = round(sum(q['maximum_marks'] for q in normalized), 2)
         assessment, test = scope
-        return dict(candidate_id=candidate['candidate_id'], candidate_name=candidate.get('name', ''),
-                    assessment_id=assessment['assessment_id'], assessment_name=assessment['name'],
-                    test_id=test['test_id'], test_name=test['test_name'], test_type=test.get('test_type'), evaluation_type=kind,
-                    evaluation_status='completed', evaluated_at=cls._timestamp(source)[1],
-                    total_marks=total, max_marks=maximum,
-                    percentage=round(100 * total / maximum, 2) if maximum else 0.0,
-                    questions=normalized, source_run_id=source.get('run_id') if kind == 'ai' else None)
+        result = dict(candidate_id=candidate['candidate_id'], candidate_name=candidate.get('name', ''),
+                      assessment_id=assessment['assessment_id'], assessment_name=assessment['name'],
+                      test_id=test['test_id'], test_name=test['test_name'], test_type=test.get('test_type'), evaluation_type=kind,
+                      evaluation_status='completed', evaluated_at=cls._timestamp(source)[1],
+                      total_marks=total, max_marks=maximum,
+                      percentage=round(100 * total / maximum, 2) if maximum else 0.0,
+                      questions=normalized, source_run_id=source.get('run_id') if kind == 'ai' else None)
+        for field in ('evaluated_by', 'evaluator_name', 'evaluator', 'facilitator_name', 'facilitator_id'):
+            evaluator = source.get(field)
+            if evaluator is not None and str(evaluator).strip():
+                result['evaluated_by'] = str(evaluator).strip()
+                break
+        return result
 
     def list_results(self, *, candidate_id=None, assessment_id=None, test_id=None, evaluation_type=None):
         """One result per identity, manual-first unless a source filter is supplied.

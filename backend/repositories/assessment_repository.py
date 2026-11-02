@@ -1,6 +1,7 @@
 from pathlib import Path
 from copy import deepcopy
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class AssessmentRepository:
@@ -10,7 +11,7 @@ class AssessmentRepository:
         self.file_path = Path(file_path) if file_path is not None else Path(__file__).resolve().parents[1] / "data" / "assessments.json"
 
     def exists(self):
-        return self.file_path.exists()
+        return resolve_data_path(self.file_path).exists()
 
     def get_all(self):
         records = JSONRepository(self.file_path).get_all()

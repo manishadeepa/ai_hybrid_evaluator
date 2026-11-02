@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class FeedbackRepository:
@@ -20,14 +21,15 @@ class FeedbackRepository:
                 raise ValueError("Duplicate feedback response.")
 
     def get_all(self):
-        rows = JSONRepository(self.file_path).get_all() if self.file_path.exists() else []
+        path = resolve_data_path(self.file_path)
+        rows = JSONRepository(path).get_all() if path.exists() else []
         self._validate(rows)
         return rows
 
     def save(self, row):
         rows = [r for r in self.get_all() if r[self.identity] != row[self.identity]] + [deepcopy(row)]
         self._validate(rows)
-        JSONRepository(self.file_path).save_all(rows)
+        JSONRepository(resolve_data_path(self.file_path)).save_all(rows)
         return deepcopy(row)
 
 

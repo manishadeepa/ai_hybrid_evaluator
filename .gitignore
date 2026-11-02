@@ -5,3 +5,12 @@ assets/external/
 .web
 *.db
 .env
+backend/data_location.json
+backend/data/master_admin.json
+backend/data/group_admins.json
+backend/data/database_configurations.json
+backend/data/db_ca_certs/
+
+# Local migration records and backups
+backend/legacy_state_migration.json
+backend/migration_backups/

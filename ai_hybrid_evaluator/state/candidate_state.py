@@ -20,6 +20,7 @@ from backend.services.assessment_service import AssessmentService
 from backend.services.test_service import TestService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
 from backend.services.feedback_service import FeedbackService
+from backend.data_paths import active_data_file
 
 
 # Ã¢â€â‚¬Ã¢â€â‚¬ Per-session question store Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2369,10 +2370,7 @@ class CandidateState(rx.State):
     # Ã¢â€â‚¬Ã¢â€â‚¬ Candidate Test Feedback Methods Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     @staticmethod
     def _get_candidate_feedback_file_path() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir / "candidate_feedbacks.json"
+        return active_data_file("candidate_feedbacks.json")
 
     def _load_saved_candidate_feedbacks(self) -> dict[str, dict]:
         fp = CandidateState._get_candidate_feedback_file_path()
@@ -2568,6 +2566,8 @@ class CandidateState(rx.State):
                 form["feedback_form_id"],
                 dict(self.candidate_feedback_answers),
                 self.active_test_id,
+                ratings={str(q["id"]): q.get("rating", 0) for q in self.candidate_feedback_questions},
+                additional_feedback=self.candidate_feedback_additional,
             )
 
         except (ValueError, OSError) as exc:
@@ -2842,5 +2842,4 @@ class CandidateProfileState(rx.State):
         }
         save_candidate_profile(self.emp_id, data)
         return rx.toast.success("Profile saved successfully!")
-
 

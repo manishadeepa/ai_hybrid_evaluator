@@ -7,18 +7,21 @@ import time
 
 import pandas as pd
 
-from backend.services.ai_connection_service import AIConnectionService
+from backend.services.ai_connection_service import (
+    AIConnectionService,
+    AI_EVALUATION_NOT_CONFIGURED,
+)
 
 
 def _load_client():
     """Load the active AI client and normalize it to (client, deployment)."""
-    connection = AIConnectionService().get_active_client()
+    try:
+        connection = AIConnectionService().get_active_client()
+    except ValueError:
+        raise ValueError(AI_EVALUATION_NOT_CONFIGURED) from None
 
     if connection is None:
-        raise ValueError(
-            "No active AI connection is configured. "
-            "Please configure and activate an AI connection from Admin Settings."
-        )
+        raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
 
     if not isinstance(connection, tuple):
         raise ValueError("The active AI connection returned an invalid value.")

@@ -15,7 +15,7 @@ _ACTIVE = set()
 _TRANSITIONS = {
     'idle': {'running', 'restarting'}, 'running': {'stop_requested', 'completed', 'failed', 'restarting'},
     'stop_requested': {'paused', 'restarting'}, 'paused': {'running', 'restarting'},
-    'failed': {'restarting'}, 'completed': {'restarting'}, 'restarting': {'running', 'abandoned'},
+    'failed': {'restarting'}, 'completed': set(), 'restarting': {'running', 'abandoned'},
     'abandoned': set(),
 }
 
@@ -82,6 +82,13 @@ class AIEvaluationRunService:
             )
         return test
 
+    def _authorize_run(self, run, facilitator_id, role):
+        if not isinstance(run, dict):
+            raise ValueError('Evaluation run data is missing; refresh the selected test and try again.')
+        if not run.get('test_id') or not run.get('assessment_id'):
+            raise ValueError('Canonical assessment/test IDs are required; start a new evaluation from the assigned test.')
+        return self.tests.authorize_evaluation(run['test_id'], facilitator_id, role)
+
     def _validate_submission_snapshot(self, run, test):
         from backend.services.question_paper_service import QuestionPaperService
         from backend.repositories.response_repository import ResponseRepository
@@ -112,7 +119,17 @@ class AIEvaluationRunService:
                 keyed[str(row['question_no'])] = question
         return keyed
 
-    def _save(self, run, persist=True):
+    @staticmethod
+    def _validate_ai_configuration(records, default_type=None):
+        if any(
+            (record.get('question_type') or default_type) == 'subjective'
+            for record in records
+        ):
+            from backend.services.ai_connection_service import AIConnectionService
+
+            AIConnectionService().validate_active_configuration()
+
+    def _save(self, run, facilitator_id, role, persist=True):
         states = [q['status'] for q in run['questions']]
         run['total_questions'] = len(states)  # candidate/question pairs for a cohort
         run['completed_questions'] = states.count('completed')
@@ -120,14 +137,32 @@ class AIEvaluationRunService:
         run['pending_questions'] = states.count('pending') + states.count('evaluating')
         run['percentage'] = 100 * run['completed_questions'] / len(states) if states else 0
         run['updated_at'] = _now()
-        return self.repository.save(run) if persist else run
+        return self.repository.save(run, facilitator_id=facilitator_id, role=role) if persist else run
+
+    def _ensure_not_completed(self, assessment_id, test_id, assessment_name, test_name, candidate_ids):
+        for previous in self.repository.get_all():
+            same_test = ((previous.get('assessment_id'), previous.get('test_id')) == (assessment_id, test_id)
+                         if previous.get('assessment_id') and previous.get('test_id') and assessment_id and test_id
+                         else (previous.get('assessment_name'), previous.get('test_name')) == (assessment_name, test_name))
+            if same_test and previous.get('status') == 'completed' and set(previous['candidate_ids']) & set(candidate_ids):
+                raise ValueError('EVALUATION ALREADY COMPLETED')
 
     def create_run(self, assessment_name, test_name, records, *, candidate_scope='single', labels=None,
-                   assessment_id='', test_id='', skipped=None, restarted_from_run_id=None, _persist=True):
+                   assessment_id='', test_id='', skipped=None, restarted_from_run_id=None, _persist=True,
+                   facilitator_id, role):
         if not assessment_name or not test_name or not records:
             raise ValueError('Assessment, test and actual question records are required.')
         if candidate_scope not in ('single', 'all'):
             raise ValueError('Invalid candidate scope.')
+        if not isinstance(records, list) or any(not isinstance(record, dict) for record in records):
+            raise ValueError('Evaluation question records must be a list of objects.')
+        if labels is None and candidate_scope == 'single':
+            labels = {}
+        if not isinstance(labels, dict):
+            raise ValueError('Candidate labels are missing or invalid; reload candidate data and try again.')
+        if skipped is not None and not isinstance(skipped, list):
+            raise ValueError('Skipped candidate records are invalid; reload submissions and try again.')
+        self.tests.authorize_evaluation(test_id, facilitator_id, role)
         records = deepcopy(records)
         pairs = set()
         for record in records:
@@ -154,7 +189,9 @@ class AIEvaluationRunService:
             raise ValueError('Single-candidate run must contain exactly one candidate.')
         # JSON snapshots keep Resume independent of later workbook/selector changes.
         records = json.loads(json.dumps(records, allow_nan=False))
-        with _LOCK:
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _LOCK, _PERSISTENCE_LOCK:
+            self._ensure_not_completed(assessment_id, test_id, assessment_name, test_name, candidates)
             for old in self.repository.get_all():
                 same_scope = ((old.get('assessment_id'), old.get('test_id')) == (assessment_id, test_id)
                               if old.get('assessment_id') and old.get('test_id') and assessment_id and test_id
@@ -166,7 +203,7 @@ class AIEvaluationRunService:
             now = _now()
             return self._save({'run_id': uuid4().hex, 'candidate_ids': candidates,
                 'candidate_id': candidates[0] if candidate_scope == 'single' else None,
-                'candidate_scope': candidate_scope, 'candidate_labels': labels or {},
+                'candidate_scope': candidate_scope, 'candidate_labels': labels,
                 'assessment_name': assessment_name, 'test_name': test_name,
                 'assessment_id': assessment_id, 'test_id': test_id, 'evaluation_type': 'ai',
                 'status': 'restarting' if restarted_from_run_id else 'idle',
@@ -174,16 +211,19 @@ class AIEvaluationRunService:
                 'current_question': None, 'created_at': now, 'updated_at': now,
                 'stop_requested': False, 'restarted_from_run_id': restarted_from_run_id,
                 'superseded_by_run_id': None, 'execution_token': None, 'owner_process': None, 'owner_pid': None,
-                'skipped': skipped or [], 'error': ''}, persist=_persist)
+                'skipped': skipped if skipped is not None else [], 'error': ''},
+                facilitator_id, role, persist=_persist)
 
     def get_run(self, run_id):
         with _LOCK:
             return self.repository.get(run_id)
 
-    def find_run(self, assessment, test, candidate_ids, candidate_scope):
+    def find_run(self, assessment, test, candidate_ids, candidate_scope, *, assessment_id='', test_id=''):
         with _LOCK:
             matches = [r for r in self.repository.get_all() if r['assessment_name'] == assessment
                        and r['test_name'] == test and (candidate_ids is None or set(r['candidate_ids']) == set(candidate_ids))
+                       and (not assessment_id or r.get('assessment_id') == assessment_id)
+                       and (not test_id or r.get('test_id') == test_id)
                        and r['candidate_scope'] == candidate_scope and not r.get('superseded_by_run_id')]
             return max(matches, key=lambda r: r['created_at']) if matches else None
 
@@ -193,13 +233,58 @@ class AIEvaluationRunService:
             raise ValueError(f"Invalid evaluation transition: {run['status']} -> {status}")
         run['status'] = status
 
-    def request_stop(self, run_id):
+    def request_stop(self, run_id, *, facilitator_id, role):
         with _LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
             if run['status'] != 'stop_requested':
                 self._transition(run, 'stop_requested')
             run['stop_requested'] = True
-            return self._save(run)
+            return self._save(run, facilitator_id, role)
+
+    def update_review_result(self, test_id, assessment_id, candidate_id, question_no, *,
+                             awarded_marks=None, justification=None, remarks=None,
+                             facilitator_id, role):
+        with _LOCK:
+            self.tests.authorize_evaluation(test_id, facilitator_id, role)
+            matches = [
+                run for run in self.repository.get_all()
+                if run.get("assessment_id") == assessment_id
+                and run.get("test_id") == test_id
+                and candidate_id in run.get("candidate_ids", [])
+                and not run.get("superseded_by_run_id")
+            ]
+            if not matches:
+                raise ValueError("No saved AI evaluation exists for this candidate and test.")
+            run = max(matches, key=lambda row: row["created_at"])
+            self._authorize_run(run, facilitator_id, role)
+            question = next(
+                (item for item in run["questions"]
+                 if item["record"].get("candidate_id") == candidate_id
+                 and str(item["record"].get("question_no", "")).casefold() == str(question_no).casefold()),
+                None,
+            )
+            if question is None or not isinstance(question.get("result"), dict):
+                raise ValueError("This question has no saved AI result to review.")
+            result = deepcopy(question["result"])
+            if awarded_marks is not None:
+                try:
+                    marks = float(awarded_marks)
+                except (TypeError, ValueError):
+                    raise ValueError("Review marks must be a valid number.") from None
+                maximum = question["record"]["max_marks"]
+                if not math.isfinite(marks) or marks < 0 or marks > maximum:
+                    raise ValueError(f"Review marks must be between 0 and {maximum}.")
+                if question["record"].get("question_type") == "objective" and marks not in (0, maximum):
+                    raise ValueError("Objective question marks must be zero or full marks.")
+                result["awarded_marks"] = marks
+                result["percentage"] = 100 * marks / maximum if maximum else 0
+            if justification is not None:
+                result["justification"] = justification
+            if remarks is not None:
+                result["facilitator_remarks"] = remarks
+            question["result"] = result
+            return self._save(run, facilitator_id, role)
 
     @staticmethod
     def _owner_alive(pid):
@@ -229,10 +314,11 @@ class AIEvaluationRunService:
         except PermissionError:
             return True
 
-    def recover_interrupted(self, run_id):
+    def recover_interrupted(self, run_id, *, facilitator_id, role):
         """Explicit recovery after a process restart; never steal a live worker."""
         with _LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
             if run['status'] in ('running', 'stop_requested') and run['owner_process'] != _PROCESS and not self._owner_alive(run.get('owner_pid')):
                 run['status'] = 'paused'
                 run['execution_token'] = None
@@ -241,27 +327,37 @@ class AIEvaluationRunService:
                     if q['status'] == 'evaluating':
                         q['status'] = 'pending'
                 run['current_question'] = None
-                return self._save(run)
+                return self._save(run, facilitator_id, role)
             return run
 
-    def restart(self, run_id):
-        with _LOCK:
+    def restart(self, run_id, *, facilitator_id, role):
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _LOCK, _PERSISTENCE_LOCK:
             old = self.repository.get(run_id)
+            self._authorize_run(old, facilitator_id, role)
+            self._ensure_not_completed(old.get('assessment_id'), old.get('test_id'),
+                                       old['assessment_name'], old['test_name'], old['candidate_ids'])
             if old.get('superseded_by_run_id'):
                 raise ValueError('This run has already been restarted.')
             self._transition(old, 'restarting')
             old['stop_requested'] = True
             new = self.create_run(old['assessment_name'], old['test_name'], [q['record'] for q in old['questions']],
                 candidate_scope=old['candidate_scope'], labels=old['candidate_labels'],
-                assessment_id=old['assessment_id'], test_id=old['test_id'], skipped=old['skipped'], restarted_from_run_id=run_id, _persist=False)
+                assessment_id=old['assessment_id'], test_id=old['test_id'], skipped=old['skipped'],
+                restarted_from_run_id=run_id, _persist=False, facilitator_id=facilitator_id, role=role)
             old['superseded_by_run_id'] = new['run_id']
             self._transition(old, 'abandoned')
-            self.repository.save_many([self._save(old, persist=False), new])
+            self.repository.save_many([self._save(old, facilitator_id, role, persist=False), new],
+                                      facilitator_id=facilitator_id, role=role)
             return new
 
-    def start(self, run_id):
-        with _LOCK:
+    def start(self, run_id, *, facilitator_id, role):
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _LOCK, _PERSISTENCE_LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
+            self._ensure_not_completed(run.get('assessment_id'), run.get('test_id'),
+                                       run['assessment_name'], run['test_name'], run['candidate_ids'])
             if run.get('superseded_by_run_id'):
                 raise ValueError('Cannot start a superseded run.')
             self._transition(run, 'running')
@@ -270,11 +366,12 @@ class AIEvaluationRunService:
             run['owner_process'] = _PROCESS
             run['owner_pid'] = os.getpid()
             run['error'] = ''
-            return self._save(run)
+            return self._save(run, facilitator_id, role)
 
-    def _next_chunk(self, run_id, token, batch_size):
+    def _next_chunk(self, run_id, token, batch_size, *, facilitator_id, role):
         with _LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
             if run['execution_token'] != token or run['status'] != 'running' or run['stop_requested']:
                 return []
             pending = [q for q in run['questions'] if q['status'] == 'pending']
@@ -303,12 +400,13 @@ class AIEvaluationRunService:
             for q in chunk:
                 q['status'] = 'evaluating'
             run['current_question'] = question
-            self._save(run)
+            self._save(run, facilitator_id, role)
             return deepcopy(chunk)
 
-    def checkpoint(self, run_id, token, pair_id, result=None, error=''):
+    def checkpoint(self, run_id, token, pair_id, result=None, error='', *, facilitator_id, role):
         with _LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
             if token != run['execution_token']:
                 raise ValueError('Stale evaluation worker token.')
             q = next((q for q in run['questions'] if q['pair_id'] == pair_id), None)
@@ -335,11 +433,12 @@ class AIEvaluationRunService:
                 q.update(status='completed', result=result, error='')
             else:
                 q.update(status='failed', result=None, error=error or 'Evaluation failed.')
-            return self._save(run)
+            return self._save(run, facilitator_id, role)
 
-    def finish(self, run_id, token, error=''):
+    def finish(self, run_id, token, error='', *, facilitator_id, role):
         with _LOCK:
             run = self.repository.get(run_id)
+            self._authorize_run(run, facilitator_id, role)
             if run['execution_token'] != token:
                 return run
             for q in run['questions']:
@@ -352,7 +451,7 @@ class AIEvaluationRunService:
                 self._transition(run, status)
             run['current_question'] = None
             run['error'] = error
-            return self._save(run)
+            return self._save(run, facilitator_id, role)
 
     def _attach_canonical_question_types(self, rows, test_record):
         """
@@ -451,10 +550,13 @@ class AIEvaluationRunService:
                 raise ValueError('Response must contain every question from this test exactly once.')
         return rows
 
-    def prepare_single(self, assessment, test, candidate_id, label, paper, response, answer_key=None, **ids):
+    def prepare_single(self, assessment, test, candidate_id, label, paper, response, answer_key=None,
+                       *, facilitator_id, role, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
 
+        self.tests.authorize_evaluation(ids.get('test_id'), facilitator_id, role)
         test_record = self._canonical_test(ids)
+        self._ensure_not_completed(ids.get('assessment_id'), ids.get('test_id'), assessment, test, [candidate_id])
 
         # Canonical paper owns the Answer Key for every paper type:
         # Objective, Subjective and Mixed.
@@ -494,6 +596,7 @@ class AIEvaluationRunService:
             rows,
             test_record,
         )
+        self._validate_ai_configuration(rows, test_record['test_type'])
 
         for row in rows:
             row['candidate_id'] = candidate_id
@@ -503,13 +606,22 @@ class AIEvaluationRunService:
             test,
             self._json_records(rows),
             labels={candidate_id: label},
+            facilitator_id=facilitator_id,
+            role=role,
             **ids,
         )
 
-    def prepare_batch(self, assessment, test, rows, labels, paper, answer_key=None, skipped=None, **ids):
+    def prepare_batch(self, assessment, test, rows, labels, paper, answer_key=None, skipped=None,
+                      *, facilitator_id, role, **ids):
         from ai_hybrid_evaluator.services import ai_evaluation_service as engine
 
+        self.tests.authorize_evaluation(ids.get('test_id'), facilitator_id, role)
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ValueError('Submitted response data is missing or invalid; reload submissions and try again.')
+        if not isinstance(labels, dict):
+            raise ValueError('Candidate identity data is missing or invalid; reload the assessment and try again.')
         test_record = self._canonical_test(ids)
+        self._ensure_not_completed(ids.get('assessment_id'), ids.get('test_id'), assessment, test, [row.get('candidate_id') for row in rows])
 
         # Canonical JSON paper owns all Answer Keys.
         answer_key = None
@@ -530,6 +642,7 @@ class AIEvaluationRunService:
             normalized,
             test_record,
         )
+        self._validate_ai_configuration(normalized, test_record['test_type'])
 
         return self.create_run(
             assessment,
@@ -538,6 +651,8 @@ class AIEvaluationRunService:
             candidate_scope='all',
             labels=labels,
             skipped=skipped,
+            facilitator_id=facilitator_id,
+            role=role,
             **ids,
         )
 
@@ -556,28 +671,41 @@ class AIEvaluationRunService:
             return value
         return clean(rows)
 
-    def execute(self, run_id, *, max_retries=3, batch_size=5, delay_seconds=2):
+    def execute(self, run_id, *, facilitator_id, role, max_retries=3, batch_size=5, delay_seconds=2):
         """One worker per run. No Azure request is forcibly cancelled."""
         worker_key = (str(self.repository.file_path.resolve()), run_id)
+        run = self.repository.get(run_id)
+        self._authorize_run(run, facilitator_id, role)
+        self._ensure_not_completed(run.get('assessment_id'), run.get('test_id'),
+                                   run['assessment_name'], run['test_name'], run['candidate_ids'])
+        test = self._canonical_test(run)
+        if test['test_type'] in ('objective', 'mixed') or run.get('canonical_input'):
+            self._validate_submission_snapshot(run, test)
+        self._validate_ai_configuration(
+            [question['record'] for question in run['questions']],
+            test['test_type'],
+        )
         with _LOCK:
             if worker_key in _ACTIVE:
                 raise ValueError('Evaluation run already has a worker.')
-            run = self.start(run_id)
+            run = self.start(run_id, facilitator_id=facilitator_id, role=role)
             token = run['execution_token']
             _ACTIVE.add(worker_key)
         client = deployment = None
         fatal = ''
         try:
-            test = self._canonical_test(run)
-            if test['test_type'] in ('objective', 'mixed') or run.get('canonical_input'):
-                self._validate_submission_snapshot(run, test)
-
             # Pure Objective tests are deterministic and do not require an AI
-            # connection. Subjective and Hybrid tests continue through the LLM.
+            # connection. Mixed tests use AI only for subjective questions.
             from ai_hybrid_evaluator.services import ai_evaluation_service as engine
 
             while True:
-                chunk = self._next_chunk(run_id, token, batch_size if run['candidate_scope'] == 'all' else 1)
+                chunk = self._next_chunk(
+                    run_id,
+                    token,
+                    batch_size if run['candidate_scope'] == 'all' else 1,
+                    facilitator_id=facilitator_id,
+                    role=role,
+                )
                 if not chunk:
                     break
                 # Resolve grading mode per question.
@@ -607,30 +735,37 @@ class AIEvaluationRunService:
                             test_type=grading_type,
                         )
                     )
-                try:
-                    if test['test_type'] == 'objective':
-                        outcomes = [
-                            dict(
-                                _evaluate_objective_locally(row),
-                                response_id=row['response_id'],
-                                status='unanswered' if row['unanswered'] else 'completed',
-                                attempts=0,
-                            )
-                            for row in rows
-                        ]
+                local_questions = []
+                subjective_questions = []
+                for question, row in zip(chunk, rows):
+                    if row['test_type'] == 'objective':
+                        local_questions.append((question, row))
                     else:
-                        # Unanswered answers need no request; the engine gives
-                        # them zero locally even for Subjective and Hybrid.
-                        if client is None and any(not r['unanswered'] for r in rows):
-                            client, deployment = engine._load_client()
+                        subjective_questions.append((question, row))
 
-                        # Hybrid tests intentionally stay on the API path,
-                        # including their objective-type questions.
+                for question, row in local_questions:
+                    outcome = dict(
+                        _evaluate_objective_locally(row),
+                        response_id=row['response_id'],
+                        status='unanswered' if row['unanswered'] else 'completed',
+                        attempts=0,
+                    )
+                    self.checkpoint(
+                        run_id, token, question['pair_id'], result=outcome,
+                        facilitator_id=facilitator_id, role=role,
+                    )
+
+                outcomes = []
+                if subjective_questions:
+                    try:
+                        if client is None and any(not row['unanswered'] for _, row in subjective_questions):
+                            client, deployment = engine._load_client()
+                        ai_rows = [row for _, row in subjective_questions]
                         if run['candidate_scope'] == 'all':
                             outcomes = engine._evaluate_question_batch(
                                 client,
                                 deployment,
-                                rows,
+                                ai_rows,
                                 max_retries,
                                 delay_seconds,
                                 lambda pair_id, outcome: self.checkpoint(
@@ -638,6 +773,8 @@ class AIEvaluationRunService:
                                     token,
                                     pair_id,
                                     result=outcome,
+                                    facilitator_id=facilitator_id,
+                                    role=role,
                                 ),
                             )
                         else:
@@ -645,29 +782,39 @@ class AIEvaluationRunService:
                                 engine._evaluate_with_retry(
                                     client,
                                     deployment,
-                                    rows[0],
+                                    ai_rows[0],
                                     max_retries,
                                     delay_seconds,
                                 )
                             ]
-                except Exception as exc:
-                    outcomes = [{'status': 'failed', 'error': str(exc)} for _ in rows]
-                for q, outcome in zip(chunk, outcomes):
+                    except ValueError as exc:
+                        if str(exc).startswith("AI evaluation is not configured."):
+                            raise
+                        safe_error = f"AI evaluation request failed ({type(exc).__name__}). Check Admin Settings and try again."
+                        outcomes = [{'status': 'failed', 'error': safe_error} for _ in subjective_questions]
+                    except Exception as exc:
+                        safe_error = f"AI evaluation request failed ({type(exc).__name__}). Check Admin Settings and try again."
+                        outcomes = [{'status': 'failed', 'error': safe_error} for _ in subjective_questions]
+
+                for (q, _row), outcome in zip(subjective_questions, outcomes):
                     current = next(item for item in self.get_run(run_id)['questions'] if item['pair_id'] == q['pair_id'])
                     if current['status'] == 'completed':
                         continue  # Batch callback already persisted this validated result.
                     if outcome.get('status') == 'failed':
-                        self.checkpoint(run_id, token, q['pair_id'], error=outcome.get('error', 'Evaluation failed'))
+                        self.checkpoint(run_id, token, q['pair_id'], error=outcome.get('error', 'Evaluation failed'),
+                                        facilitator_id=facilitator_id, role=role)
                     else:
                         try:
-                            self.checkpoint(run_id, token, q['pair_id'], result=outcome)
+                            self.checkpoint(run_id, token, q['pair_id'], result=outcome,
+                                            facilitator_id=facilitator_id, role=role)
                         except ValueError as exc:
-                            self.checkpoint(run_id, token, q['pair_id'], error=str(exc))
+                            self.checkpoint(run_id, token, q['pair_id'], error=str(exc),
+                                            facilitator_id=facilitator_id, role=role)
         except Exception as exc:
             fatal = str(exc)
         finally:
             try:
-                final = self.finish(run_id, token, fatal)
+                final = self.finish(run_id, token, fatal, facilitator_id=facilitator_id, role=role)
             finally:
                 with _LOCK:
                     _ACTIVE.discard(worker_key)

@@ -23,12 +23,26 @@ class EvaluationResultTests(unittest.TestCase):
         self.candidates = CandidateManagementService(CandidateRepository(self.root / 'candidates.json'))
         for cid in ('C1', 'C2'):
             self.candidates.create_candidate(dict(candidate_id=cid, name=cid + ' Name', email=cid + '@example.com'))
-        self.a = self.candidates.assessments.create_assessment(dict(name='A', tests=['Formative 1', 'Formative 2']))
-        self.b = self.candidates.assessments.create_assessment(dict(name='B', tests=['Formative 1']))
-        self.key = ('C1', self.a['assessment_id'], self.a['test_ids']['Formative 1'])
+        self.a = self.candidates.assessments.create_assessment(dict(name='A'))
+        self.b = self.candidates.assessments.create_assessment(dict(name='B'))
+        self.test_ids = {}
+        for assessment, test_names in ((self.a, ('Formative 1', 'Formative 2')), (self.b, ('Formative 1',))):
+            for test_name in test_names:
+                test = self.candidates.assessments.tests.create_test(
+                    assessment['assessment_id'], {'test_name': test_name}, created_by='F001')
+                self.test_ids[(assessment['name'], test_name)] = test['test_id']
+        self.key = ('C1', self.a['assessment_id'], self.test_ids[('A', 'Formative 1')])
         self.manual = object.__new__(ManualEvaluationRepository)
         self.manual.storage = JSONRepository(self.root / 'manual.json')
         self.runs = AIEvaluationRunService(AIEvaluationRunRepository(self.root / 'ai_evaluation_runs.json'))
+        for name in ('create_run','request_stop','recover_interrupted','restart','start','_next_chunk',
+                     'checkpoint','finish','execute','prepare_single','prepare_batch'):
+            bound=getattr(self.runs,name)
+            def owner_call(*args,_bound=bound,**kwargs):
+                kwargs.setdefault('facilitator_id','F001')
+                kwargs.setdefault('role','facilitator')
+                return _bound(*args,**kwargs)
+            setattr(self.runs,name,owner_call)
         self.service = EvaluationResultService(candidates=self.candidates, manual_repository=self.manual,
                                                ai_repository=self.runs.repository)
 
@@ -36,7 +50,8 @@ class EvaluationResultTests(unittest.TestCase):
         return ManualEvaluationService(self.manual).evaluate_and_save(candidate, assessment, test, [
             dict(q_no='Q1', question='Question 1', response='Answer 1', max_marks=4, awarded_marks=3,
                  justification='Manual reason', CO='CO1', LO='LO1', **{'Knowledge Type': 'Fact', 'Domain': 'Cognitive', 'RBT level': 'Remember'}),
-            dict(q_no='Q2', question='Question 2', response='', max_marks=2, awarded_marks=0)])
+            dict(q_no='Q2', question='Question 2', response='', max_marks=2, awarded_marks=0)],
+            test_id=self.test_ids[(assessment, test)], facilitator_id='F001', role='facilitator')
 
     def ai_result(self, candidates=('C1',), complete=True, ids=True):
         rows = [dict(candidate_id=cid, question_no=f'Q{i}', question=f'Question {i}', candidate_answer='Answer' if i == 1 else '',
@@ -44,8 +59,11 @@ class EvaluationResultTests(unittest.TestCase):
                      question_type='subjective',
                      metadata=dict(co='CO1', lo='LO1', knowledge_type='Fact', domain='Cognitive', rbt_level='Remember'))
                 for cid in candidates for i in (1, 2)]
-        run = self.runs.create_run('A', 'Formative 1', rows, candidate_scope='single' if len(candidates) == 1 else 'all',
-                                   assessment_id=self.key[1] if ids else '', test_id=self.key[2] if ids else '')
+        run = self.runs.create_run(
+            'A', 'Formative 1', rows,
+            candidate_scope='single' if len(candidates) == 1 else 'all',
+            labels={cid: f'{cid} Name' for cid in candidates},
+            assessment_id=self.key[1], test_id=self.key[2])
         if not complete: return run
         run = self.runs.start(run['run_id'])
         token, rid = run['execution_token'], run['run_id']
@@ -54,7 +72,12 @@ class EvaluationResultTests(unittest.TestCase):
                 self.runs.checkpoint(rid, token, q['pair_id'], dict(awarded_marks=0 if q['record']['unanswered'] else 1,
                     justification='Stored reason', evaluation=dict(correctness='Partial', relevance='Relevant', completeness='Partial',
                     strengths=['A point'], missing_points=['B point'], incorrect_points=[])))
-        return self.runs.finish(rid, token)
+        run = self.runs.finish(rid, token)
+        if not ids:
+            run['assessment_id'] = ''
+            run['test_id'] = ''
+            JSONRepository(self.runs.repository.file_path).save_all([run])
+        return run
 
     def response(self, status, pending=False):
         cid, aid, tid = self.key
@@ -75,6 +98,59 @@ class EvaluationResultTests(unittest.TestCase):
         self.assertEqual((q['co'], q['lo'], q['knowledge_type'], q['domain'], q['rbt_level']), ('CO1', 'LO1', 'Fact', 'Cognitive', 'Remember'))
         self.assertEqual(q['correctness'], '')
         self.assertEqual(q['strengths'], [])
+
+    def test_manual_evaluation_requires_authenticated_test_creator(self):
+        responses = [
+            dict(q_no='Q1', question='Question', response='Answer',
+                 max_marks=4, awarded_marks=3),
+        ]
+        with self.assertRaisesRegex(
+            ValueError,
+            'Only the facilitator who created this test',
+        ):
+            ManualEvaluationService(self.manual).evaluate_and_save(
+                'C1', 'A', 'Formative 1', responses,
+                test_id=self.key[2],
+                facilitator_id='F002',
+                role='facilitator',
+            )
+        self.assertEqual(self.manual.get_all(), [])
+
+    def test_available_evaluator_identity_is_preserved(self):
+        stored = self.manual_result()
+        stored['evaluated_by'] = 'F001'
+        self.manual.save(stored, facilitator_id='F001', role='facilitator')
+
+        self.assertEqual(self.service.get_result(*self.key)['evaluated_by'], 'F001')
+
+    def test_dashboard_aggregates_final_manual_and_ai_evaluations_once(self):
+        from backend.services.facilitator_dashboard_service import FacilitatorDashboardService
+
+        aid, tid = self.key[1], self.key[2]
+        for candidate_id in ('C1', 'C2'):
+            self.candidates.assessments.assign_candidate(aid, candidate_id)
+        assignments = self.service.assignment_repository.get_all()
+        for assignment in assignments:
+            if assignment['test_id'] == tid:
+                assignment['status'] = 'Submitted'
+        self.service.assignment_repository.save_all(assignments)
+
+        manual = self.manual_result()
+        manual['evaluated_by'] = 'F001'
+        self.manual.save(manual, facilitator_id='F001', role='facilitator')
+        self.ai_result(candidates=('C2',))
+        assessment = self.service.assessments.get_assessment(aid)
+
+        overview = FacilitatorDashboardService(self.service).get_assessments_overview(
+            [assessment]
+        )[0]
+        test = next(row for row in overview['test_stats'] if row['test_name'] == 'Formative 1')
+
+        self.assertEqual(overview['candidate_tests_completed'], 2)
+        self.assertEqual(overview['evaluations_completed'], 2)
+        self.assertEqual(overview['pending_evaluations'], 0)
+        self.assertEqual(test['eval_completed'], 2)
+        self.assertEqual(test['evaluators'], ['F001'])
 
     def test_completed_ai_only(self):
         run = self.ai_result()
@@ -104,7 +180,7 @@ class EvaluationResultTests(unittest.TestCase):
     def test_all_unfinished_and_abandoned_statuses_excluded(self):
         run = self.ai_result(complete=False)
         for status in ('idle', 'running', 'stop_requested', 'paused', 'failed', 'restarting', 'abandoned'):
-            run['status'] = status; self.runs.repository.save(run)
+            run['status'] = status; self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
             with self.subTest(status=status): self.assertIsNone(self.service.get_result(*self.key))
 
     def test_real_restart_excludes_superseded_completed_run(self):
@@ -112,27 +188,28 @@ class EvaluationResultTests(unittest.TestCase):
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_superseded_flag_excludes_even_completed_status(self):
-        run = self.ai_result(); run['superseded_by_run_id'] = 'new'; self.runs.repository.save(run)
+        run = self.ai_result(); run['superseded_by_run_id'] = 'new'; self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_latest_valid_run_with_deterministic_tie_break(self):
         first = self.ai_result(); second = self.ai_result()
         first['updated_at'] = '2026-01-01T08:00:00+00:00'
         second['updated_at'] = '2026-01-01T14:00:00+05:30'
-        self.runs.repository.save(first); self.runs.repository.save(second)
+        self.runs.repository.save(first, facilitator_id='F001', role='facilitator')
+        self.runs.repository.save(second, facilitator_id='F001', role='facilitator')
         self.assertEqual(self.service.get_result(*self.key)['source_run_id'], second['run_id'])
-        second['updated_at'] = first['updated_at']; self.runs.repository.save(second)
+        second['updated_at'] = first['updated_at']; self.runs.repository.save(second, facilitator_id='F001', role='facilitator')
         self.assertEqual(self.service.get_result(*self.key)['source_run_id'], max(first['run_id'], second['run_id']))
 
     def test_invalid_latest_marks_fall_back_to_valid_run(self):
         old = self.ai_result(); new = self.ai_result()
         new['questions'][0]['result']['awarded_marks'] = 999
-        self.runs.repository.save(new)
+        self.runs.repository.save(new, facilitator_id='F001', role='facilitator')
         self.assertEqual(self.service.get_result(*self.key)['source_run_id'], old['run_id'])
 
     def test_inconsistent_completed_run_not_final(self):
         run = self.ai_result()
-        run['questions'][0]['status'] = 'pending'; self.runs.repository.save(run)
+        run['questions'][0]['status'] = 'pending'; self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_batch_separates_candidates(self):
@@ -151,7 +228,11 @@ class EvaluationResultTests(unittest.TestCase):
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_exact_legacy_scope_no_fuzzy_matching(self):
-        self.manual_result(assessment='a')
+        record = self.manual_result()
+        record['assessment_name'] = 'a'
+        record.pop('assessment_id')
+        record.pop('test_id')
+        JSONRepository(self.manual.storage.file_path).save_all([record])
         self.assertIsNone(self.service.get_result(*self.key))
         self.manual_result(assessment='B')
         self.assertIsNone(self.service.get_result(*self.key))
@@ -162,7 +243,8 @@ class EvaluationResultTests(unittest.TestCase):
         self.assertEqual(self.service.get_result(*self.key)['assessment_id'], self.key[1])
 
     def test_explicit_wrong_ids_never_fall_back_to_names(self):
-        run = self.ai_result(); run['test_id'] = 'unknown'; self.runs.repository.save(run)
+        run = self.ai_result(); run['test_id'] = 'unknown'
+        JSONRepository(self.runs.repository.file_path).save_all([run])
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_stable_ids_survive_display_name_change(self):
@@ -191,7 +273,7 @@ class EvaluationResultTests(unittest.TestCase):
         for q in run['questions']:
             q['result']['evaluation'] = None
             q['result']['co'] = None
-        self.runs.repository.save(run)
+        self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         q = self.service.get_result(*self.key)['questions'][0]
         self.assertEqual(q['correctness'], '')
         self.assertEqual(q['missing_points'], [])
@@ -202,7 +284,7 @@ class EvaluationResultTests(unittest.TestCase):
         value.update(total_marks=999, max_marks=999, percentage=999)
         value['questions'][0].update(marks_obtained='1', max_marks='3')
         value['questions'][1].update(marks_obtained=0, max_marks=0)
-        self.manual.save(value)
+        self.manual.save(value, facilitator_id='F001', role='facilitator')
         result = self.service.get_result(*self.key)
         self.assertEqual((result['total_marks'], result['max_marks'], result['percentage']), (1, 3, 33.33))
         self.assertEqual(result['questions'][1]['percentage'], 0)
@@ -211,9 +293,10 @@ class EvaluationResultTests(unittest.TestCase):
         value = self.manual_result()
         for bad in ('NaN', -1, 100, True, None):
             changed = deepcopy(value); changed['questions'][0]['marks_obtained'] = bad
-            self.manual.save(changed)
+            self.manual.save(changed, facilitator_id='F001', role='facilitator')
             with self.assertRaises(ValueError): self.service.get_result(*self.key)
-        value['questions'].append(value['questions'][0]); self.manual.save(value)
+        value['questions'].append(value['questions'][0])
+        self.manual.save(value, facilitator_id='F001', role='facilitator')
         with self.assertRaises(ValueError): self.service.get_result(*self.key)
 
     def test_corrupt_json_propagates_without_repair(self):
@@ -240,7 +323,7 @@ class EvaluationResultTests(unittest.TestCase):
 
     def test_checkpoint_identity_tampering_excluded(self):
         run = self.ai_result(); run['questions'][0]['result']['candidate_id'] = 'C2'
-        self.runs.repository.save(run)
+        self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         self.assertIsNone(self.service.get_result(*self.key))
 
 
@@ -248,7 +331,7 @@ class EvaluationResultTests(unittest.TestCase):
     def test_modified_checkpoint_maximum_is_not_authoritative(self):
         run = self.ai_result()
         run['questions'][0]['result']['maximum_marks'] = 100
-        self.runs.repository.save(run)
+        self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_retrieval_does_not_import_azure_or_grading_engine(self):

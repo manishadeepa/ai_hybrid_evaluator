@@ -238,6 +238,14 @@ def get_latest_candidate_response(
 
             answers = record.get("answers", {})
             questions = record.get("questions", [])
+            if not isinstance(answers, dict) or not isinstance(questions, list) or not questions:
+                raise ValueError(
+                    "The saved candidate submission is incomplete; preserve it and resolve the response data before evaluation."
+                )
+            if any(not isinstance(question, dict) for question in questions):
+                raise ValueError(
+                    "The saved candidate submission contains invalid question data; preserve it and contact an administrator."
+                )
 
             responses = []
 
@@ -307,10 +315,10 @@ def get_latest_candidate_response(
                 "file_path": response_file,
             }
 
-    except (ValueError, OSError, KeyError, TypeError):
-        # Preserve compatibility with the existing Excel-based response
-        # mechanism if canonical data cannot be read.
-        pass
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        raise ValueError(
+            "Saved candidate response data is invalid or unreadable; preserve the submissions and contact an administrator."
+        ) from exc
 
     # ------------------------------------------------------------
     # 2. EXISTING EXCEL FALLBACK
@@ -359,5 +367,7 @@ def get_latest_candidate_response(
             "file_path": str(path),
         }
 
-    except Exception:
-        return {}
+    except (OSError, ValueError, ImportError) as exc:
+        raise ValueError(
+            "The saved response workbook is missing or unreadable; preserve it and contact an administrator."
+        ) from exc

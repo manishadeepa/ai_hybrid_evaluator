@@ -22,8 +22,13 @@ method_names = {'run_ai_evaluation', 'run_all_candidates_ai_evaluation', '_start
                 'set_evaluation_selected_test', 'evaluation_candidate_options', 'assessment_evaluation_results',
                 'open_manual_eval_modal', 'save_manual_evaluation', 'results_eval_status',
                 'has_ai_evaluated_current_candidate', 'current_candidate_ai_score_display',
-                'current_candidate_ai_percentage_display'}
-namespace = {'asyncio': asyncio, 'Path': Path, 'datetime': datetime}
+                'current_candidate_ai_percentage_display', '_review_eval_questions_data',
+                'review_eval_question_options', 'review_eval_selected_question_max_marks',
+                'review_eval_candidate_rows', 'current_assessment_test_items',
+                'is_selected_evaluation_test_locked', 'can_evaluate_selected_test',
+                'evaluation_permission_tooltip'}
+namespace = {'asyncio': asyncio, 'Path': Path, 'datetime': datetime, 'AuthState': object}
+_TEST_SCOPE = {}
 for node in tree.body:
     if isinstance(node, ast.FunctionDef) and node.name in helper_names:
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(STATE_PATH), 'exec'), namespace)
@@ -41,6 +46,18 @@ class StateHarness:
         if hasattr(self, 'progress_snapshots'):
             self.progress_snapshots.append((self.eval_progress_current, list(self.eval_progress_questions)))
 
+    async def _authorize_selected_evaluation_test(self):
+        return "F001", "facilitator", {
+            "assessment_id": self.selected_assessment_id,
+            "test_id": self.selected_test_id,
+        }
+
+    async def get_state(self, _state_type):
+        return SimpleNamespace(
+            facilitator_emp_id=getattr(self, "auth_facilitator_id", "F001"),
+            is_facilitator_authenticated=getattr(self, "auth_is_facilitator", True),
+        )
+
     @property
     def my_assessments(self):
         async def value():
@@ -49,13 +66,23 @@ class StateHarness:
 
 for name in method_names:
     method = namespace[name]
-    setattr(StateHarness, name, property(method) if name in ('assessment_evaluation_results', 'results_eval_status', 'has_ai_evaluated_current_candidate', 'current_candidate_ai_score_display', 'current_candidate_ai_percentage_display') else method)
+    setattr(StateHarness, name, property(method) if name in (
+        'assessment_evaluation_results', 'results_eval_status', 'has_ai_evaluated_current_candidate',
+        'current_candidate_ai_score_display', 'current_candidate_ai_percentage_display',
+        '_review_eval_questions_data', 'review_eval_question_options',
+        'review_eval_selected_question_max_marks', 'review_eval_candidate_rows',
+        'current_assessment_test_items', 'is_selected_evaluation_test_locked',
+        'can_evaluate_selected_test', 'evaluation_permission_tooltip',
+    ) else method)
 
 
 def state():
     obj = StateHarness()
+    obj.selected_assessment_id = _TEST_SCOPE["assessment_id"]
+    obj.selected_test_id = _TEST_SCOPE["test_id"]
     obj.selected_assessment_name = 'Assessment A'
     obj.selected_test_name = 'Test'
+    obj.selected_evaluation_test = 'Test'
     obj.selected_evaluation_candidate = 'All Candidates'
     obj.results_selected_candidate = 'Alice (A)'
     obj.results_selected_test = 'Test'
@@ -67,7 +94,10 @@ def state():
     obj.real_ai_results_per_candidate = {}
     obj.ai_candidates_data = {}
     obj.assessments = [
-        {'name': 'Assessment A', 'candidate_details': [{'emp_id': 'A', 'name': 'Alice'}, {'emp_id': 'B', 'name': 'Bob'}, {'emp_id': 'M', 'name': 'Missing'}]},
+        {'name': 'Assessment A', 'assessment_id': obj.selected_assessment_id,
+         'test_ids': {'Test': obj.selected_test_id},
+         'test_items': [{'name': 'Test', 'created_by': 'F001', 'is_locked': False}],
+         'candidate_details': [{'emp_id': 'A', 'name': 'Alice'}, {'emp_id': 'B', 'name': 'Bob'}, {'emp_id': 'M', 'name': 'Missing'}]},
         {'name': 'Assessment B', 'candidate_details': [{'emp_id': 'X', 'name': 'Other'}]},
     ]
     obj._get_question_count_from_qp = lambda path: 1
@@ -86,6 +116,55 @@ def question_result(candidate_id, marks=4, status='completed'):
 
 
 class IntegrationTests(unittest.IsolatedAsyncioTestCase):
+    _scope = {}
+    async def test_pending_ai_result_is_viewable_without_none_get_failure(self):
+        obj = state()
+        obj.review_eval_method = 'ai'
+        obj.review_eval_selected_candidate = 'All Candidates'
+        obj.review_eval_selected_question_index = 0
+        obj.selected_evaluation_test = 'Test'
+        obj.assessments[0]['assessment_id'] = 'assessment-id'
+        obj.assessments[0]['test_items'] = [{'name': 'Test', 'test_id': 'test-id'}]
+        obj.review_marks_edits = {}
+        obj.review_justification_edits = {}
+        obj.review_remarks_edits = {}
+        run = {
+            'assessment_name': 'Assessment A',
+            'test_name': 'Test',
+            'assessment_id': 'assessment-id',
+            'test_id': 'test-id',
+            'candidate_ids': ['A', 'B'],
+            'questions': [
+                {'status': 'pending', 'record': {'candidate_id': cid, 'question_no': 'Q1'}, 'result': None}
+                for cid in ('A', 'B')
+            ],
+        }
+        with patch('backend.repositories.ai_evaluation_run_repository.AIEvaluationRunRepository.get_all',
+                   return_value=[run]):
+            rows = await obj.review_eval_candidate_rows
+        self.assertEqual(len(rows), 3)
+        self.assertFalse(any(row['has_evaluation'] for row in rows))
+
+    async def test_evaluation_permissions_track_creator_and_lock_state(self):
+        obj = state()
+        self.assertTrue(await obj.can_evaluate_selected_test)
+        self.assertEqual(await obj.evaluation_permission_tooltip, '')
+
+        obj.auth_facilitator_id = 'F002'
+        self.assertFalse(await obj.can_evaluate_selected_test)
+        self.assertEqual(
+            await obj.evaluation_permission_tooltip,
+            'Only the facilitator who created this test can evaluate or lock it.',
+        )
+
+        obj.auth_facilitator_id = 'F001'
+        obj.assessments[0]['test_items'][0]['is_locked'] = True
+        self.assertFalse(await obj.can_evaluate_selected_test)
+        self.assertEqual(
+            await obj.evaluation_permission_tooltip,
+            'This test is locked and is view-only.',
+        )
+
     def test_selected_candidate_without_ai_result_shows_not_completed(self):
         obj = state()
         obj.selected_evaluation_candidate = 'Alice (A)'
@@ -159,26 +238,54 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.invocations[run['run_id']]=lambda: namespace['_evaluate_candidates_questionwise'](str(paper),rows,answer_key,progress_callback=lambda event:None)
                 return run
 
-            def execute(self, run_id):
-                run=self.start(run_id);token=run['execution_token']
+            def execute(self, run_id, *, facilitator_id, role):
+                run=self.start(run_id, facilitator_id=facilitator_id, role=role)
+                token=run['execution_token']
                 try:
                     output=self.invocations[run_id]()
                     rows=([r for group in output['results_by_candidate'].values() for r in group]
                           if 'results_by_candidate' in output else output.get('results',[])+output.get('errors',[]))
                     while True:
-                        chunk=self._next_chunk(run_id,token,1)
+                        chunk=self._next_chunk(
+                            run_id, token, 1,
+                            facilitator_id=facilitator_id, role=role,
+                        )
                         if not chunk: break
                         q=chunk[0];record=q['record']
                         row=next(r for r in rows if r['candidate_id']==record['candidate_id'] and r['question_no']==record['question_no'])
                         if row.get('status')=='failed' or row.get('error'):
-                            self.checkpoint(run_id,token,q['pair_id'],error=row.get('error','Failed'))
+                            self.checkpoint(
+                                run_id, token, q['pair_id'],
+                                error=row.get('error','Failed'),
+                                facilitator_id=facilitator_id, role=role,
+                            )
                         else:
-                            self.checkpoint(run_id,token,q['pair_id'],result=row)
+                            self.checkpoint(
+                                run_id, token, q['pair_id'], result=row,
+                                facilitator_id=facilitator_id, role=role,
+                            )
                         time.sleep(0.12)  # allow background state polling to observe each checkpoint
-                    return self.finish(run_id,token)
+                    return self.finish(
+                        run_id, token,
+                        facilitator_id=facilitator_id, role=role,
+                    )
                 except Exception as exc:
-                    return self.finish(run_id,token,str(exc))
+                    return self.finish(
+                        run_id, token, str(exc),
+                        facilitator_id=facilitator_id, role=role,
+                    )
         service=AdapterRunService()
+        from backend.services.assessment_service import AssessmentService
+        assessment = AssessmentService(
+            service.tests.assessments,
+            service.tests,
+        ).create_assessment({"name": "Assessment A"})
+        test = service.tests.create_test(
+            assessment["assessment_id"],
+            {"test_name": "Test", "test_type": "subjective"},
+            created_by="F001",
+        )
+        _TEST_SCOPE.update(assessment_id=assessment["assessment_id"], test_id=test["test_id"])
         def provider(): return service
         provider.result_rows=AIEvaluationRunService.result_rows
         namespace['AIEvaluationRunService']=provider
@@ -259,8 +366,8 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         namespace['_evaluate_candidates_questionwise'].assert_not_called()
         self.assertEqual(obj.real_ai_results_per_candidate, {})
         self.assertEqual(len(obj.batch_evaluation_errors), 3)
-        obj.open_manual_eval_modal()
-        obj.save_manual_evaluation()
+        await obj.open_manual_eval_modal()
+        await obj.save_manual_evaluation()
         self.assertIn('manual evaluation', self.messages[-1][1])
 
     async def test_selector_and_legacy_fallback(self):

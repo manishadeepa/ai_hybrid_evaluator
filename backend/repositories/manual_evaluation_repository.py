@@ -38,25 +38,35 @@ class ManualEvaluationRepository:
 
         return None
 
-    def save(self, evaluation: dict[str, Any]) -> dict[str, Any]:
+    def save(self, evaluation: dict[str, Any], *, facilitator_id, role) -> dict[str, Any]:
         """Create or update a manual evaluation."""
-        evaluations = self.storage.get_all()
+        from backend.services.test_service import test_mutation_guard
 
-        candidate_id = str(evaluation["candidate_id"])
-        assessment_name = str(evaluation["assessment_name"])
-        test_name = str(evaluation["test_name"])
+        with test_mutation_guard(
+            test_id=evaluation.get("test_id"),
+            assessment_id=evaluation.get("assessment_id"),
+            assessment_name=str(evaluation["assessment_name"]),
+            test_name=str(evaluation["test_name"]),
+            data_dir=self.storage.file_path.parent,
+            require_creator=True,
+            facilitator_id=facilitator_id,
+            role=role,
+        ):
+            evaluations = self.storage.get_all()
+            candidate_id = str(evaluation["candidate_id"])
+            assessment_name = str(evaluation["assessment_name"])
+            test_name = str(evaluation["test_name"])
 
-        for index, existing in enumerate(evaluations):
-            if (
-                str(existing.get("candidate_id")) == candidate_id
-                and str(existing.get("assessment_name")) == assessment_name
-                and str(existing.get("test_name")) == test_name
-            ):
-                evaluations[index] = dict(evaluation)
-                self.storage.save_all(evaluations)
-                return evaluations[index]
+            for index, existing in enumerate(evaluations):
+                if (
+                    str(existing.get("candidate_id")) == candidate_id
+                    and str(existing.get("assessment_name")) == assessment_name
+                    and str(existing.get("test_name")) == test_name
+                ):
+                    evaluations[index] = dict(evaluation)
+                    self.storage.save_all(evaluations)
+                    return evaluations[index]
 
-        evaluations.append(dict(evaluation))
-        self.storage.save_all(evaluations)
-
-        return evaluation
+            evaluations.append(dict(evaluation))
+            self.storage.save_all(evaluations)
+            return evaluation

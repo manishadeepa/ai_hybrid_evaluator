@@ -194,6 +194,7 @@ def active_test_uploaded_card() -> rx.Component:
                         rx.icon("refresh-cw", size=13),
                         "Replace",
                         on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
+                        disabled=FacilitatorState.is_selected_test_locked,
                         size="1",
                         variant="outline",
                         color_scheme="gray",
@@ -203,6 +204,7 @@ def active_test_uploaded_card() -> rx.Component:
                         rx.icon("trash-2", size=13),
                         "Remove",
                         on_click=FacilitatorState.remove_current_test_question_paper,
+                        disabled=FacilitatorState.is_selected_test_locked,
                         size="1",
                         variant="soft",
                         color_scheme="red",
@@ -311,6 +313,7 @@ def active_test_dropzone_card() -> rx.Component:
                     spacing="2",
                 ),
                 id="test_qp_file_upload",
+                disabled=FacilitatorState.is_selected_test_locked,
                 border=f"2px dashed {COLORS['line']}",
                 border_radius="12px",
                 padding="2em 1.5em",
@@ -370,6 +373,7 @@ def active_test_dropzone_card() -> rx.Component:
                             rx.icon("upload", size=14),
                             "Upload to ", FacilitatorState.selected_test_name,
                             on_click=FacilitatorState.handle_upload_for_test(rx.upload_files(upload_id="test_qp_file_upload")),
+                            disabled=FacilitatorState.is_selected_test_locked,
                             size="2",
                             background="#027A48",
                             color="white",
@@ -593,6 +597,7 @@ def test_management_card(test: dict) -> rx.Component:
                             rx.menu.item(
                                 rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
                                 on_click=FacilitatorState.start_replacing_qp(t_name),
+                                disabled=test["is_locked"],
                             ),
                             rx.cond(
                                 has_file,
@@ -600,6 +605,7 @@ def test_management_card(test: dict) -> rx.Component:
                                     "Remove Question Paper",
                                     on_click=FacilitatorState.remove_test_question_paper(t_name),
                                     color="red",
+                                    disabled=test["is_locked"],
                                 ),
                             ),
                             rx.menu.separator(),
@@ -607,6 +613,7 @@ def test_management_card(test: dict) -> rx.Component:
                                 "Delete Test",
                                 on_click=FacilitatorState.facilitator_remove_test(t_name),
                                 color="red",
+                                disabled=test["is_locked"],
                             ),
                         ),
                     ),
@@ -820,6 +827,7 @@ def question_paper_right_column() -> rx.Component:
                         rx.menu.item(
                             rx.cond(FacilitatorState.has_current_test_qp, "Replace File", "Upload File"),
                             on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
+                            disabled=FacilitatorState.is_selected_test_locked,
                         ),
                         rx.cond(
                             FacilitatorState.has_current_test_qp,
@@ -827,6 +835,7 @@ def question_paper_right_column() -> rx.Component:
                                 "Remove Question Paper",
                                 on_click=FacilitatorState.remove_current_test_question_paper,
                                 color="red",
+                                disabled=FacilitatorState.is_selected_test_locked,
                             ),
                         ),
                         rx.menu.separator(),
@@ -834,6 +843,7 @@ def question_paper_right_column() -> rx.Component:
                             "Delete Test",
                             on_click=FacilitatorState.facilitator_remove_test(FacilitatorState.selected_test_name),
                             color="red",
+                            disabled=FacilitatorState.is_selected_test_locked,
                         ),
                     ),
                 ),
@@ -902,6 +912,10 @@ def question_paper_right_column() -> rx.Component:
                             spacing="1",
                             align_items="center",
                         ),
+                        rx.cond(
+                            FacilitatorState.is_selected_test_locked,
+                            rx.badge("Locked · View only", color_scheme="gray", variant="soft"),
+                        ),
                         rx.hstack(
                             rx.button(
                                 rx.icon("eye", size=14),
@@ -923,6 +937,7 @@ def question_paper_right_column() -> rx.Component:
                                 size="2",
                                 border_radius="8px",
                                 on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
+                                disabled=FacilitatorState.is_selected_test_locked,
                                 _hover={"background": COLORS["primary_hover"]},
                                 cursor="pointer",
                             ),
@@ -1158,6 +1173,10 @@ def tests_tab_card(test: dict) -> rx.Component:
                     spacing="2",
                     align_items="center",
                 ),
+                rx.cond(
+                    test["is_locked"],
+                    rx.badge("Locked · View only", color_scheme="gray", variant="soft"),
+                ),
                 rx.hstack(
                     rx.icon("calendar", size=13, color=COLORS["slate"]),
                     rx.text(
@@ -1225,10 +1244,25 @@ def tests_tab_card(test: dict) -> rx.Component:
             ),
             # Right: Action buttons + 3-dot menu
             rx.hstack(
-                # Lock Test (always visible, frontend UI only)
+                # Lock Test is backed by persisted creator-owned state.
                 rx.button(
                     rx.icon("lock", size=14),
-                    "Lock Test",
+                    rx.cond(test["is_locked"], "Locked", "Lock Test"),
+                    on_click=FacilitatorState.open_lock_test_confirmation(test["test_id"]),
+                    disabled=rx.cond(
+                        test["is_locked"],
+                        True,
+                        rx.cond(
+                            test["can_lock"],
+                            FacilitatorState.lock_test_request_in_progress,
+                            True,
+                        ),
+                    ),
+                    title=rx.cond(
+                        test["is_locked"],
+                        "Locked",
+                        rx.cond(test["can_lock"], "", "Only the facilitator who created this test can evaluate or lock it."),
+                    ),
                     size="2",
                     variant="outline",
                     color_scheme="gray",
@@ -1260,6 +1294,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                         rx.icon("refresh-cw", size=14),
                         "Replace File",
                         on_click=FacilitatorState.start_replacing_qp(t_name),
+                        disabled=test["is_locked"],
                         size="2",
                         background="#4F46E5",
                         color="white",
@@ -1272,6 +1307,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                         rx.icon("upload", size=14),
                         "Upload File",
                         on_click=FacilitatorState.start_replacing_qp(t_name),
+                        disabled=test["is_locked"],
                         size="2",
                         variant="outline",
                         color_scheme="indigo",
@@ -1303,6 +1339,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                         rx.menu.item(
                             rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
                             on_click=FacilitatorState.start_replacing_qp(t_name),
+                            disabled=test["is_locked"],
                         ),
                         rx.cond(
                             has_file,
@@ -1310,6 +1347,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                                 "Remove Question Paper",
                                 on_click=FacilitatorState.remove_test_question_paper(t_name),
                                 color="red",
+                                disabled=test["is_locked"],
                             ),
                         ),
                         rx.menu.separator(),
@@ -1317,6 +1355,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                             "Delete Test",
                             on_click=FacilitatorState.facilitator_remove_test(t_name),
                             color="red",
+                            disabled=test["is_locked"],
                         ),
                     ),
                 ),
@@ -2176,6 +2215,8 @@ def evaluation_methods_card() -> rx.Component:
                             rx.icon("pencil", size=14),
                             "Manual Evaluation",
                             on_click=lambda: FacilitatorState.open_candidate_test_status("manual"),
+                            disabled=~FacilitatorState.can_evaluate_selected_test,
+                            title=FacilitatorState.evaluation_permission_tooltip,
                             size="2",
                             background=COLORS["primary"],
                             color="white",
@@ -2240,6 +2281,8 @@ def evaluation_methods_card() -> rx.Component:
                             rx.icon("play", size=14),
                             "Start AI Evaluation",
                             on_click=lambda: FacilitatorState.open_candidate_test_status("ai"),
+                            disabled=~FacilitatorState.can_evaluate_selected_test,
+                            title=FacilitatorState.evaluation_permission_tooltip,
                             size="2",
                             background="#027A48",
                             color="white",
@@ -3268,6 +3311,8 @@ def manual_evaluation_modal() -> rx.Component:
                         rx.input(
                             value=FacilitatorState.current_manual_mark_val,
                             on_change=FacilitatorState.set_current_manual_mark,
+                            disabled=~FacilitatorState.can_evaluate_selected_test,
+                            title=FacilitatorState.evaluation_permission_tooltip,
                             placeholder="Enter marks",
                             type="number",
                             size="2",
@@ -3287,6 +3332,8 @@ def manual_evaluation_modal() -> rx.Component:
                     rx.text_area(
                         value=FacilitatorState.current_manual_justification_val,
                         on_change=FacilitatorState.set_current_manual_justification,
+                        disabled=~FacilitatorState.can_evaluate_selected_test,
+                        title=FacilitatorState.evaluation_permission_tooltip,
                         placeholder="Enter evaluation remarks explaining the marks awarded...",
                         size="2",
                         width="100%",
@@ -3324,6 +3371,8 @@ def manual_evaluation_modal() -> rx.Component:
                         rx.icon("check", size=14),
                         "Save Evaluation",
                         on_click=FacilitatorState.save_manual_evaluation,
+                        disabled=~FacilitatorState.can_evaluate_selected_test,
+                        title=FacilitatorState.evaluation_permission_tooltip,
                         background=COLORS["primary"],
                         color="white",
                         size="2",
@@ -3397,6 +3446,7 @@ def answer_key_upload_modal() -> rx.Component:
                         width="100%",
                     ),
                     id="answer_key_upload_zone",
+                    disabled=FacilitatorState.is_selected_evaluation_test_locked,
                     accept={
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
                         "application/vnd.ms-excel": [".xls"],
@@ -3425,6 +3475,7 @@ def answer_key_upload_modal() -> rx.Component:
                             rx.icon("upload", size=14),
                             "Upload",
                             on_click=FacilitatorState.handle_answer_key_upload(rx.upload_files(upload_id="answer_key_upload_zone")),
+                            disabled=FacilitatorState.is_selected_evaluation_test_locked,
                             size="2",
                             background="#027A48",
                             color="white",
@@ -3454,6 +3505,7 @@ def answer_key_upload_modal() -> rx.Component:
                     rx.button(
                         "Set Default Key (Mock)",
                         on_click=FacilitatorState.simulate_upload_answer_key,
+                        disabled=FacilitatorState.is_selected_evaluation_test_locked,
                         background="#027A48",
                         color="white",
                         font_family=FONT_BODY,
@@ -3547,6 +3599,7 @@ def ai_evaluation_trigger_modal() -> rx.Component:
                         rx.icon("sparkles", size=14),
                         "Run AI Evaluation",
                         on_click=FacilitatorState.trigger_evaluation_tab_ai_eval,
+                        disabled=FacilitatorState.is_selected_evaluation_test_locked,
                         background="#027A48",
                         color="white",
                         size="2",
@@ -3802,6 +3855,7 @@ def ai_eval_progress_modal() -> rx.Component:
                             rx.icon("pause", size=14, color="#EF4444"),
                             rx.text("Stop", font_family=FONT_BODY, font_weight="500", size="2", color="#EF4444"),
                             on_click=FacilitatorState.stop_ai_evaluation,
+                            disabled=FacilitatorState.is_selected_evaluation_test_locked,
                             variant="outline",
                             border="1px solid #FCA5A5",
                             background="white",
@@ -3814,6 +3868,7 @@ def ai_eval_progress_modal() -> rx.Component:
                             rx.icon("play", size=14, color="#6C3FF4"),
                             rx.text("Resume", font_family=FONT_BODY, font_weight="500", size="2", color="#6C3FF4"),
                             on_click=FacilitatorState.resume_ai_evaluation,
+                            disabled=FacilitatorState.is_selected_evaluation_test_locked,
                             variant="outline",
                             border="1px solid #DDD6FE",
                             background="white",
@@ -3826,6 +3881,7 @@ def ai_eval_progress_modal() -> rx.Component:
                             rx.icon("rotate-ccw", size=14, color="#475569"),
                             rx.text("Restart", font_family=FONT_BODY, font_weight="500", size="2", color="#475569"),
                             on_click=FacilitatorState.open_restart_confirm_modal,
+                            disabled=FacilitatorState.is_selected_evaluation_test_locked,
                             variant="outline",
                             border="1px solid #CBD5E1",
                             background="white",
@@ -3878,6 +3934,7 @@ def ai_eval_progress_modal() -> rx.Component:
                                     rx.button(
                                         "Restart",
                                         on_click=FacilitatorState.restart_ai_evaluation,
+                                        disabled=FacilitatorState.is_selected_evaluation_test_locked,
                                         background="#6C3FF4",
                                         color="white",
                                         font_family=FONT_BODY,
@@ -4333,6 +4390,8 @@ def review_evaluation_modal() -> rx.Component:
                                             rx.input(
                                                 value=row["marks"],
                                                 on_change=lambda val: FacilitatorState.set_review_row_mark(row["key"], val),
+                                                disabled=~FacilitatorState.can_evaluate_selected_test,
+                                                title=FacilitatorState.evaluation_permission_tooltip,
                                                 size="1",
                                                 width="75px",
                                                 font_family=FONT_BODY,
@@ -4353,6 +4412,8 @@ def review_evaluation_modal() -> rx.Component:
                                             rx.input(
                                                 value=row["justification"],
                                                 on_change=lambda val: FacilitatorState.set_review_row_justification(row["key"], val),
+                                                disabled=~FacilitatorState.can_evaluate_selected_test,
+                                                title=FacilitatorState.evaluation_permission_tooltip,
                                                 size="1",
                                                 font_family=FONT_BODY,
                                                 width="100%",
@@ -4364,6 +4425,8 @@ def review_evaluation_modal() -> rx.Component:
                                                 value=row["remarks"],
                                                 placeholder="Facilitator remarks...",
                                                 on_change=lambda val: FacilitatorState.set_review_row_remarks(row["key"], val),
+                                                disabled=~FacilitatorState.can_evaluate_selected_test,
+                                                title=FacilitatorState.evaluation_permission_tooltip,
                                                 size="1",
                                                 font_family=FONT_BODY,
                                                 width="100%",
@@ -4374,6 +4437,8 @@ def review_evaluation_modal() -> rx.Component:
                                             rx.button(
                                                 "Save",
                                                 on_click=lambda: FacilitatorState.save_review_row(row["key"], row["name"], row["max_marks"]),
+                                                disabled=~FacilitatorState.can_evaluate_selected_test,
+                                                title=FacilitatorState.evaluation_permission_tooltip,
                                                 size="1",
                                                 background=COLORS["primary"],
                                                 color="white",
@@ -5578,6 +5643,7 @@ def _weightage_row(test: dict) -> rx.Component:
                     placeholder="0",
                     value=test["weightage"],
                     on_change=lambda v: FacilitatorState.set_weightage_input(test["name"], v),
+                    disabled=test["is_locked"],
                     type="number",
                     min="0",
                     max="100",
@@ -5601,6 +5667,7 @@ def _weightage_row(test: dict) -> rx.Component:
                     placeholder="50",
                     value=test["pass_percentage"],
                     on_change=lambda v: FacilitatorState.set_pass_percentage_input(test["name"], v),
+                    disabled=test["is_locked"],
                     type="number",
                     min="0",
                     max="100",
@@ -9261,6 +9328,46 @@ def qp_validation_result_dialog() -> rx.Component:
     )
 
 
+def lock_test_confirmation_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title("Lock Test"),
+                rx.text(
+                    "Lock this test? You will no longer be able to edit, delete, upload, or replace its content.",
+                    font_family=FONT_BODY,
+                    size="2",
+                    color=COLORS["slate"],
+                ),
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="outline",
+                            disabled=FacilitatorState.lock_test_request_in_progress,
+                            on_click=FacilitatorState.set_show_lock_test_confirmation(False),
+                        ),
+                    ),
+                    rx.button(
+                        rx.cond(FacilitatorState.lock_test_request_in_progress, "Locking...", "Lock Test"),
+                        on_click=FacilitatorState.confirm_lock_test,
+                        disabled=FacilitatorState.lock_test_request_in_progress,
+                        color_scheme="red",
+                    ),
+                    justify="end",
+                    width="100%",
+                    padding_top="1em",
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            max_width="480px",
+            padding="1.5em",
+            border_radius="12px",
+        ),
+        open=FacilitatorState.show_lock_test_confirmation,
+        on_open_change=FacilitatorState.set_show_lock_test_confirmation,
+    )
 
 
 def assessment_workspace_page() -> rx.Component:
@@ -9279,6 +9386,7 @@ def assessment_workspace_page() -> rx.Component:
         qp_upload_dialog(),
         qp_validation_result_dialog(),
         add_new_test_dialog(),
+        lock_test_confirmation_dialog(),
         spacing="0",
         width="100%",
         align_items="stretch",

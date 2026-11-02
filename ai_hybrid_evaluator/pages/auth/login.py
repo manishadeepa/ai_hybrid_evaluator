@@ -126,7 +126,7 @@ def _change_password_dialog() -> rx.Component:
                     rx.vstack(
                         rx.dialog.title("Change Admin Password"),
                         rx.dialog.description(
-                            "Update the password for your existing TVS administrative account.",
+                            "Update the password for your existing administrator account.",
                             size="1",
                             color=COLORS["slate"],
                         ),
@@ -140,9 +140,9 @@ def _change_password_dialog() -> rx.Component:
                 # ── Form fields ──────────────────────────────────────
                 rx.vstack(
                     rx.vstack(
-                        rx.text("Official Email (@tvsmotor.com)", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
+                        rx.text("Username", font_family=FONT_BODY, size="2", weight="medium", color=COLORS["ink"]),
                         rx.input(
-                            placeholder="admin@tvsmotor.com",
+                            placeholder="Enter your username",
                             value=AuthState.chpwd_email,
                             on_change=AuthState.set_chpwd_email,
                             width="100%",
@@ -242,8 +242,8 @@ def login_page() -> rx.Component:
             "Sign in to access the GenAI Hybrid Evaluator Administration Portal.",
         ),
         auth_input(
-            "Official Email (@tvsmotor.com)",
-            "admin@tvsmotor.com",
+            "Username",
+            "Enter your username",
             AuthState.signin_email,
             AuthState.set_signin_email,
             on_key_down=AuthState.handle_admin_keydown,

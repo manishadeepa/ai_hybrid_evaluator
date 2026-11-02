@@ -1,9 +1,11 @@
-import os
 import reflex as rx
 from datetime import datetime
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
+from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
 from backend.services.ai_connection_service import AIConnectionService
+from backend.services.group_admin_service import GroupAdminService
+from backend.services.master_admin_service import MasterAdminService
 
 
 # ─────────────────────────────────────────────────────────────
@@ -210,14 +212,7 @@ class SettingsState(rx.State):
         self.ai_conn_model = self.ai_saved_model if self.ai_saved_model != "Not configured" else ""
         self.ai_conn_api_version = self.ai_saved_api_version if self.ai_saved_api_version != "Not applicable" else ""
         self.ai_conn_cert = self.ai_saved_cert if self.ai_saved_cert != "Not configured" else ""
-        try:
-            self.ai_conn_api_key = AIConnectionService().get_decrypted_api_key(
-                self.ai_saved_connection_id
-            )
-        except (ValueError, OSError) as exc:
-            self.ai_conn_editing_existing = False
-            self.ai_conn_edit_id = ""
-            return rx.toast.error(str(exc))
+        self.ai_conn_api_key = ""
         self.ai_conn_show_key = False
         self.active_view = "current"
         self.show_selection_dialog = False
@@ -248,60 +243,49 @@ class SettingsState(rx.State):
     show_delete_admin_dialog: bool = False
     delete_admin_index: int = -1
     delete_admin_username: str = ""
+    edit_admin_original_username: str = ""
+    admin_management_error: str = ""
 
-    # View Admin Dialog State
-    show_view_admin_dialog: bool = False
-    view_admin_username: str = ""
-    view_admin_password: str = ""
-    view_admin_show_password: bool = False
+    async def _require_master_admin(self) -> bool:
+        auth_state = await self.get_state(AuthState)
+        if auth_state.is_authenticated and auth_state.admin_role == "Master Admin":
+            self.admin_management_error = ""
+            return True
+        self.admin_management_error = (
+            "Only an authenticated Master Admin can manage administrator accounts."
+        )
+        return False
 
     def load_admin_accounts(self):
-        """Loads administrator accounts, ensuring Master Admin (Manisha) is authoritative at #1."""
-        if self.admin_accounts:
+        """Reload safe account identities from the persistent account services."""
+        self.admin_management_error = ""
+        try:
+            master_admin = MasterAdminService().get()
+            group_admins = GroupAdminService().get_all()
+        except (OSError, ValueError) as exc:
+            self.admin_accounts = []
+            self.admin_management_error = (
+                f"Unable to load administrator accounts: {exc}"
+            )
             return
-
-        master_name = "Manisha"
-        from ai_hybrid_evaluator.services.mock_api import find_admin_excel_path
-        excel_path = find_admin_excel_path()
-        other_names = []
-        if excel_path and os.path.isfile(excel_path):
-            try:
-                import pandas as pd
-                df = pd.read_excel(excel_path)
-                col_map = {str(c).strip().lower(): c for c in df.columns}
-                name_col = col_map.get("employeename")
-                if name_col:
-                    for _, row in df.iterrows():
-                        raw_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
-                        if raw_name:
-                            if raw_name.lower() == master_name.lower():
-                                master_name = raw_name
-                            elif raw_name not in other_names:
-                                other_names.append(raw_name)
-            except Exception:
-                pass
-
-        if not other_names:
-            other_names = ["Kannadasan R", "Sudhir", "Vaghee", "Shivani"]
 
         accounts = [
             {
                 "num": "1",
-                "username": master_name,
+                "username": master_admin["username"] if master_admin else "Not configured",
                 "role": "Master Admin",
-                "status": "Active",
                 "is_master": True,
             }
         ]
-        for i, name in enumerate(other_names):
-            status = "Inactive" if name.lower() == "arun" else "Active"
-            accounts.append({
-                "num": str(i + 2),
-                "username": name,
-                "role": "Administrator",
-                "status": status,
+        accounts.extend(
+            {
+                "num": str(index + 2),
+                "username": account["username"],
+                "role": "Group Admin",
                 "is_master": False,
-            })
+            }
+            for index, account in enumerate(group_admins)
+        )
         self.admin_accounts = accounts
 
     def on_page_load(self):
@@ -309,7 +293,9 @@ class SettingsState(rx.State):
         self.load_admin_accounts()
 
     # ── Add Admin Handlers ────────────────────────────────────
-    def open_add_admin_dialog(self):
+    async def open_add_admin_dialog(self):
+        if not await self._require_master_admin():
+            return
         self.new_admin_username = ""
         self.new_admin_password = ""
         self.new_admin_confirm_password = ""
@@ -345,7 +331,10 @@ class SettingsState(rx.State):
         self.new_admin_confirm_password = v
         self.add_admin_error = ""
 
-    def create_admin(self):
+    async def create_admin(self):
+        if not await self._require_master_admin():
+            self.add_admin_error = self.admin_management_error
+            return
         uname = self.new_admin_username.strip()
         pwd = self.new_admin_password.strip()
         cpwd = self.new_admin_confirm_password.strip()
@@ -363,31 +352,34 @@ class SettingsState(rx.State):
             self.add_admin_error = "Passwords do not match."
             return
 
-        for a in self.admin_accounts:
-            if a.get("username", "").strip().lower() == uname.lower():
-                self.add_admin_error = "An administrator with this username already exists."
-                return
+        try:
+            master_admin = MasterAdminService().get()
+            if master_admin and master_admin["username"].casefold() == uname.casefold():
+                raise ValueError("A Master Admin already uses this username.")
+            GroupAdminService().create(uname, pwd)
+        except (OSError, ValueError) as exc:
+            self.add_admin_error = str(exc)
+            return
 
-        new_num = str(len(self.admin_accounts) + 1)
-        new_account = {
-            "num": new_num,
-            "username": uname,
-            "role": "Administrator",
-            "status": "Active",
-            "is_master": False,
-        }
-        self.admin_accounts.append(new_account)
+        self.load_admin_accounts()
         self.show_add_admin_dialog = False
+        self.new_admin_password = ""
+        self.new_admin_confirm_password = ""
         return rx.toast.success(f"Administrator '{uname}' created successfully.")
 
     # ── Edit Admin Handlers ───────────────────────────────────
-    def open_edit_admin_dialog(self, index: int):
+    async def open_edit_admin_dialog(self, index: int):
+        if not await self._require_master_admin():
+            self.edit_admin_error = self.admin_management_error
+            return
+        self.load_admin_accounts()
         if not (0 <= index < len(self.admin_accounts)):
             return
         target = self.admin_accounts[index]
         if target.get("is_master"):
             return rx.toast.error("Master admin cannot be edited.")
         self.edit_admin_index = index
+        self.edit_admin_original_username = target["username"]
         self.edit_admin_username = target.get("username", "")
         self.edit_admin_password = ""
         self.edit_admin_confirm_password = ""
@@ -423,8 +415,14 @@ class SettingsState(rx.State):
         self.edit_admin_confirm_password = v
         self.edit_admin_error = ""
 
-    def save_admin_changes(self):
+    async def save_admin_changes(self):
+        if not await self._require_master_admin():
+            self.edit_admin_error = self.admin_management_error
+            return
         if not (0 <= self.edit_admin_index < len(self.admin_accounts)):
+            return
+        if self.admin_accounts[self.edit_admin_index].get("is_master"):
+            self.edit_admin_error = "Master Admin cannot be edited here."
             return
         uname = self.edit_admin_username.strip()
         pwd = self.edit_admin_password.strip()
@@ -439,19 +437,26 @@ class SettingsState(rx.State):
                 self.edit_admin_error = "Passwords do not match."
                 return
 
-        for i, a in enumerate(self.admin_accounts):
-            if i != self.edit_admin_index and a.get("username", "").strip().lower() == uname.lower():
-                self.edit_admin_error = "An administrator with this username already exists."
-                return
+        try:
+            master_admin = MasterAdminService().get()
+            if master_admin and master_admin["username"].casefold() == uname.casefold():
+                raise ValueError("A Master Admin already uses this username.")
+            GroupAdminService().update(self.edit_admin_original_username, uname, pwd)
+        except (OSError, ValueError) as exc:
+            self.edit_admin_error = str(exc)
+            return
 
-        updated = list(self.admin_accounts)
-        updated[self.edit_admin_index]["username"] = uname
-        self.admin_accounts = updated
+        self.load_admin_accounts()
         self.show_edit_admin_dialog = False
+        self.edit_admin_password = ""
+        self.edit_admin_confirm_password = ""
         return rx.toast.success(f"Administrator details updated for '{uname}'.")
 
     # ── Delete Admin Handlers ─────────────────────────────────
-    def open_delete_admin_dialog(self, index: int):
+    async def open_delete_admin_dialog(self, index: int):
+        if not await self._require_master_admin():
+            return
+        self.load_admin_accounts()
         if not (0 <= index < len(self.admin_accounts)):
             return
         target = self.admin_accounts[index]
@@ -469,40 +474,27 @@ class SettingsState(rx.State):
     def set_show_delete_admin_dialog(self, v: bool):
         self.show_delete_admin_dialog = v
 
-    def confirm_delete_admin(self):
-        if not (0 <= self.delete_admin_index < len(self.admin_accounts)):
+    async def confirm_delete_admin(self):
+        if not await self._require_master_admin():
+            return
+        if not self.delete_admin_username:
             return
         uname = self.delete_admin_username
-        updated = [a for i, a in enumerate(self.admin_accounts) if i != self.delete_admin_index]
-        for idx, a in enumerate(updated):
-            a["num"] = str(idx + 1)
-        self.admin_accounts = updated
+        try:
+            master_admin = MasterAdminService().get()
+            if master_admin and master_admin["username"].casefold() == uname.casefold():
+                self.admin_management_error = "Master Admin cannot be removed."
+                return
+            GroupAdminService().delete(uname)
+        except (OSError, ValueError) as exc:
+            self.admin_management_error = str(exc)
+            return
+
+        self.load_admin_accounts()
         self.show_delete_admin_dialog = False
         self.delete_admin_index = -1
         self.delete_admin_username = ""
         return rx.toast.success(f"Administrator '{uname}' deleted.")
-
-    # ── View Admin Handlers ───────────────────────────────────
-    def open_view_admin_dialog(self, index: int):
-        if not (0 <= index < len(self.admin_accounts)):
-            return
-        target = self.admin_accounts[index]
-        self.view_admin_username = target.get("username", "")
-        self.view_admin_password = target.get("password", "")
-        self.view_admin_show_password = False
-        self.show_view_admin_dialog = True
-
-    def close_view_admin_dialog(self):
-        self.show_view_admin_dialog = False
-        self.view_admin_show_password = False
-
-    def set_show_view_admin_dialog(self, v: bool):
-        self.show_view_admin_dialog = v
-        if not v:
-            self.view_admin_show_password = False
-
-    def toggle_view_admin_show_password(self):
-        self.view_admin_show_password = not self.view_admin_show_password
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1090,13 +1082,12 @@ def _current_connection_api_key() -> rx.Component:
         rx.vstack(
             _ai_field_label("API Key"),
             rx.text(
-                "The saved API key is loaded in the password field. It remains masked unless you select the eye icon.",
+                "The saved API key stays on the server. Leave this blank to keep it, or enter a replacement.",
                 font_family=FONT_BODY, size="1", color=COLORS["slate"],
             ),
             rx.hstack(
                 rx.input(
-                    value=SettingsState.ai_conn_api_key,
-                    placeholder="Enter API key",
+                    placeholder="Leave blank to keep the saved key",
                     on_change=SettingsState.set_ai_conn_api_key,
                     type=rx.cond(SettingsState.ai_conn_show_key, "text", "password"),
                     flex="1", size="3", background="white",
@@ -1364,40 +1355,35 @@ def _admin_account_row(admin: dict, idx: int) -> rx.Component:
                 admin["is_master"],
                 rx.hstack(
                     rx.text("—", color=COLORS["slate"], font_family=FONT_BODY, size="2"),
-                    rx.text("Cannot be edited or removed", color=COLORS["slate"], font_family=FONT_BODY, size="1"),
+                    rx.text("Cannot be edited or removed.", color=COLORS["slate"], font_family=FONT_BODY, size="1"),
                     spacing="3",
                     align_items="center",
                 ),
-                rx.hstack(
+                rx.cond(
+                    AuthState.admin_role == "Master Admin",
                     rx.hstack(
-                        rx.icon("pencil", size=14, color="#4F46E5"),
-                        rx.text("Edit", font_family=FONT_BODY, size="2", weight="medium", color="#4F46E5"),
-                        spacing="1",
+                        rx.hstack(
+                            rx.icon("pencil", size=14, color="#4F46E5"),
+                            rx.text("Edit", font_family=FONT_BODY, size="2", weight="medium", color="#4F46E5"),
+                            spacing="1",
+                            align_items="center",
+                            cursor="pointer",
+                            _hover={"opacity": 0.8},
+                            on_click=SettingsState.open_edit_admin_dialog(idx),
+                        ),
+                        rx.hstack(
+                            rx.icon("trash-2", size=14, color="#DC2626"),
+                            rx.text("Delete", font_family=FONT_BODY, size="2", weight="medium", color="#DC2626"),
+                            spacing="1",
+                            align_items="center",
+                            cursor="pointer",
+                            _hover={"opacity": 0.8},
+                            on_click=SettingsState.open_delete_admin_dialog(idx),
+                        ),
+                        spacing="4",
                         align_items="center",
-                        cursor="pointer",
-                        _hover={"opacity": 0.8},
-                        on_click=SettingsState.open_edit_admin_dialog(idx),
                     ),
-                    rx.hstack(
-                        rx.icon("eye", size=14, color="#7C3AED"),
-                        rx.text("View", font_family=FONT_BODY, size="2", weight="medium", color="#7C3AED"),
-                        spacing="1",
-                        align_items="center",
-                        cursor="pointer",
-                        _hover={"opacity": 0.8},
-                        on_click=SettingsState.open_view_admin_dialog(idx),
-                    ),
-                    rx.hstack(
-                        rx.icon("trash-2", size=14, color="#DC2626"),
-                        rx.text("Delete", font_family=FONT_BODY, size="2", weight="medium", color="#DC2626"),
-                        spacing="1",
-                        align_items="center",
-                        cursor="pointer",
-                        _hover={"opacity": 0.8},
-                        on_click=SettingsState.open_delete_admin_dialog(idx),
-                    ),
-                    spacing="4",
-                    align_items="center",
+                    rx.text("—", color=COLORS["slate"], font_family=FONT_BODY, size="2"),
                 ),
             ),
             vertical_align="middle",
@@ -1447,25 +1433,47 @@ def access_control_card() -> rx.Component:
                     align_items="center",
                 ),
                 rx.spacer(),
-                rx.button(
-                    rx.icon("plus", size=15),
-                    "Add Admin",
-                    background="#4F46E5",
-                    color="white",
-                    font_family=FONT_BODY,
-                    font_size="13px",
-                    font_weight="medium",
-                    border_radius="8px",
-                    padding="0.5em 1.2em",
-                    cursor="pointer",
-                    _hover={"background": "#4338CA"},
-                    transition="all 0.15s ease",
-                    on_click=SettingsState.open_add_admin_dialog,
+                rx.cond(
+                    AuthState.admin_role == "Master Admin",
+                    rx.button(
+                        rx.icon("plus", size=15),
+                        "Add Admin",
+                        background="#4F46E5",
+                        color="white",
+                        font_family=FONT_BODY,
+                        font_size="13px",
+                        font_weight="medium",
+                        border_radius="8px",
+                        padding="0.5em 1.2em",
+                        cursor="pointer",
+                        _hover={"background": "#4338CA"},
+                        transition="all 0.15s ease",
+                        on_click=SettingsState.open_add_admin_dialog,
+                    ),
+                    rx.fragment(),
                 ),
                 width="100%",
                 align_items="center",
                 padding_bottom="1.2em",
                 border_bottom=f"1px solid {COLORS['line']}",
+            ),
+
+            rx.cond(
+                SettingsState.admin_management_error != "",
+                rx.box(
+                    rx.text(
+                        SettingsState.admin_management_error,
+                        color=COLORS["danger"],
+                        font_family=FONT_BODY,
+                        size="2",
+                    ),
+                    background="#FEF2F2",
+                    border="1px solid #FECACA",
+                    border_radius="8px",
+                    padding="0.75em 1em",
+                    width="100%",
+                ),
+                rx.fragment(),
             ),
 
             # Administrator Table
@@ -2303,7 +2311,6 @@ def settings_page() -> rx.Component:
         add_admin_dialog(),
         edit_admin_dialog(),
         delete_admin_dialog(),
-        view_admin_dialog(),
 
         spacing="5",
         width="100%",

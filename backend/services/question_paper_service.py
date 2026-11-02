@@ -174,6 +174,7 @@ class QuestionPaperService:
     def import_upload(self, assessment_id, test_id, filename, data):
         with self.tests._lock():
             test = self.tests.get_test(test_id, assessment_id)
+            self.tests.ensure_unlocked(test_id)
             validated = self.validate_workbook(data, filename)
             self._check_dependencies(test, first_upload=not bool(test.get("question_paper")))
             self.repository.get_by_test(test_id)  # Do not overwrite corrupt existing metadata.
@@ -230,6 +231,7 @@ class QuestionPaperService:
     def remove_paper(self, assessment_id, test_id):
         with self.tests._lock():
             test = self.tests.get_test(test_id, assessment_id)
+            self.tests.ensure_unlocked(test_id)
             self._check_dependencies(test)
             self.repository.get_by_test(test_id)
             self.repository.save_for_test(test_id, None)

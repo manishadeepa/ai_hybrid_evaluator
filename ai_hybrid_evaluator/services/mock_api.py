@@ -1,100 +1,50 @@
-"""
-Mock authentication API.
+"""Authentication helpers used by the Admin sign-in and password forms."""
 
-Simulates backend responses so the frontend can be built and tested
-independently. The backend developer will replace the INSIDE of these
-two functions with real API calls — the function names, arguments, and
-return shape ({"success": bool, "error": str}) should stay the same so
-nothing else in the app needs to change later.
-"""
-
-import os
 import re
-import pandas as pd
+
+from backend.services.group_admin_service import GroupAdminService
+from backend.services.master_admin_service import MasterAdminService
 
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
-def find_admin_excel_path() -> str | None:
-    """Locate the admin_database.xlsx file in the project's data folder."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    search_dirs = [
-        os.path.join(base_dir, "..", "data"),
-        os.path.join(base_dir, "..", "data", "admin_database"),
-        os.path.join(base_dir, "data"),
-        os.path.join(os.getcwd(), "ai_hybrid_evaluator", "data"),
-        os.path.join(os.getcwd(), "ai_hybrid_evaluator", "data", "admin_database"),
-        os.path.join(os.getcwd(), "data"),
-        os.path.join(os.getcwd(), "data", "admin_database"),
-    ]
-    for d in search_dirs:
-        if os.path.isdir(d):
-            direct = os.path.join(d, "admin_database.xlsx")
-            if os.path.isfile(direct):
-                return direct
-            for fname in os.listdir(d):
-                if fname.lower().endswith(".xlsx") and not fname.startswith("~$"):
-                    return os.path.join(d, fname)
-    return None
-
-
-def mock_login(email: str, password: str) -> dict:
-    """
-    Authenticate Admin against the Excel database in the project's data folder.
-    Matches EmployeeMail (case-insensitive) and Default Password (exact).
-    """
-    clean_email = (email or "").strip()
+def mock_login(username: str, password: str) -> dict:
+    """Authenticate against the persistent Master Admin or Group Admin stores."""
+    clean_username = (username or "").strip()
     clean_password = (password or "").strip()
 
-    if not clean_email or not clean_password:
-        return {"success": False, "error": "Invalid Admin email or password."}
-
-    excel_path = find_admin_excel_path()
-    if not excel_path or not os.path.isfile(excel_path):
-        return {
-            "success": False,
-            "error": "Admin database file could not be found in the data folder.",
-        }
+    if not clean_username or not clean_password:
+        return {"success": False, "error": "Invalid Admin username or password."}
 
     try:
-        df = pd.read_excel(excel_path)
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Unable to read Admin database: {str(e)}",
-        }
-
-    col_map = {str(c).strip().lower(): c for c in df.columns}
-    mail_col = col_map.get("employeemail")
-    pwd_col = col_map.get("default password") or col_map.get("password")
-    id_col = col_map.get("employeeid")
-    name_col = col_map.get("employeename")
-
-    if not mail_col or not pwd_col:
-        return {
-            "success": False,
-            "error": "Admin database is missing required columns (EmployeeMail, Default Password).",
-        }
-
-    target_email = clean_email.lower()
-
-    for _, row in df.iterrows():
-        row_email = str(row[mail_col]).strip().lower() if pd.notna(row[mail_col]) else ""
-        row_pwd = str(row[pwd_col]).strip() if pd.notna(row[pwd_col]) else ""
-
-        if row_email == target_email and row_pwd == clean_password:
-            emp_id = str(row[id_col]).strip() if id_col and pd.notna(row[id_col]) else ""
-            emp_name = str(row[name_col]).strip() if name_col and pd.notna(row[name_col]) else ""
-            emp_mail = str(row[mail_col]).strip() if pd.notna(row[mail_col]) else ""
+        master_admin = MasterAdminService().authenticate(clean_username, clean_password)
+        if master_admin:
             return {
                 "success": True,
                 "error": "",
-                "employee_id": emp_id,
-                "employee_name": emp_name or "Admin",
-                "employee_mail": emp_mail,
+                "employee_id": "",
+                "employee_name": master_admin["username"],
+                "employee_mail": master_admin["username"],
+                "role": "Master Admin",
             }
 
-    return {"success": False, "error": "Invalid Admin email or password."}
+        group_admin = GroupAdminService().authenticate(clean_username, clean_password)
+    except (OSError, ValueError):
+        return {
+            "success": False,
+            "error": "Unable to load administrator accounts. Please contact your administrator.",
+        }
+
+    if group_admin:
+        return {
+            "success": True,
+            "error": "",
+            "employee_id": group_admin.get("employee_id", ""),
+            "employee_name": group_admin["username"],
+            "employee_mail": group_admin["username"],
+            "role": "Group Admin",
+        }
+    return {"success": False, "error": "Invalid Admin username or password."}
 
 
 def mock_signup(username: str, employee_id: str, email: str, password: str, confirm_password: str) -> dict:
@@ -110,21 +60,14 @@ def mock_signup(username: str, employee_id: str, email: str, password: str, conf
     return {"success": True, "error": ""}
 
 
-def change_admin_password(email: str, current_password: str, new_password: str, confirm_password: str) -> dict:
-    """
-    Change an Admin's password in the Excel database.
-    - Finds the employee by EmployeeMail (case-insensitive).
-    - Verifies current_password matches the stored Default Password.
-    - Validates new_password == confirm_password.
-    - Writes the new password back to the Excel file.
-    - Returns {"success": bool, "error": str}.
-    """
-    clean_email = (email or "").strip()
+def change_admin_password(username: str, current_password: str, new_password: str, confirm_password: str) -> dict:
+    """Change a stored admin password after verifying the current password."""
+    clean_username = (username or "").strip()
     clean_current = (current_password or "").strip()
     clean_new = (new_password or "").strip()
     clean_confirm = (confirm_password or "").strip()
 
-    if not clean_email or not clean_current or not clean_new or not clean_confirm:
+    if not clean_username or not clean_current or not clean_new or not clean_confirm:
         return {"success": False, "error": "Please fill in all fields."}
 
     if clean_new != clean_confirm:
@@ -133,49 +76,26 @@ def change_admin_password(email: str, current_password: str, new_password: str, 
     if clean_new == clean_current:
         return {"success": False, "error": "New password must be different from the current password."}
 
-    excel_path = find_admin_excel_path()
-    if not excel_path or not os.path.isfile(excel_path):
+    try:
+        master_admin_service = MasterAdminService()
+        master_admin = master_admin_service.authenticate(clean_username, clean_current)
+        if master_admin:
+            master_admin_service.update(
+                master_admin["username"], master_admin["username"], clean_new
+            )
+            return {"success": True, "error": ""}
+
+        group_admin_service = GroupAdminService()
+        group_admin = group_admin_service.authenticate(clean_username, clean_current)
+        if group_admin:
+            group_admin_service.update(
+                group_admin["username"], group_admin["username"], clean_new
+            )
+            return {"success": True, "error": ""}
+    except (OSError, ValueError):
         return {
             "success": False,
-            "error": "Admin database file could not be found in the data folder.",
+            "error": "Unable to update the administrator password. Please try again.",
         }
 
-    try:
-        df = pd.read_excel(excel_path)
-    except Exception as e:
-        return {"success": False, "error": f"Unable to read Admin database: {str(e)}"}
-
-    col_map = {str(c).strip().lower(): c for c in df.columns}
-    mail_col = col_map.get("employeemail")
-    pwd_col = col_map.get("default password") or col_map.get("password")
-
-    if not mail_col or not pwd_col:
-        return {
-            "success": False,
-            "error": "Admin database is missing required columns.",
-        }
-
-    target_email = clean_email.lower()
-    matched_idx = None
-
-    for idx, row in df.iterrows():
-        row_email = str(row[mail_col]).strip().lower() if pd.notna(row[mail_col]) else ""
-        if row_email == target_email:
-            matched_idx = idx
-            row_pwd = str(row[pwd_col]).strip() if pd.notna(row[pwd_col]) else ""
-            if row_pwd != clean_current:
-                return {"success": False, "error": "Current password is incorrect."}
-            break
-
-    if matched_idx is None:
-        return {"success": False, "error": "No Admin account found with that email address."}
-
-    # Update only the Default Password for that row
-    df.at[matched_idx, pwd_col] = clean_new
-
-    try:
-        df.to_excel(excel_path, index=False)
-    except Exception as e:
-        return {"success": False, "error": f"Failed to save updated password: {str(e)}"}
-
-    return {"success": True, "error": ""}
+    return {"success": False, "error": "Current password is incorrect."}

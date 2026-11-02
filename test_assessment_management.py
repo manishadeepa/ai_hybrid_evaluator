@@ -23,9 +23,9 @@ class AssessmentTests(unittest.TestCase):
             facilitator_catalog=lambda: self.facilitators, candidate_catalog=lambda: self.candidates)
 
     def create(self, name='Assessment'):
-        return self.service.create_assessment({'name': name, 'status': 'Draft',
+        return self.service.save_assessment({'name': name, 'status': 'Draft',
             'description': 'keep', 'tests': ['Formative 1'], 'test_dates': {'Formative 1': 'legacy date'},
-            'question_papers': {'Formative 1': 'paper.xlsx'}})
+            'question_papers': {'Formative 1': 'paper.xlsx'}},test_created_by='F001')
 
     def test_m1_crud_partial_update_reload_delete(self):
         a=self.create(); aid=a['assessment_id']
@@ -249,15 +249,18 @@ class AssessmentTests(unittest.TestCase):
     def test_manual_persistence_regression_isolated(self):
         from backend.repositories.manual_evaluation_repository import ManualEvaluationRepository
         from backend.services.manual_evaluation_service import ManualEvaluationService
+        a = self.create()
         repo=object.__new__(ManualEvaluationRepository)
         repo.storage=JSONRepository(self.folder/'manual.json')
         service=ManualEvaluationService(repo)
         row={'q_no':'Q1','question':'Question','response':'Answer','max_marks':4,'awarded_marks':3,'justification':'Reason'}
-        result=service.evaluate_and_save('C1','Assessment','Formative 1',[row])
+        result=service.evaluate_and_save('C1','Assessment','Formative 1',[row],
+            test_id=a['test_ids']['Formative 1'],facilitator_id='F001',role='facilitator')
         self.assertEqual(result['percentage'],75)
         self.assertEqual(service.get_evaluation('C1','Assessment','Formative 1')['total_marks'],3)
         self.assertIsNone(service.get_evaluation('C1','Other','Formative 1'))
-        with self.assertRaises(ValueError): service.evaluate_and_save('C1','Assessment','Formative 1',[dict(row,awarded_marks=5)])
+        with self.assertRaises(ValueError): service.evaluate_and_save('C1','Assessment','Formative 1',[dict(row,awarded_marks=5)],
+            test_id=a['test_ids']['Formative 1'],facilitator_id='F001',role='facilitator')
         self.assertEqual(service.get_evaluation('C1','Assessment','Formative 1'),result)
 
 if __name__ == '__main__': unittest.main()

@@ -2,6 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class AIConnectionRepository:
@@ -15,10 +16,11 @@ class AIConnectionRepository:
         )
 
     def get_all(self):
-        if not self.file_path.exists():
+        path = resolve_data_path(self.file_path)
+        if not path.exists():
             return []
 
-        rows = JSONRepository(self.file_path).get_all()
+        rows = JSONRepository(path).get_all()
 
         ids = [row.get("connection_id") for row in rows]
 
@@ -73,6 +75,6 @@ class AIConnectionRepository:
         saved["active"] = True
         updated.append(saved)
 
-        JSONRepository(self.file_path).save_all(updated)
+        JSONRepository(resolve_data_path(self.file_path)).save_all(updated)
 
         return deepcopy(saved)

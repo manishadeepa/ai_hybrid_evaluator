@@ -749,6 +749,10 @@ def test_card(item: dict) -> rx.Component:
                 weight="bold",
                 color=COLORS["ink"],
             ),
+            rx.cond(
+                item["is_locked"],
+                rx.badge("Locked · View only", color_scheme="gray", variant="soft", size="1"),
+            ),
             rx.spacer(),
             # Date picker
             rx.vstack(
@@ -758,6 +762,7 @@ def test_card(item: dict) -> rx.Component:
                     value=test_date,
                     min=AdminState.min_test_date,
                     on_change=lambda v: AdminState.set_test_date(test_name, v),
+                    disabled=item["is_locked"],
                     size="1",
                     width="160px",
                     font_family=FONT_BODY,
@@ -768,6 +773,7 @@ def test_card(item: dict) -> rx.Component:
             rx.button(
                 rx.icon("trash-2", size=13),
                 on_click=AdminState.remove_test_from_selected_assessment(test_name),
+                disabled=item["is_locked"],
                 size="1",
                 variant="ghost",
                 color=COLORS["danger"],
@@ -876,6 +882,10 @@ def assessment_tests_dialog() -> rx.Component:
                             weight="bold",
                             color=COLORS["ink"],
                         ),
+                        rx.cond(
+                            AdminState.current_assessment_final_test_is_locked,
+                            rx.badge("Locked · View only", color_scheme="gray", variant="soft", size="1"),
+                        ),
                         rx.spacer(),
                         # Date picker for Summative Test
                         rx.vstack(
@@ -885,6 +895,7 @@ def assessment_tests_dialog() -> rx.Component:
                                 value=AdminState.current_assessment_final_test_date,
                                 min=AdminState.min_test_date,
                                 on_change=lambda v: AdminState.set_test_date(AdminState.current_assessment_final_test, v),
+                                disabled=AdminState.current_assessment_final_test_is_locked,
                                 size="1",
                                 width="160px",
                                 font_family=FONT_BODY,
@@ -1017,6 +1028,10 @@ def test_details_dialog() -> rx.Component:
                         AdminState.viewing_test_is_final,
                         rx.badge("Summative", color_scheme="amber", variant="soft", size="1"),
                         rx.badge("Formative", color_scheme="indigo", variant="soft", size="1"),
+                    ),
+                    rx.cond(
+                        AdminState.viewing_test_is_locked,
+                        rx.badge("Locked · View only", color_scheme="gray", variant="soft", size="1"),
                     ),
                     spacing="2",
                     align_items="center",

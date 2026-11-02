@@ -5,8 +5,15 @@ from backend.repositories.manual_evaluation_repository import ManualEvaluationRe
 class ManualEvaluationService:
     """Business logic for manual candidate evaluation."""
 
-    def __init__(self, repository=None):
+    def __init__(self, repository=None, tests=None):
         self.repository = repository or ManualEvaluationRepository()
+        if tests is None:
+            from backend.repositories.test_repository import TestRepository
+            from backend.services.test_service import TestService
+
+            data_dir = self.repository.storage.file_path.parent
+            tests = TestService(TestRepository(data_dir / "tests.json"))
+        self.tests = tests
 
     def get_evaluation(
         self,
@@ -37,6 +44,10 @@ class ManualEvaluationService:
         assessment_name: str,
         test_name: str,
         responses: list[dict],
+        *,
+        test_id: str,
+        facilitator_id: str,
+        role: str,
     ) -> dict:
         """Validate question-wise marks, calculate totals, and save evaluation."""
 
@@ -48,6 +59,11 @@ class ManualEvaluationService:
 
         if not test_name:
             raise ValueError("Test name is required.")
+
+        test = self.tests.authorize_evaluation(test_id, facilitator_id, role)
+        assessment = self.tests.get_assessment(test_id)
+        if test["test_name"] != test_name or assessment["name"] != assessment_name:
+            raise ValueError("Evaluation identity does not match the selected assessment/test.")
 
         if not responses:
             raise ValueError("No candidate responses were provided.")
@@ -161,6 +177,8 @@ class ManualEvaluationService:
 
         evaluation = {
             "candidate_id": candidate_id,
+            "assessment_id": test["assessment_id"],
+            "test_id": test_id,
             "assessment_name": assessment_name,
             "test_name": test_name,
             "evaluation_type": "manual",
@@ -171,4 +189,52 @@ class ManualEvaluationService:
             "questions": questions,
         }
 
-        return self.repository.save(evaluation)
+        return self.repository.save(
+            evaluation,
+            facilitator_id=facilitator_id,
+            role=role,
+        )
+
+    def update_review_result(self, candidate_id, assessment_name, test_name, test_id, question_no, *,
+                             awarded_marks=None, justification=None, remarks=None,
+                             facilitator_id, role):
+        test = self.tests.authorize_evaluation(test_id, facilitator_id, role)
+        assessment = self.tests.get_assessment(test_id)
+        if test["test_name"] != test_name or assessment["name"] != assessment_name:
+            raise ValueError("Evaluation identity does not match the selected assessment/test.")
+        evaluation = self.repository.get_by_key(candidate_id, assessment_name, test_name)
+        if evaluation is None:
+            raise ValueError("No saved manual evaluation exists for this candidate and test.")
+        if evaluation.get("test_id") != test_id or evaluation.get("assessment_id") != test["assessment_id"]:
+            raise ValueError("Saved manual evaluation has no matching canonical test identity.")
+        questions = evaluation.get("questions")
+        if not isinstance(questions, list):
+            raise ValueError("Saved manual evaluation questions are invalid.")
+        question = next(
+            (row for row in questions
+             if str(row.get("q_no", "")).casefold() == str(question_no).casefold()),
+            None,
+        )
+        if question is None:
+            raise ValueError("Question is not part of the saved manual evaluation.")
+        if awarded_marks is not None:
+            try:
+                marks = float(awarded_marks)
+                maximum = float(question.get("max_marks"))
+            except (TypeError, ValueError):
+                raise ValueError("Review marks must be valid numbers.") from None
+            if not 0 <= marks <= maximum:
+                raise ValueError(f"Review marks must be between 0 and {maximum}.")
+            question["marks_obtained"] = marks
+            question["percentage"] = round(100 * marks / maximum, 1) if maximum else 0.0
+        if justification is not None:
+            question["justification"] = justification
+        if remarks is not None:
+            question["remarks"] = remarks
+        evaluation["total_marks"] = round(sum(float(row["marks_obtained"]) for row in questions), 2)
+        evaluation["max_marks"] = round(sum(float(row["max_marks"]) for row in questions), 2)
+        evaluation["percentage"] = (
+            round(evaluation["total_marks"] / evaluation["max_marks"] * 100, 1)
+            if evaluation["max_marks"] else 0.0
+        )
+        return self.repository.save(evaluation, facilitator_id=facilitator_id, role=role)

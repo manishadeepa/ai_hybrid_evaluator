@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class TestDependencyService:
@@ -23,11 +24,11 @@ class TestDependencyService:
         # Completed/in-progress candidate activity and evaluation data DO block
         # deletion. Plain "Assigned" rows do not.
         for name in ("manual_evaluations.json", "ai_evaluation_runs.json"):
-            path = self.data_dir / name
+            path = resolve_data_path(self.data_dir / name)
             if path.exists() and any(matches(r) for r in JSONRepository(path).get_all()):
                 reasons.append(name)
 
-        candidate_path = self.data_dir / "test_candidates.json"
+        candidate_path = resolve_data_path(self.data_dir / "test_candidates.json")
         if candidate_path.exists():
             candidate_rows = JSONRepository(candidate_path).get_all()
             if any(

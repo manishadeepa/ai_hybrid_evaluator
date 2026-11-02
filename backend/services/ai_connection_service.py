@@ -15,6 +15,9 @@ from backend.repositories.ai_connection_repository import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+AI_EVALUATION_NOT_CONFIGURED = (
+    "AI evaluation is not configured. Please contact an administrator to check Admin Settings."
+)
 
 
 class AIConnectionService:
@@ -281,80 +284,66 @@ class AIConnectionService:
             )
         }
 
-    def get_decrypted_api_key(self, connection_id):
-        """Return a saved key for the authenticated admin edit form only."""
-        record = next(
-            (row for row in self.repository.get_all()
-             if row.get("connection_id") == connection_id),
-            None,
-        )
-        if not record:
-            raise ValueError("The saved AI connection no longer exists. Reload Settings and try again.")
-
-        encrypted_key = record.get("api_key_encrypted", "")
-        if not encrypted_key:
-            raise ValueError("The saved connection has no API key. Enter a new API key.")
-        try:
-            return (
-                self._cipher()
-                .decrypt(encrypted_key.encode("ascii"))
-                .decode("utf-8")
-            )
-        except Exception as exc:
-            raise ValueError("The saved API key could not be decrypted.") from exc
-
-    def get_active_client(self):
+    def _active_config(self):
         record = self.repository.get_active()
 
         if not record:
-            return None
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
 
         encrypted_key = record.get(
             "api_key_encrypted"
         )
 
         if not encrypted_key:
-            raise ValueError(
-                "The active AI connection has no API key."
-            )
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
 
-        model = record.get(
-            "model",
-            "",
-        ).strip()
-
-        if not model:
-            raise ValueError(
-                "Set a model/deployment before "
-                "running AI evaluation."
-            )
-
-        config = {
-            "provider": record["provider"],
-            "endpoint": record.get(
-                "endpoint",
-                "",
-            ),
-            "model": model,
-            "api_version": record.get(
-                "api_version",
-                "",
-            ),
-            "cert_path": record.get(
-                "cert_path",
-                "",
-            ),
-            "api_key": (
-                self._cipher()
-                .decrypt(
+        try:
+            config = {
+                "provider": record["provider"],
+                "endpoint": record.get("endpoint", ""),
+                "model": str(record.get("model", "")).strip(),
+                "api_version": record.get("api_version", ""),
+                "cert_path": record.get("cert_path", ""),
+                "api_key": self._cipher().decrypt(
                     encrypted_key.encode("ascii")
-                )
-                .decode("utf-8")
-            ),
-        }
+                ).decode("utf-8"),
+            }
+        except Exception:
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED) from None
 
-        client, http_client = self._make_client(
-            config
-        )
+        if not config["api_key"] or not config["model"]:
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
+        if config["provider"] == "azure":
+            endpoint = urlparse(config["endpoint"])
+            if (
+                endpoint.scheme != "https"
+                or not endpoint.netloc
+                or not config["api_version"]
+            ):
+                raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
+        elif config["provider"] != "openai":
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
+        if config["cert_path"] and not Path(config["cert_path"]).is_file():
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED)
+        return config
 
-        return client, model, http_client
+    def validate_active_configuration(self):
+        """Validate saved Admin Settings without contacting the AI provider."""
+        config = self._active_config()
+        http_client = None
+        try:
+            _, http_client = self._make_client(config)
+        except Exception:
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED) from None
+        finally:
+            if http_client is not None:
+                http_client.close()
+
+    def get_active_client(self):
+        config = self._active_config()
+        try:
+            client, http_client = self._make_client(config)
+        except Exception:
+            raise ValueError(AI_EVALUATION_NOT_CONFIGURED) from None
+
+        return client, config["model"], http_client

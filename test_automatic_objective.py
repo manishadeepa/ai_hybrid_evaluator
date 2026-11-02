@@ -36,15 +36,32 @@ def workbook(kind='objective', questions=None):
 class AutomaticTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
+        from backend.services.ai_connection_service import AIConnectionService
+        config_patch=patch.object(
+            AIConnectionService,
+            'validate_active_configuration',
+            return_value=None,
+        )
+        config_patch.start();self.addCleanup(config_patch.stop)
         self.root=Path(temp.name);previous=Path.cwd();os.chdir(self.root);self.addCleanup(os.chdir,previous)
         self.candidates=CandidateManagementService(CandidateRepository(self.root/'candidates.json'))
         self.assignments=CandidateAssignmentService(self.candidates)
         self.assessments=self.candidates.assessments;self.tests=self.assessments.tests
-        self.a=self.assessments.create_assessment({'name':'Assessment','tests':['Test']})
-        self.aid=self.a['assessment_id'];self.tid=self.a['test_ids']['Test']
+        self.a=self.assessments.create_assessment({'name':'Assessment'})
+        self.aid=self.a['assessment_id']
+        test=self.tests.create_test(self.aid,{'test_name':'Test'},created_by='F001')
+        self.tid=test['test_id']
         self.papers=QuestionPaperService(self.tests)
         self.responses=ResponseLifecycleService(self.assignments)
         self.runs=AIEvaluationRunService(AIEvaluationRunRepository(self.root/'runs.json'),self.tests)
+        for name in ('create_run','request_stop','recover_interrupted','restart','start','_next_chunk',
+                     'checkpoint','finish','execute','prepare_single','prepare_batch'):
+            bound=getattr(self.runs,name)
+            def owner_call(*args,_bound=bound,**kwargs):
+                kwargs.setdefault('facilitator_id','F001')
+                kwargs.setdefault('role','facilitator')
+                return _bound(*args,**kwargs)
+            setattr(self.runs,name,owner_call)
         self.manual=object.__new__(ManualEvaluationRepository);self.manual.storage=JSONRepository(self.root/'manual.json')
         self.results=EvaluationResultService(candidates=self.candidates,manual_repository=self.manual,ai_repository=self.runs.repository)
         for cid in ('C1','C2'):
@@ -216,6 +233,29 @@ class AutomaticTests(unittest.TestCase):
         self.assertEqual(rows_by_no['Q3']['answer_status'],'Unanswered')
         self.assertTrue(all(r['test_id'] == self.tid for r in rows))
 
+    def test_objective_evaluation_needs_no_ai_configuration_or_external_client(self):
+        from backend.services.ai_connection_service import AIConnectionService
+
+        self.ingest()
+        self.submit()
+        with patch.object(
+            AIConnectionService,
+            'validate_active_configuration',
+            side_effect=AssertionError('Objective grading must not load AI settings.'),
+        ) as configuration, patch(
+            ENGINE + '_load_client',
+            side_effect=AssertionError('Objective grading must not initialize a client.'),
+        ) as client, patch(
+            ENGINE + '_evaluate_with_retry',
+            side_effect=AssertionError('Objective grading must not make an AI request.'),
+        ) as request:
+            run = self.execute_local(self.prepare())
+
+        self.assertEqual(run['status'], 'completed')
+        configuration.assert_not_called()
+        client.assert_not_called()
+        request.assert_not_called()
+
     def test_all_candidates_and_labelled_answers(self):
         self.ingest();self.submit();self.submit('C2',{'1':'b','2':'B) Beta','3':'B) Wrong'})
         rows=[]
@@ -230,25 +270,33 @@ class AutomaticTests(unittest.TestCase):
 
     def test_legacy_and_cross_assessment_fail_before_azure(self):
         from test_ai_evaluation_runs import records
-        run=self.runs.create_run('Assessment','Test',records(),assessment_id=self.aid,test_id=self.tid)
-        failed=self.execute_local(run);self.assertEqual(failed['status'],'failed');self.assertIn('upload',failed['error'])
-        self.ingest();self.submit();run=self.prepare();run['assessment_id']='wrong';self.runs.repository.save(run)
-        failed=self.execute_local(run);self.assertEqual(failed['status'],'failed');self.assertIn('assessment',failed['error'])
+        run=self.runs.create_run('Assessment','Test',records('C2'),assessment_id=self.aid,test_id=self.tid)
+        with self.assertRaisesRegex(ValueError, 'upload'):
+            self.execute_local(run)
+        self.assertEqual(self.runs.get_run(run['run_id'])['status'],'idle')
+        self.ingest();self.submit();run=self.prepare();run['assessment_id']='wrong'
+        JSONRepository(self.runs.repository.file_path).save_all([run])
+        with self.assertRaisesRegex(ValueError, 'assessment'):
+            self.execute_local(run)
 
     def test_wrong_candidate_unsubmitted_and_tampered_input_rejected(self):
         self.ingest();self.submit();run=self.prepare()
         for q in run['questions']:q['record']['candidate_id']='C2'
-        run['candidate_ids']=['C2'];run['candidate_id']='C2';self.runs.repository.save(run)
-        failed=self.execute_local(run);self.assertIn('finalized submission',failed['error'])
+        run['candidate_ids']=['C2'];run['candidate_id']='C2';self.runs.repository.save(run,facilitator_id='F001',role='facilitator')
+        with self.assertRaisesRegex(ValueError, 'finalized submission'):
+            self.execute_local(run)
         run=self.prepare()
         target = next(q for q in run['questions'] if q['record']['question_no'] == 'Q1')
         target['record']['candidate_answer'] = 'A'
-        self.runs.repository.save(run)
-        self.assertIn('differs',self.execute_local(run)['error'])
+        self.runs.repository.save(run,facilitator_id='F001',role='facilitator')
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            self.execute_local(run)
 
     def test_missing_question_not_success(self):
-        self.ingest();self.submit();run=self.prepare();run['questions'].pop();self.runs.repository.save(run)
-        failed=self.execute_local(run);self.assertEqual(failed['status'],'failed');self.assertIn('every question',failed['error'])
+        self.ingest();self.submit();run=self.prepare();run['questions'].pop();self.runs.repository.save(run,facilitator_id='F001',role='facilitator')
+        with self.assertRaisesRegex(ValueError, 'every question'):
+            self.execute_local(run)
+        self.assertEqual(self.runs.get_run(run['run_id'])['status'],'idle')
 
     def test_subjective_single_and_batch_use_existing_engine(self):
         self.ingest('subjective');self.submit()
@@ -263,7 +311,10 @@ class AutomaticTests(unittest.TestCase):
 
     def test_manual_precedence_and_report(self):
         self.ingest();self.submit();self.execute_local(self.prepare())
-        ManualEvaluationService(self.manual).evaluate_and_save('C1','Assessment','Test',[dict(q_no='Q1',question='Review',response='B',max_marks=1,awarded_marks=0,justification='Manual review')])
+        ManualEvaluationService(self.manual).evaluate_and_save(
+            'C1','Assessment','Test',
+            [dict(q_no='Q1',question='Review',response='B',max_marks=1,awarded_marks=0,justification='Manual review')],
+            test_id=self.tid,facilitator_id='F001',role='facilitator')
         value=self.results.get_result('C1',self.aid,self.tid);self.assertEqual(value['evaluation_type'],'manual')
         self.assertIn('Manual review',self.results.export_csv().decode('utf-8-sig'))
 
@@ -274,13 +325,13 @@ class AutomaticTests(unittest.TestCase):
         self.assertEqual(selected_option(' b ',choices),'B')
 
     def test_objective_stop_resume_and_restart(self):
-        from backend.services.question_type_schema import evaluate_objective
+        from backend.services.ai_evaluation_run_service import evaluate_objective as original_evaluate_objective
         self.ingest();self.submit();run=self.prepare();calls=[]
         def grade(record, question):
             calls.append(record['question_no'])
             if len(calls)==1:self.runs.request_stop(run['run_id'])
-            return evaluate_objective(record,question)
-        with patch('backend.services.question_type_schema.evaluate_objective',side_effect=grade):
+            return original_evaluate_objective(record,question)
+        with patch('backend.services.ai_evaluation_run_service.evaluate_objective',side_effect=grade):
             paused=self.execute_local(run);self.assertEqual(paused['status'],'paused')
             finished=self.execute_local(paused);self.assertEqual(finished['status'],'completed')
         self.assertEqual(set(calls), {'Q1','Q2','Q3'})
@@ -298,10 +349,15 @@ class AutomaticTests(unittest.TestCase):
         cls=next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='CandidateState')
         method=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='start_test')
         state=SimpleNamespace(_get_current_candidate_id=AsyncMock(return_value='C1'),max_violations=3,timer_session_id=0,_save_current_test_record=Mock())
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
         rx=SimpleNamespace(call_script=lambda script:script,redirect=lambda url:url,toast=SimpleNamespace(error=lambda text: (_ for _ in ()).throw(AssertionError(text))))
         loaded={}
         namespace={'asyncio':asyncio,'AssessmentService':lambda:self.assessments,'ResponseLifecycleService':lambda:self.responses,
-                   'PERSISTED_CANDIDATE_TEST_DATA':{},'LOADED_TEST_QUESTIONS':loaded,'rx':rx,'CandidateState':SimpleNamespace(run_timer='timer')}
+                   'PERSISTED_CANDIDATE_TEST_DATA':{},'LOADED_TEST_QUESTIONS':loaded,'rx':rx,'CandidateState':SimpleNamespace(run_timer='timer'),
+                   'datetime':datetime,'timedelta':timedelta,'ZoneInfo':ZoneInfo}
+        timing_helper=next(n for n in source.body if isinstance(n,ast.FunctionDef) and n.name=='_parse_test_timing_bounds')
+        exec(compile(ast.Module(body=[timing_helper],type_ignores=[]),'candidate','exec'),namespace)
         exec(compile(ast.Module(body=[method],type_ignores=[]),'candidate','exec'),namespace)
         asyncio.run(namespace['start_test'](state,'Assessment','Test'))
         self.assertEqual(state.mcq_answers,{'1':'B'});self.assertEqual(state.answers,{})
@@ -314,7 +370,11 @@ class AutomaticTests(unittest.TestCase):
         self.ingest();self.submit();other=self.submit('C2')
         with self.assertRaisesRegex(ValueError,'does not belong'):
             self.runs.prepare_single('Assessment','Test','C1','C1',self.papers.upload_dir/self.paper['filename'],other['response_file'],assessment_id=self.aid,test_id=self.tid)
-        legacy=self.tests.create_test(self.aid,{'test_name':'Legacy'})
+        legacy=self.tests.create_test(
+            self.aid,
+            {'test_name':'Legacy'},
+            created_by='F001',
+        )
         with self.assertRaisesRegex(ValueError,'upload'):
             self.runs.prepare_single('Assessment','Legacy','C1','C1','unused','unused',assessment_id=self.aid,test_id=legacy['test_id'])
         self.assertEqual(self.runs.repository.get_all(),[])

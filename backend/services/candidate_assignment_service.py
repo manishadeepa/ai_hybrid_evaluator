@@ -25,6 +25,7 @@ class CandidateAssignmentService:
     def assign_candidate_to_test(self, candidate_id, test_id):
         with _PERSISTENCE_LOCK:
             candidate, test = self._eligible(candidate_id, test_id)
+            self.assessments.tests.ensure_unlocked(test_id)
             identity = candidate["candidate_id"]
             if self.repository.get(identity, test_id):
                 # Automatic propagation and explicit assignment share an idempotent API.
@@ -49,6 +50,7 @@ class CandidateAssignmentService:
 
     def update_test_status(self, candidate_id, test_id, status):
         with _PERSISTENCE_LOCK:
+            self.assessments.tests.ensure_unlocked(test_id)
             record = self.get_test_assignment(candidate_id, test_id)
             transitions = {"Assigned": {"In Progress"}, "In Progress": {"Submitted", "Disqualified"}, "Submitted": set(), "Disqualified": set()}
             if status == record["status"]:

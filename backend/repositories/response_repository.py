@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import resolve_data_path
 
 
 class ResponseRepository:
@@ -37,9 +38,10 @@ class ResponseRepository:
             raise ValueError("Duplicate response session in responses.json.")
 
     def get_all(self):
-        if not self.file_path.exists():
+        path = resolve_data_path(self.file_path)
+        if not path.exists():
             return []
-        rows = JSONRepository(self.file_path).get_all()
+        rows = JSONRepository(path).get_all()
         self._validate(rows)
         return rows
 
@@ -63,43 +65,57 @@ class ResponseRepository:
         )
 
     def save(self, record):
-        # Never retain a snapshot between service operations: another candidate
-        # may have saved in the meantime. The operation-scoped JSON read cache
-        # removes duplicate parsing without retaining a stale read for save().
-        rows = self.get_all()
+        from backend.services.test_service import test_mutation_guard
 
-        key = tuple(
-            record.get(k)
-            for k in ("candidate_id", "assessment_id", "test_id")
-        )
+        with test_mutation_guard(
+            test_id=record.get("test_id"),
+            assessment_id=record.get("assessment_id"),
+            test_name=record.get("test_name"),
+            data_dir=self.file_path.parent,
+        ):
+            # Never retain a snapshot between service operations: another candidate
+            # may have saved in the meantime. The operation-scoped JSON read cache
+            # removes duplicate parsing without retaining a stale read for save().
+            rows = self.get_all()
 
-        rows = [
-            r for r in rows
-            if tuple(
-                r[k]
+            key = tuple(
+                record.get(k)
                 for k in ("candidate_id", "assessment_id", "test_id")
-            ) != key
-        ] + [deepcopy(record)]
+            )
 
-        self._validate(rows)
-        JSONRepository(self.file_path).save_all(rows)
-        return deepcopy(record)
+            rows = [
+                r for r in rows
+                if tuple(
+                    r[k]
+                    for k in ("candidate_id", "assessment_id", "test_id")
+                ) != key
+            ] + [deepcopy(record)]
+
+            self._validate(rows)
+            JSONRepository(self.file_path).save_all(rows)
+            return deepcopy(record)
 
     def delete_by_test(self, assessment_id, test_id):
         """Delete response sessions belonging only to one assessment/test."""
-        rows = self.get_all()
+        from backend.services.test_service import test_mutation_guard
 
-        remaining = [
-            row
-            for row in rows
-            if not (
-                row["assessment_id"] == assessment_id
-                and row["test_id"] == test_id
-            )
-        ]
+        with test_mutation_guard(
+            test_id=test_id,
+            assessment_id=assessment_id,
+            data_dir=self.file_path.parent,
+        ):
+            rows = self.get_all()
 
-        self._validate(remaining)
-        JSONRepository(self.file_path).save_all(remaining)
+            remaining = [
+                row
+                for row in rows
+                if not (
+                    row["assessment_id"] == assessment_id
+                    and row["test_id"] == test_id
+                )
+            ]
 
-        return len(rows) - len(remaining)
+            self._validate(remaining)
+            JSONRepository(self.file_path).save_all(remaining)
 
+            return len(rows) - len(remaining)

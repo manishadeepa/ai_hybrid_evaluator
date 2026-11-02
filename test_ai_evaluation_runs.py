@@ -6,6 +6,7 @@ from unittest.mock import patch
 from pathlib import Path
 from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
+from backend.services import ai_evaluation_run_service as run_service_module
 
 
 def records(candidate='C1', count=3):
@@ -22,13 +23,30 @@ def result():
 class RunTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        from backend.services.ai_connection_service import AIConnectionService
+        config_patch = patch.object(
+            AIConnectionService,
+            "validate_active_configuration",
+            return_value=None,
+        )
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
         self.repo=AIEvaluationRunRepository(Path(self.temp.name)/'runs.json')
         self.service=AIEvaluationRunService(self.repo)
         from backend.services.assessment_service import AssessmentService
         from backend.repositories.assessment_repository import AssessmentRepository
         assessments=AssessmentService(AssessmentRepository(Path(self.temp.name)/'assessments.json'), self.service.tests)
         assessment=assessments.create_assessment({'name':'Assessment'})
-        test=self.service.tests.create_test(assessment['assessment_id'], {'test_name':'Test','test_type':'subjective'})
+        self.actor={'facilitator_id':'F001','role':'facilitator'}
+        for name in ('create_run','request_stop','recover_interrupted','restart','start','_next_chunk',
+                     'checkpoint','finish','execute','prepare_single','prepare_batch'):
+            bound=getattr(self.service,name)
+            def owner_call(*args,_bound=bound,**kwargs):
+                kwargs.setdefault('facilitator_id','F001')
+                kwargs.setdefault('role','facilitator')
+                return _bound(*args,**kwargs)
+            setattr(self.service,name,owner_call)
+        test=self.service.tests.create_test(assessment['assessment_id'], {'test_name':'Test','test_type':'subjective'},created_by='F001')
         self.ids={'assessment_id':assessment['assessment_id'],'test_id':test['test_id']}
 
     def create(self, **kwargs):
@@ -74,11 +92,47 @@ class RunTests(unittest.TestCase):
         run=self.create()
         with self.assertRaises(ValueError): self.service.request_stop(run['run_id'])
         with self.assertRaises(ValueError): self.create()
-        for assessment,test,candidate in [('Other','Test','C1'),('Assessment','Other','C1'),('Assessment','Test','C2')]:
-            self.service.create_run(assessment,test,records(candidate))
+        self.service.create_run('Assessment','Test',records('C2'),**self.ids)
         run=self.service.start(run['run_id'])
         with self.assertRaises(ValueError): self.service.start(run['run_id'])
-        self.assertEqual(len(self.repo.get_all()),4)
+        self.assertEqual(len(self.repo.get_all()),2)
+
+    def test_only_test_creator_can_mutate_run_directly(self):
+        run = self.create()
+        service = AIEvaluationRunService(self.repo, tests=self.service.tests)
+        for operation in (
+            lambda: service.start(run['run_id'], facilitator_id='F002', role='facilitator'),
+            lambda: service.request_stop(run['run_id'], facilitator_id='F002', role='facilitator'),
+            lambda: service.restart(run['run_id'], facilitator_id='F002', role='facilitator'),
+            lambda: service.execute(run['run_id'], facilitator_id='F002', role='facilitator'),
+            lambda: service.checkpoint(
+                run['run_id'], 'stale-token', 'pair',
+                result(), facilitator_id='F002', role='facilitator',
+            ),
+            lambda: service.finish(
+                run['run_id'], 'stale-token',
+                facilitator_id='F002', role='facilitator',
+            ),
+            lambda: service.update_review_result(
+                self.ids['test_id'], self.ids['assessment_id'], 'C1', 'Q1',
+                awarded_marks=1, facilitator_id='F002', role='facilitator',
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "Only the facilitator who created this test"):
+                operation()
+        self.assertEqual(service.get_run(run['run_id']), run)
+
+    def test_unknown_owner_cannot_create_evaluation_run(self):
+        unknown = self.service.tests.create_test(
+            self.ids['assessment_id'],
+            {'test_name': 'Legacy'},
+        )
+        with self.assertRaisesRegex(ValueError, 'creator is unknown'):
+            self.service.create_run(
+                'Assessment', 'Legacy', records(),
+                assessment_id=self.ids['assessment_id'],
+                test_id=unknown['test_id'],
+            )
 
     def test_malformed_storage_not_erased(self):
         self.repo.file_path.write_text('{bad')
@@ -94,7 +148,7 @@ class RunTests(unittest.TestCase):
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             run=self.service.execute(rid)
             self.assertEqual(run['status'],'paused');self.assertEqual(calls,['Q1'])
-            run=AIEvaluationRunService(self.repo).execute(rid)
+            run=self.service.execute(rid)
         self.assertEqual(run['status'],'completed');self.assertEqual(calls,['Q1','Q2','Q3'])
         self.assertEqual(run['percentage'],100)
 
@@ -106,7 +160,11 @@ class RunTests(unittest.TestCase):
         with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             run=self.service.execute(rid)
         self.assertEqual(run['status'],'failed');self.assertEqual(run['completed_questions'],2)
-        self.assertEqual(run['failed_questions'],1);self.assertEqual(run['questions'][1]['error'],'Azure error')
+        self.assertEqual(run['failed_questions'],1)
+        self.assertEqual(
+            run['questions'][1]['error'],
+            "AI evaluation request failed (ValueError). Check Admin Settings and try again.",
+        )
 
     def test_live_restart_and_duplicate_worker(self):
         rid=self.create()['run_id'];entered=threading.Event();release=threading.Event();failures=[]
@@ -131,7 +189,8 @@ class RunTests(unittest.TestCase):
 
     def test_batch_questionwise_checkpoint_stop_and_skip_completed(self):
         rows=[r for q in range(1,4) for c in ('C1','C2') for r in [records(c)[q-1]]]
-        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',**self.ids)['run_id']
+        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',
+                                    labels={'C1':'Name C1','C2':'Name C2'},**self.ids)['run_id']
         calls=[]
         def grade(client,deployment,chunk,*args):
             calls.append([(r['candidate_id'],r['question_no']) for r in chunk])
@@ -156,6 +215,7 @@ class RunTests(unittest.TestCase):
         self.assertTrue(all(q['result']['awarded_marks']==0 for q in run['questions']))
 
     def test_objective_test_is_scored_locally_without_ai_connection(self):
+        from backend.services.ai_connection_service import AIConnectionService
         row=records(count=1)[0]
         row.update(
             question_no='Q1',
@@ -167,28 +227,74 @@ class RunTests(unittest.TestCase):
         rid=self.service.create_run('Assessment','Test',[row],**self.ids)['run_id']
         with patch.object(self.service,'_canonical_test',return_value={'test_type':'objective'}), \
              patch.object(self.service,'_validate_submission_snapshot',return_value={}), \
+             patch.object(AIConnectionService,'validate_active_configuration') as configuration, \
              patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client') as client:
             run=self.service.execute(rid)
+        configuration.assert_not_called()
         client.assert_not_called()
         self.assertEqual(run['status'],'completed')
         self.assertEqual(run['questions'][0]['result']['awarded_marks'],2)
         self.assertEqual(run['questions'][0]['result']['answer_status'],'Correct')
 
-    def test_hybrid_test_still_uses_ai_connection_for_objective_question(self):
-        row=records(count=1)[0]
-        row['question_type']='objective'
-        rid=self.service.create_run('Assessment','Test',[row],**self.ids)['run_id']
+    def test_hybrid_routes_objective_locally_and_subjective_through_ai(self):
+        objective = records(count=1)[0]
+        objective.update(
+            question_no='Q1',
+            question='Select one.\nA) Alpha\nB) Beta\nC) Gamma\nD) Delta',
+            answer_key='B',
+            question_type='objective',
+        )
+        subjective = records(count=1)[0]
+        subjective.update(question_no='Q2', question_type='subjective')
+        rid=self.service.create_run(
+            'Assessment','Test',[objective,subjective],**self.ids
+        )['run_id']
         with patch.object(self.service,'_canonical_test',return_value={'test_type':'mixed'}), \
              patch.object(self.service,'_validate_submission_snapshot',return_value={}), \
-             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')) as client, \
-             patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=dict(result(),awarded_marks=2)):
+             patch.object(self.service,'_validate_ai_configuration') as configuration, \
+             patch.object(
+                 run_service_module,
+                 '_evaluate_objective_locally',
+                 return_value=dict(result(),awarded_marks=2,answer_status='Correct'),
+             ) as local_grade, \
+             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',
+                   return_value=(object(),'deployment')) as client, \
+             patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',
+                   return_value=dict(result(),awarded_marks=1)) as ai_grade:
             run=self.service.execute(rid)
+        configuration.assert_called_once()
+        local_grade.assert_called_once()
         client.assert_called_once()
+        ai_grade.assert_called_once()
         self.assertEqual(run['status'],'completed')
+        self.assertEqual(
+            [question['result']['awarded_marks'] for question in run['questions']],
+            [2, 1],
+        )
+
+    def test_subjective_missing_admin_configuration_is_actionable(self):
+        from backend.services.ai_connection_service import (
+            AIConnectionService,
+            AI_EVALUATION_NOT_CONFIGURED,
+        )
+        row=records(count=1)[0]
+        row['question_type']='subjective'
+        run=self.service.create_run('Assessment','Test',[row],**self.ids)
+        with patch.object(
+            AIConnectionService,
+            'validate_active_configuration',
+            side_effect=ValueError(AI_EVALUATION_NOT_CONFIGURED),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "AI evaluation is not configured. Please contact an administrator to check Admin Settings.",
+            ):
+                self.service.execute(run['run_id'])
+        self.assertEqual(self.service.get_run(run['run_id'])['status'],'idle')
 
     def test_recovery_does_not_steal_live_process(self):
         run=self.service.start(self.create()['run_id']);rid=run['run_id']
-        run['owner_process']='prior-process';self.repo.save(run)
+        run['owner_process']='prior-process';self.repo.save(run,**self.actor)
         with patch.object(self.service,'_owner_alive',return_value=True):
             self.assertEqual(self.service.recover_interrupted(rid)['status'],'running')
         with patch.object(self.service,'_owner_alive',return_value=False):
@@ -247,7 +353,8 @@ class RunTests(unittest.TestCase):
         from unittest.mock import Mock
         from test_ai_questionwise import grade
         rows=records('C1',1)+records('C2',1)
-        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',**self.ids)['run_id']
+        rid=self.service.create_run('Assessment','Test',rows,candidate_scope='all',
+                                    labels={'C1':'Name C1','C2':'Name C2'},**self.ids)['run_id']
         client=Mock();calls=[]
         def create(**kwargs):
             prompt=kwargs['messages'][0]['content']
@@ -257,7 +364,7 @@ class RunTests(unittest.TestCase):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({'results':[grade(a['response_id'],1) for a in chosen]})))])
         client.chat.completions.create.side_effect=create
         counts=[]
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(client,'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service.time.sleep',side_effect=lambda delay: counts.append(self.service.get_run(rid)['completed_questions'])):
+        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(client,'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service.time.sleep',side_effect=lambda delay: counts.append(self.service.get_run(rid)['completed_questions']) if delay >= 1 else None):
             run=self.service.execute(rid)
         self.assertEqual(counts,[1]);self.assertEqual([len(c) for c in calls],[2,1])
         self.assertEqual(run['completed_questions'],2)

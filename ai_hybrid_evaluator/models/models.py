@@ -138,6 +138,10 @@ class TestItem(TypedDict, total=False):
     date: str
     is_final: bool
     test_id: str
+    created_by: str
+    is_locked: bool
+    can_lock: bool
+    lock_disabled: bool
     has_qp: bool
     qp_filename: str
     weightage: str
@@ -198,5 +202,6 @@ class AssessmentDetail(TypedDict):
     approval_status: str
     facilitator_approvals: dict[str, str]
     test_dates: dict[str, str]
+    test_lock_states: dict[str, dict[str, str | bool | None]]
     test_items: list[TestItem]
     assessment_date: str

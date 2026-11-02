@@ -134,7 +134,7 @@ class FeedbackService:
                 return form
             return None
 
-    def submit(self, role, respondent_id, assessment_id, form_id, answers, test_id=None):
+    def submit(self, role, respondent_id, assessment_id, form_id, answers, test_id=None, *, ratings=None, additional_feedback=""):
         with _PERSISTENCE_LOCK:
             respondent_id = self._context(role, respondent_id, assessment_id, test_id)
             form = self.get_form(form_id)
@@ -149,6 +149,18 @@ class FeedbackService:
                 raise ValueError("Feedback form changed or is inactive; reopen the form.")
             if not isinstance(answers, dict) or set(answers) - {q["id"] for q in form["questions"]}:
                 raise ValueError("Invalid feedback question IDs.")
+            ratings = {} if ratings is None else ratings
+            question_ids = {q["id"] for q in form["questions"]}
+            if not isinstance(ratings, dict) or set(ratings) - question_ids:
+                raise ValueError("Invalid feedback rating question IDs.")
+            if any(type(value) is not int or not 0 <= value <= 5 for value in ratings.values()):
+                raise ValueError("Feedback ratings must be whole numbers from 0 to 5.")
+            if not isinstance(additional_feedback, str):
+                raise ValueError("Additional feedback must be text.")
+            # Zero means unrated, consistent with the submission forms.
+            saved_ratings = {key: value for key, value in ratings.items() if value > 0}
+            scores = list(saved_ratings.values())
+            average = round(sum(scores) / len(scores), 1) if scores else None
             cleaned = {}
             for q in form["questions"]:
                 value = answers.get(q["id"], "")
@@ -157,7 +169,7 @@ class FeedbackService:
                 if q["required"] and not value.strip():
                     raise ValueError("Please complete all required feedback questions.")
                 cleaned[q["id"]] = value.strip()
-            return self.responses.save({**key, "feedback_response_id": uuid4().hex, "answers": cleaned, "submitted_at": _now()})
+            return self.responses.save({**key, "feedback_response_id": uuid4().hex, "answers": cleaned, "ratings": saved_ratings, "average_score": average, "additional_feedback": additional_feedback.strip(), "submitted_at": _now()})
 
     def close_assessment(self, facilitator_id, assessment_id):
         """Retry-safe: a saved survey remains saved if the later lifecycle write fails."""
@@ -187,9 +199,21 @@ class FeedbackService:
             form = forms.get(r["feedback_form_id"])
             if not form:
                 raise ValueError("Feedback response references a missing form.")
+            ratings = r.get("ratings") or {}
+            def rating_text(value):
+                return ("★" * value + "☆" * (5 - value) + f"  {value} / 5"
+                        if type(value) is int and 1 <= value <= 5 else "Not recorded")
+            qa_pairs = []
+            for question in form["questions"]:
+                qa_pairs.append({"question": question["text"], "answer": r["answers"].get(question["id"], "")})
+                qa_pairs.append({"question": question["text"] + " — Rating", "answer": rating_text(ratings.get(question["id"]))})
+            scores = [v for v in ratings.values() if type(v) is int and 1 <= v <= 5]
+            average = round(sum(scores) / len(scores), 1) if scores else None
+            qa_pairs.append({"question": "Average Feedback Score", "answer": f"{average:.1f} / 5" if average is not None else "Not recorded"})
+            qa_pairs.append({"question": "Additional Feedback / Suggestions", "answer": r.get("additional_feedback") or "Not recorded"})
             views.append({**r, "form_title": form["title"], "assessment": assessments.get(r["assessment_id"], {}).get("name", r["assessment_id"]),
                 "test": tests.get(r["test_id"], {}).get("test_name", ""),
                 "candidate_name": candidates.get(r["candidate_id"], {}).get("name", r["candidate_id"] or ""),
                 "facilitator": facilitators.get(r["facilitator_id"], {}).get("name", r["facilitator_id"] or ""),
-                "qa_pairs": [{"question": q["text"], "answer": r["answers"].get(q["id"], "")} for q in form["questions"]]})
+                "qa_pairs": qa_pairs})
         return views

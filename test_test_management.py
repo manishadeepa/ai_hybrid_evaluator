@@ -22,7 +22,7 @@ class TestManagementTests(unittest.TestCase):
         self.b = self.assessments.create_assessment({"name": "Second"})["assessment_id"]
 
     def create(self, **details):
-        return self.service.create_test(self.a, {"test_name": "Formative 1", **details})
+        return self.service.create_test(self.a, {"test_name": "Formative 1", **details}, created_by="F001")
 
     def test_direct_test_creation_requires_all_facilitator_approvals(self):
         self.assessments.facilitator_catalog = lambda: [
@@ -268,11 +268,13 @@ class TestManagementTests(unittest.TestCase):
         self.assertEqual(loaded["responses"][0]["response"], "answer")
         self.assertEqual(wrong, {})
         class ManualStore:
-            def save(inner, record):
+            def save(inner, record, *, facilitator_id, role):
                 JSONRepository(self.root / "manual-check.json").save_all([record])
                 return record
         row = {**loaded["responses"][0], "awarded_marks": 1, "justification": "Partial"}
-        evaluated = ManualEvaluationService(ManualStore()).evaluate_and_save("C1", "First", "Formative 1", [row])
+        evaluated = ManualEvaluationService(ManualStore(), tests=self.service).evaluate_and_save(
+            "C1", "First", "Formative 1", [row], test_id=first["test_id"],
+            facilitator_id="F001", role="facilitator")
         self.assertEqual(evaluated["assessment_name"], "First")
         self.assertEqual(evaluated["test_name"], "Formative 1")
         self.assertEqual(evaluated["total_marks"], 1)
@@ -282,4 +284,3 @@ class TestManagementTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

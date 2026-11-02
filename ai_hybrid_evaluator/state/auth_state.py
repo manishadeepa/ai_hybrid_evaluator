@@ -36,6 +36,7 @@ class AuthState(rx.State):
 
     # ---- Session (Admin) ----
     is_authenticated: bool = False
+    admin_role: str = ""
     admin_name: str = "Manisha"
     admin_employee_id: str = "ADM004"
     admin_email: str = "manisha@tvsmotor.com"
@@ -163,13 +164,14 @@ class AuthState(rx.State):
         email = self.signin_email.strip()
         password = self.signin_password.strip()
         if not email or not password:
-            self.signin_error = "Invalid Admin email or password."
+            self.signin_error = "Invalid Admin username or password."
             return
 
         result = mock_login(email, password)
         if result["success"]:
             self.signin_error = ""
             self.is_authenticated = True
+            self.admin_role = result.get("role", "")
             self.admin_name = result.get("employee_name", "Admin")
             self.admin_employee_id = result.get("employee_id", "")
             self.admin_email = result.get("employee_mail", "")
@@ -203,6 +205,7 @@ class AuthState(rx.State):
 
     def logout(self):
         self.is_authenticated = False
+        self.admin_role = ""
         self.admin_name = ""
         self.admin_employee_id = ""
         self.admin_email = ""

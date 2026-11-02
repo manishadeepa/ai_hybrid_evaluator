@@ -102,21 +102,25 @@ class ResponseLifecycleService:
         return assignment
 
     def _transition(self, record, target):
-        # Save intent first: a crash between JSON stores is completed on the next read.
-        pending = {**record, "status": target, "_pending_status": target, "updated_at": _now()}
-        self.repository.save(pending)
-        return self._complete_transition(pending)
+        with self.assignments.assessments.tests._lock():
+            self.assignments.assessments.tests.ensure_unlocked(record["test_id"])
+            # Save intent first: a crash between JSON stores is completed on the next read.
+            pending = {**record, "status": target, "_pending_status": target, "updated_at": _now()}
+            self.repository.save(pending)
+            return self._complete_transition(pending)
 
     def _complete_transition(self, pending):
-        target = pending["_pending_status"]
-        if target == "Submitted" and not Path(pending.get("response_file") or "").is_file():
-            raise ValueError("Cannot finalize submission: the response workbook is missing.")
-        assignment = self.assignments.update_test_status(pending["candidate_id"], pending["test_id"], target)
-        result = {**pending, "started_at": assignment["started_at"], "updated_at": _now()}
-        if target == "Submitted":
-            result["submitted_at"] = assignment["submitted_at"]
-        result.pop("_pending_status")
-        return self.repository.save(result)
+        with self.assignments.assessments.tests._lock():
+            self.assignments.assessments.tests.ensure_unlocked(pending["test_id"])
+            target = pending["_pending_status"]
+            if target == "Submitted" and not Path(pending.get("response_file") or "").is_file():
+                raise ValueError("Cannot finalize submission: the response workbook is missing.")
+            assignment = self.assignments.update_test_status(pending["candidate_id"], pending["test_id"], target)
+            result = {**pending, "started_at": assignment["started_at"], "updated_at": _now()}
+            if target == "Submitted":
+                result["submitted_at"] = assignment["submitted_at"]
+            result.pop("_pending_status")
+            return self.repository.save(result)
 
     def _read(self, candidate_id, assessment_id, test_id, required=False):
         assignment = self._identity(candidate_id, assessment_id, test_id)
@@ -195,6 +199,7 @@ class ResponseLifecycleService:
             return self._editable(candidate_id, assessment_id, test_id)
 
     def _editable(self, candidate_id, assessment_id, test_id):
+        self.assignments.assessments.tests.ensure_unlocked(test_id)
         record, _ = self._read(candidate_id, assessment_id, test_id, required=True)
         if record["status"] != "In Progress":
             raise ValueError("Submitted or disqualified responses cannot be modified or submitted again.")
@@ -225,8 +230,10 @@ class ResponseLifecycleService:
         return record
 
     def _save(self, record):
-        record["updated_at"] = _now()
-        return self.repository.save(record)
+        with _PERSISTENCE_LOCK:
+            self.assignments.assessments.tests.ensure_unlocked(record["test_id"])
+            record["updated_at"] = _now()
+            return self.repository.save(record)
 
     def save_answer(self, candidate_id, assessment_id, test_id, question_id, text, *, clear=False):
         with _PERSISTENCE_LOCK, repository_read_scope():

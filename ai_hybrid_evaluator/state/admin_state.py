@@ -19,6 +19,7 @@ from backend.services.employee_directory_service import find_employee_by_id
 from backend.services.feedback_service import FeedbackService
 from backend.repositories.facilitator_repository import FacilitatorRepository
 from backend.repositories.json_repository import JSONRepository
+from backend.data_paths import get_active_data_dir
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
@@ -884,19 +885,16 @@ class AdminState(rx.State):
         if not value:
             return
 
-        employee = None
         try:
             employee = find_employee_by_id(value)
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            self.candidate_form_error = (
+                f"Unable to look up employee information: {exc}"
+            )
+            return
 
         if employee is None:
-            for emp in self.available_directory_employees:
-                if str(emp.get("emp_id", "")).casefold() == value.strip().casefold():
-                    employee = emp
-                    break
-
-        if employee is None:
+            self.candidate_form_error = "Employee ID was not found."
             return
 
         self.new_candidate_name = employee.get("name", "")
@@ -1233,23 +1231,32 @@ class AdminState(rx.State):
 
     def _persist_assessment_record(self, record, validate_assignments=False):
         service = AssessmentService()
-        if validate_assignments:
-            service.facilitator_catalog = lambda: self.facilitators
-            service.candidate_catalog = lambda: self.candidates
-            if record.get("assessment_id"):
-                saved = service.update_assessment(record["assessment_id"], record)
+        try:
+            if validate_assignments:
+                service.facilitator_catalog = lambda: self.facilitators
+                service.candidate_catalog = lambda: self.candidates
+                if record.get("assessment_id"):
+                    saved = service.update_assessment(record["assessment_id"], record)
+                else:
+                    saved = service.create_assessment(record)
             else:
-                saved = service.create_assessment(record)
-        else:
-            saved = service.save_assessment(record)
+                saved = service.save_assessment(record)
+        except ValueError as exc:
+            if "locked" in str(exc).casefold():
+                self._refresh_after_locked_test_mutation(service)
+            raise
         self._apply_assessment_records(service.load_assessments())
         return saved
 
-    def _add_assessment_test(self, record, name, date="", description="", is_final=False, *, test_type=None, start_time="", end_time=""):
+    def _refresh_after_locked_test_mutation(self, service=None):
+        service = service or AssessmentService()
+        self._apply_assessment_records(service.load_assessments())
+
+    def _add_assessment_test(self, record, name, date="", description="", is_final=False, *, test_type=None, start_time="", end_time="", created_by=""):
         service = AssessmentService()
         if not record.get("assessment_id"):
             record = self._persist_assessment_record(record)
-        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final, test_type=test_type, start_time=start_time, end_time=end_time)
+        saved = service.add_test(record["assessment_id"], name, date=date, description=description, is_final=is_final, test_type=test_type, start_time=start_time, end_time=end_time, created_by=created_by)
         self._apply_assessment_records(service.load_assessments())
         return saved
 
@@ -1735,6 +1742,14 @@ class AdminState(rx.State):
                 self._apply_assessment_records(service.load_assessments())
             self.set_show_delete_assessment(False)
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                try:
+                    self._refresh_after_locked_test_mutation()
+                except (ValueError, OSError) as refresh_exc:
+                    return [
+                        rx.toast.error(str(exc)),
+                        rx.toast.error(f"Unable to refresh assessment state: {refresh_exc}"),
+                    ]
             return rx.toast.error(str(exc))
 
     # =========================================================
@@ -2511,10 +2526,15 @@ class AdminState(rx.State):
             a = self.assessments[self.selected_tests_assessment_index]
             tests = a.get("tests", [])
             dates = a.get("test_dates", {})
+            lock_states = a.get("test_lock_states", {})
             items = []
             for t in tests:
                 d = dates.get(t, "")
-                items.append({"name": t, "date": d})
+                items.append({
+                    "name": t,
+                    "date": d,
+                    "is_locked": lock_states.get(t, {}).get("is_locked", False),
+                })
             return items
         return []
 
@@ -2531,6 +2551,25 @@ class AdminState(rx.State):
             final_name = a.get("final_test", "Summative Test")
             return a.get("test_dates", {}).get(final_name, "") or ""
         return ""
+
+    @rx.var
+    def current_assessment_final_test_is_locked(self) -> bool:
+        if 0 <= self.selected_tests_assessment_index < len(self.assessments):
+            assessment = self.assessments[self.selected_tests_assessment_index]
+            final_name = assessment.get("final_test", "Summative Test")
+            return bool(assessment.get("test_lock_states", {}).get(final_name, {}).get("is_locked"))
+        return False
+
+    @rx.var
+    def viewing_test_is_locked(self) -> bool:
+        if 0 <= self.viewing_test_assessment_index < len(self.assessments):
+            assessment = self.assessments[self.viewing_test_assessment_index]
+            return bool(
+                assessment.get("test_lock_states", {})
+                .get(self.viewing_test_name, {})
+                .get("is_locked")
+            )
+        return False
 
     @rx.var
     def current_test_dates(self) -> dict:
@@ -2551,6 +2590,14 @@ class AdminState(rx.State):
                 service.update_test(a["assessment_id"], test_id, {"date": value})
                 self._apply_assessment_records(service.load_assessments())
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                try:
+                    self._refresh_after_locked_test_mutation()
+                except (ValueError, OSError) as refresh_exc:
+                    return [
+                        rx.toast.error(str(exc)),
+                        rx.toast.error(f"Unable to refresh assessment state: {refresh_exc}"),
+                    ]
             return rx.toast.error(str(exc))
 
     def add_test_to_selected_assessment(self):
@@ -2562,6 +2609,14 @@ class AdminState(rx.State):
                            if t.startswith("Formative ") and t.split()[-1].isdigit()]
                 self._add_assessment_test(a, f"Formative {max(numbers, default=0) + 1}")
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                try:
+                    self._refresh_after_locked_test_mutation()
+                except (ValueError, OSError) as refresh_exc:
+                    return [
+                        rx.toast.error(str(exc)),
+                        rx.toast.error(f"Unable to refresh assessment state: {refresh_exc}"),
+                    ]
             return rx.toast.error(str(exc))
 
     def remove_test_from_selected_assessment(self, test_name: str):
@@ -2577,6 +2632,14 @@ class AdminState(rx.State):
                 service.delete_test(assessment["assessment_id"], assessment["test_ids"][test_name], renumber=True)
                 self._apply_assessment_records(service.load_assessments())
         except (ValueError, OSError) as exc:
+            if "locked" in str(exc).casefold():
+                try:
+                    self._refresh_after_locked_test_mutation()
+                except (ValueError, OSError) as refresh_exc:
+                    return [
+                        rx.toast.error(str(exc)),
+                        rx.toast.error(f"Unable to refresh assessment state: {refresh_exc}"),
+                    ]
             return rx.toast.error(str(exc))
 
     # =========================================================
@@ -3262,8 +3325,7 @@ class AdminFeedbackState(rx.State):
 
     @staticmethod
     def _get_data_dir() -> Path:
-        base_dir = Path(__file__).resolve().parent.parent
-        data_dir = base_dir / "data"
+        data_dir = get_active_data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
 

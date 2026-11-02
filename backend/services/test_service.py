@@ -1,4 +1,5 @@
 from copy import deepcopy
+from contextlib import contextmanager
 from uuid import uuid4
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -9,6 +10,92 @@ from backend.repositories.test_repository import TestRepository
 from backend.repositories.response_repository import ResponseRepository
 from backend.services.question_type_schema import validate_test_type
 from backend.services.assessment_approval import all_facilitators_approved
+from backend.repositories.test_repository import LOCKED_TEST_ERROR
+
+
+def validate_test_creator(test, facilitator_id, role, *, allow_locked=False):
+    if role != "facilitator":
+        raise ValueError("Only facilitators can evaluate or lock tests.")
+    if not isinstance(facilitator_id, str) or not facilitator_id.strip():
+        raise ValueError("Authenticated facilitator identity is required.")
+    if not test.get("created_by"):
+        raise ValueError("Test creator is unknown; ownership must be resolved before evaluation or locking.")
+    if test["created_by"] != facilitator_id:
+        raise ValueError("Only the facilitator who created this test can evaluate or lock it.")
+    if test.get("is_locked") and not allow_locked:
+        raise ValueError(LOCKED_TEST_ERROR)
+
+
+@contextmanager
+def test_mutation_guard(
+    *,
+    test_id=None,
+    assessment_id=None,
+    assessment_name=None,
+    test_name=None,
+    data_dir=None,
+    require_creator=False,
+    facilitator_id=None,
+    role=None,
+):
+    """Serialize a test-data write with locking and reject frozen test identities."""
+    from backend.services.assessment_service import _PERSISTENCE_LOCK
+
+    with _PERSISTENCE_LOCK:
+        from backend.data_paths import resolve_data_path
+
+        requested_root = Path(data_dir) if data_dir is not None else Path(__file__).resolve().parents[1] / "data"
+        tests_path = resolve_data_path(requested_root / "tests.json")
+        root = tests_path.parent
+        assessments_path = root / "assessments.json"
+        if require_creator and not tests_path.exists():
+            raise ValueError("Canonical test identity is required for this mutation.")
+        if tests_path.exists():
+            repository = TestRepository(tests_path)
+            if test_id:
+                target = repository.get_by_id(test_id)
+                if target is None:
+                    possible_locked = [
+                        row for row in repository.get_all()
+                        if row.get("is_locked")
+                        and (not assessment_id or row.get("assessment_id") == assessment_id)
+                        and (not test_name or row.get("test_name") == test_name)
+                    ]
+                    if possible_locked:
+                        raise ValueError(LOCKED_TEST_ERROR)
+                else:
+                    if assessment_id and target.get("assessment_id") != assessment_id:
+                        raise ValueError("Test does not belong to this assessment.")
+                    if test_name and target.get("test_name") != test_name:
+                        raise ValueError("Test identity does not match the requested mutation.")
+                if target and target.get("is_locked"):
+                    raise ValueError(LOCKED_TEST_ERROR)
+                if require_creator:
+                    if target is None:
+                        raise ValueError("Canonical test identity is required for this mutation.")
+                    validate_test_creator(target, facilitator_id, role)
+            elif test_name and assessments_path.exists():
+                if require_creator:
+                    raise ValueError("Canonical test identity is required for this mutation.")
+                from backend.repositories.assessment_repository import AssessmentRepository
+
+                assessments = AssessmentRepository(assessments_path).get_all()
+                matching_assessments = [
+                    record for record in assessments
+                    if (assessment_id and record.get("assessment_id") == assessment_id)
+                    or (not assessment_id and record.get("name") == assessment_name)
+                ]
+                matching_ids = {record["assessment_id"] for record in matching_assessments}
+                matches = [
+                    record for record in repository.get_all()
+                    if record.get("assessment_id") in matching_ids
+                    and record.get("test_name") == test_name
+                ]
+                if len(matches) == 1 and matches[0].get("is_locked"):
+                    raise ValueError(LOCKED_TEST_ERROR)
+                if len(matches) > 1:
+                    raise ValueError("Test identity could not be resolved for this mutation.")
+        yield
 
 
 class TestService:
@@ -48,6 +135,16 @@ class TestService:
             raise ValueError("Test does not belong to this assessment.")
         self._assessment(record["assessment_id"])
         return {"status": "Draft", "is_final": False, "position": 0, **record}
+
+    def authorize_evaluation(self, test_id, facilitator_id, role):
+        with test_mutation_guard(
+            test_id=test_id,
+            require_creator=True,
+            facilitator_id=facilitator_id,
+            role=role,
+            data_dir=self.repository.file_path.parent,
+        ):
+            return self.get_test(test_id)
 
     def list_tests(self, assessment_id=None):
         # One fresh snapshot per call; never cache authorization across requests.
@@ -123,7 +220,7 @@ class TestService:
             if row.get("is_final", False) and value.get("is_final", False):
                 raise ValueError("Assessment already has a final test.")
 
-    def create_test(self, assessment_id, details):
+    def create_test(self, assessment_id, details, *, created_by=""):
         with self._lock():
             assessment = self._assessment(assessment_id)
             if not all_facilitators_approved(assessment):
@@ -138,10 +235,13 @@ class TestService:
                 raise ValueError("Test ID already exists.")
             if details.get("assessment_id", assessment_id) != assessment_id:
                 raise ValueError("Invalid assessment/test relationship.")
+            if not isinstance(created_by, str):
+                raise ValueError("Test creator identity must be a string.")
             stamp = datetime.now(timezone.utc).isoformat()
             value = {"date": "", "description": "", "question_paper": "", "status": "Draft", "is_final": False,
                      **deepcopy(details), "test_id": identity, "assessment_id": assessment_id,
                      "position": max((r.get("position", 0) for r in self.get_tests(assessment_id)), default=-1) + 1,
+                     "created_by": created_by.strip(), "is_locked": False, "locked_by": "", "locked_at": None,
                      "created_at": stamp, "updated_at": stamp}
             self._validate_fields(value)
             self._check_type_change({}, value)
@@ -166,9 +266,34 @@ class TestService:
         if set(details) - {"test_id", "assessment_id", "test_name", "description", "date", "status", "is_final", "question_paper", "test_type", "start_time", "end_time"}:
             raise ValueError("Unsupported test settings; availability is derived from the question paper and duration is fixed.")
 
+    def ensure_unlocked(self, test_id):
+        test = self.get_test(test_id)
+        if test.get("is_locked"):
+            raise ValueError(LOCKED_TEST_ERROR)
+        return test
+
+    def find_test(self, assessment_name, test_name):
+        """Resolve legacy name-scoped service calls without guessing ambiguous identities."""
+        with self._lock():
+            assessments = [
+                row for row in self.assessments.get_all()
+                if row.get("name") == assessment_name
+            ]
+            if len(assessments) != 1:
+                return None
+            tests = [
+                row for row in self.get_tests(assessments[0]["assessment_id"])
+                if row.get("test_name") == test_name
+            ]
+            return tests[0] if len(tests) == 1 else None
+
+    def lock_test(self, test_id, facilitator_id, role):
+        return self.repository.lock_test(test_id, facilitator_id, role)
+
     def update_test(self, test_id, changes):
         with self._lock():
             previous = self.get_test(test_id)
+            self.ensure_unlocked(test_id)
             if not isinstance(changes, dict):
                 raise ValueError("Test changes must be an object.")
             self._allowed(changes)
@@ -216,7 +341,7 @@ class TestService:
         return sorted((r for r in self.repository.get_all() if r["assessment_id"] == assessment_id),
                       key=lambda r: r.get("position", 0))
 
-    def prepare_tests(self, assessment_id, assessment):
+    def prepare_tests(self, assessment_id, assessment, *, created_by=""):
         old = self.get_tests(assessment_id)
         by_id = {r["test_id"]: r for r in old}
         by_name = {r["test_name"]: r for r in old}
@@ -250,6 +375,10 @@ class TestService:
                 if "end_time" in timings:
                     record["end_time"] = timings.get("end_time", "")
             record.setdefault("status", "Draft")
+            record.setdefault("created_by", created_by.strip() if isinstance(created_by, str) else "")
+            record.setdefault("is_locked", False)
+            record.setdefault("locked_by", "")
+            record.setdefault("locked_at", None)
             if previous is None or record.get("date", "") != previous.get("date", ""):
                 self._validate_not_past_date(record.get("date", ""))
             types = assessment.get("test_types", {})
@@ -258,6 +387,8 @@ class TestService:
             if name in types:
                 validate_test_type(types[name])
                 record["test_type"] = types[name]
+            if previous is not None and previous.get("is_locked") and record != previous:
+                raise ValueError(LOCKED_TEST_ERROR)
             self._check_type_change(previous or {}, record)
             if previous is None:
                 record["created_at"] = datetime.now(timezone.utc).isoformat()
@@ -275,15 +406,17 @@ class TestService:
         return prepared
 
     def replace_tests(self, assessment_id, records):
-        if any(r.get("assessment_id") != assessment_id for r in records):
-            raise ValueError("Invalid assessment/test relationship.")
-        others = [r for r in self.repository.get_all() if r["assessment_id"] != assessment_id]
-        self.repository.save_all(others + records)
+        with self._lock():
+            if any(r.get("assessment_id") != assessment_id for r in records):
+                raise ValueError("Invalid assessment/test relationship.")
+            others = [r for r in self.repository.get_all() if r["assessment_id"] != assessment_id]
+            self.repository.save_all(others + records)
 
     def delete_test(self, assessment_id, test_id, renumber=False):
         with self._lock():
             # Confirm that this exact test belongs to this exact assessment.
             target = self.get_test(test_id, assessment_id)
+            self.ensure_unlocked(test_id)
             assessment = self._assessment(assessment_id)
 
             # Never delete a test that already has candidate activity,
@@ -343,6 +476,15 @@ class TestService:
         result.update({"tests": [r["test_name"] for r in records if not r.get("is_final", False)],
                        "final_test": next((r["test_name"] for r in records if r.get("is_final", False)), ""),
                        "test_ids": {r["test_name"]: r["test_id"] for r in records},
+                       "test_lock_states": {
+                           r["test_name"]: {
+                               "created_by": r.get("created_by", ""),
+                               "is_locked": r.get("is_locked", False),
+                               "locked_by": r.get("locked_by", ""),
+                               "locked_at": r.get("locked_at"),
+                           }
+                           for r in records
+                       },
                        "test_types": {r["test_name"]: r["test_type"] for r in records if "test_type" in r},
                        "test_dates": {r["test_name"]: r.get("date", "") for r in records},
                        "test_descriptions": {r["test_name"]: r.get("description", "") for r in records},
@@ -356,5 +498,3 @@ class TestService:
                            if r.get("start_time") or r.get("end_time")
                        }})
         return result
-
-
