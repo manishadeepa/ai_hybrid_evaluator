@@ -183,16 +183,20 @@ class EvaluationResultTests(unittest.TestCase):
             run['status'] = status; self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
             with self.subTest(status=status): self.assertIsNone(self.service.get_result(*self.key))
 
-    def test_real_restart_excludes_superseded_completed_run(self):
-        run = self.ai_result(); self.runs.restart(run['run_id'])
-        self.assertIsNone(self.service.get_result(*self.key))
+    def test_completed_run_rejects_restart_and_remains_authoritative(self):
+        run = self.ai_result()
+        with self.assertRaisesRegex(ValueError, 'EVALUATION ALREADY COMPLETED'):
+            self.runs.restart(run['run_id'])
+        self.assertEqual(self.service.get_result(*self.key)['source_run_id'], run['run_id'])
 
     def test_superseded_flag_excludes_even_completed_status(self):
         run = self.ai_result(); run['superseded_by_run_id'] = 'new'; self.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         self.assertIsNone(self.service.get_result(*self.key))
 
     def test_latest_valid_run_with_deterministic_tie_break(self):
-        first = self.ai_result(); second = self.ai_result()
+        first = self.ai_result()
+        # Seed historical data for read selection; do not bypass live rerun restrictions.
+        second = deepcopy(first); second['run_id'] += '-legacy-copy'
         first['updated_at'] = '2026-01-01T08:00:00+00:00'
         second['updated_at'] = '2026-01-01T14:00:00+05:30'
         self.runs.repository.save(first, facilitator_id='F001', role='facilitator')
@@ -202,7 +206,9 @@ class EvaluationResultTests(unittest.TestCase):
         self.assertEqual(self.service.get_result(*self.key)['source_run_id'], max(first['run_id'], second['run_id']))
 
     def test_invalid_latest_marks_fall_back_to_valid_run(self):
-        old = self.ai_result(); new = self.ai_result()
+        old = self.ai_result()
+        new = deepcopy(old); new['run_id'] += '-legacy-copy'
+        new['updated_at'] = '2099-01-01T00:00:00+00:00'
         new['questions'][0]['result']['awarded_marks'] = 999
         self.runs.repository.save(new, facilitator_id='F001', role='facilitator')
         self.assertEqual(self.service.get_result(*self.key)['source_run_id'], old['run_id'])

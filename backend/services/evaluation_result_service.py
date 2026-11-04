@@ -175,10 +175,12 @@ class EvaluationResultService:
                       total_marks=total, max_marks=maximum,
                       percentage=round(100 * total / maximum, 2) if maximum else 0.0,
                       questions=normalized, source_run_id=source.get('run_id') if kind == 'ai' else None)
-        for field in ('evaluated_by', 'evaluator_name', 'evaluator', 'facilitator_name', 'facilitator_id'):
+        for field in ('evaluated_by_id', 'facilitator_id', 'evaluated_by', 'evaluator_name', 'evaluator', 'facilitator_name'):
             evaluator = source.get(field)
-            if evaluator is not None and str(evaluator).strip():
+            if isinstance(evaluator, str) and evaluator.strip():
                 result['evaluated_by'] = str(evaluator).strip()
+                if field in ('evaluated_by_id', 'facilitator_id'):
+                    result['evaluated_by_id'] = str(evaluator).strip()
                 break
         return result
 

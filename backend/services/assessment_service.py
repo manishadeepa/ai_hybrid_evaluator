@@ -26,9 +26,8 @@ class _PersistenceLock:
 
     @staticmethod
     def _lock_path():
-        from backend.data_paths import get_active_data_dir
-
-        identity = os.path.normcase(str(get_active_data_dir().resolve())).encode("utf-8")
+        # A folder switch must not change the lock used by waiting writers.
+        identity = os.path.normcase(str(Path(__file__).resolve().parents[2])).encode("utf-8")
         filename = hashlib.sha256(identity).hexdigest()
         return Path(tempfile.gettempdir()) / f"gen-ai-hybrid-eval-{filename}.lock"
 

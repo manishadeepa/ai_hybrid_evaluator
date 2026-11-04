@@ -20,7 +20,9 @@ class MasterAdminService:
             if file_path is not None
             else active_data_file("master_admin.json")
         )
-        self.storage = JSONRepository(self.file_path)
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _PERSISTENCE_LOCK:
+            self.storage = JSONRepository(self.file_path)
 
     @staticmethod
     def _normalise_username(username):
@@ -74,41 +76,45 @@ class MasterAdminService:
         return None
 
     def create(self, username, password):
-        username = self._normalise_username(username)
-        password = str(password or "").strip()
-        if not username or not password:
-            raise ValueError("Username and password are required.")
-        if self._get_record() is not None:
-            raise ValueError("A Master Admin account already exists.")
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _PERSISTENCE_LOCK:
+            username = self._normalise_username(username)
+            password = str(password or "").strip()
+            if not username or not password:
+                raise ValueError("Username and password are required.")
+            if self._get_record() is not None:
+                raise ValueError("A Master Admin account already exists.")
 
-        salt = secrets.token_bytes(16)
-        self.storage.save_all(
-            [
-                {
-                    "username": username,
-                    "salt": salt.hex(),
-                    "password_hash": self._hash_password(password, salt),
-                }
-            ]
-        )
-        return {"username": username}
+            salt = secrets.token_bytes(16)
+            self.storage.save_all(
+                [
+                    {
+                        "username": username,
+                        "salt": salt.hex(),
+                        "password_hash": self._hash_password(password, salt),
+                    }
+                ]
+            )
+            return {"username": username}
 
     def update(self, old_username, username, password=""):
-        old_username = self._normalise_username(old_username).casefold()
-        username = self._normalise_username(username)
-        password = str(password or "").strip()
-        if not username:
-            raise ValueError("Username is required.")
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _PERSISTENCE_LOCK:
+            old_username = self._normalise_username(old_username).casefold()
+            username = self._normalise_username(username)
+            password = str(password or "").strip()
+            if not username:
+                raise ValueError("Username is required.")
 
-        record = self._get_record()
-        if record is None or record["username"].casefold() != old_username:
-            raise ValueError("Master Admin account was not found.")
+            record = self._get_record()
+            if record is None or record["username"].casefold() != old_username:
+                raise ValueError("Master Admin account was not found.")
 
-        updated_record = dict(record)
-        updated_record["username"] = username
-        if password:
-            salt = secrets.token_bytes(16)
-            updated_record["salt"] = salt.hex()
-            updated_record["password_hash"] = self._hash_password(password, salt)
-        self.storage.save_all([updated_record])
-        return {"username": username}
+            updated_record = dict(record)
+            updated_record["username"] = username
+            if password:
+                salt = secrets.token_bytes(16)
+                updated_record["salt"] = salt.hex()
+                updated_record["password_hash"] = self._hash_password(password, salt)
+            self.storage.save_all([updated_record])
+            return {"username": username}

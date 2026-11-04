@@ -2,7 +2,8 @@
 
 import json
 import os
-import filecmp
+import hashlib
+import shutil
 import platform
 import socket
 import ssl
@@ -24,6 +25,7 @@ from backend.data_paths import (
     STABLE_DATA_DIRECTORIES,
     STABLE_DATA_FILES,
     copy_file_no_overwrite,
+    data_files_equal,
     get_active_data_dir,
     save_active_data_dir,
 )
@@ -104,11 +106,20 @@ class DatabaseConfigurationService:
         if not row:
             return None
         return {
-            **row["configuration"],
+            **{key: value for key, value in row["configuration"].items()
+               if key in ({"host", "port", "database", "ssl_mode"} if profile_type == "mysql" else
+                          {"service_name", "base_url", "api_version", "auth_type", "ca_certificate_path"})},
             "profile_type": profile_type,
             "credentials_configured": bool(row.get("credentials_encrypted")),
             "tested_at": row.get("tested_at", ""),
             "active": False,
+            "status": "pending",
+            "validation_scope": "mysql_connection" if profile_type == "mysql" else "https_transport_only",
+            "activation_requirements": (
+                "MySQL repository adapters and verified JSON data migration are required."
+                if profile_type == "mysql" else
+                "An API data contract, authentication test, repository adapter, and verified data migration are required."
+            ),
         }
 
     @staticmethod
@@ -137,6 +148,8 @@ class DatabaseConfigurationService:
                 probe.write(b"folder access test")
                 probe.flush()
                 os.fsync(probe.fileno())
+            if probe_path.read_bytes() != b"folder access test":
+                raise OSError("Folder access read-back failed")
         except OSError as exc:
             raise ValueError(
                 "The application server cannot write to this folder."
@@ -159,7 +172,10 @@ class DatabaseConfigurationService:
         password = str(form.get("password", ""))
         ssl_mode = str(form.get("ssl_mode", "PREFERRED")).strip().upper()
         try:
-            port = int(form.get("port", 3306))
+            raw_port = form.get("port", 3306)
+            if isinstance(raw_port, bool) or isinstance(raw_port, float):
+                raise ValueError("Invalid port")
+            port = int(raw_port)
         except (TypeError, ValueError) as exc:
             raise ValueError("Port must be a number between 1 and 65535.") from exc
         if not host or not database:
@@ -190,6 +206,8 @@ class DatabaseConfigurationService:
         if auth_type not in cls.AUTH_TYPES:
             raise ValueError("Select a valid Authentication Type.")
 
+        if any(ord(char) < 32 for char in base_url):
+            raise ValueError("Base URL contains invalid control characters.")
         parsed = urlsplit(base_url)
         if not parsed.hostname or parsed.scheme not in {"http", "https"}:
             raise ValueError("Base URL must be a valid HTTP or HTTPS URL.")
@@ -201,12 +219,10 @@ class DatabaseConfigurationService:
             raise ValueError(
                 "Base URL must not contain credentials, query parameters, or fragments."
             )
-        if parsed.scheme != "https" and parsed.hostname not in {
-            "localhost",
-            "127.0.0.1",
-            "::1",
-        }:
-            raise ValueError("Use HTTPS for API services outside localhost.")
+        if parsed.scheme != "https":
+            raise ValueError("Use HTTPS for API services.")
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            raise ValueError("Base URL must include a valid port.")
 
         if auth_type == "API Key":
             credentials["api_key"] = str(form.get("api_key", "")).strip()
@@ -267,13 +283,14 @@ class DatabaseConfigurationService:
                 connect_args=connect_args,
                 pool_pre_ping=True,
                 pool_recycle=300,
+                hide_parameters=True,
             )
             with engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
-        except SQLAlchemyError as exc:
+        except (SQLAlchemyError, OSError, ValueError) as exc:
             raise ValueError(
                 f"MySQL connection test failed ({type(exc).__name__})."
-            ) from exc
+            ) from None
         finally:
             if engine is not None:
                 engine.dispose()
@@ -295,7 +312,7 @@ class DatabaseConfigurationService:
         except (OSError, ssl.SSLError, ValueError) as exc:
             raise ValueError(
                 f"API endpoint transport test failed ({type(exc).__name__})."
-            ) from exc
+            ) from None
 
     def test_mysql_connection(self, form):
         normalized = self._normalize_mysql(form)
@@ -386,105 +403,170 @@ class DatabaseConfigurationService:
                 json.dumps(credentials, ensure_ascii=False).encode("utf-8")
             ).decode("ascii")
 
-        rows = self._records()
         record = {
             "profile_type": profile_type,
             "configuration": configuration,
             "credentials_encrypted": encrypted_credentials,
             "tested_at": datetime.now(timezone.utc).isoformat(),
             "active": False,
+            "status": "pending",
         }
-        updated = [row for row in rows if row["profile_type"] != profile_type]
-        updated.append(record)
-        JSONRepository(self.config_path).save_all(updated)
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        with _PERSISTENCE_LOCK:
+            rows = self._records()
+            updated = [row for row in rows if row["profile_type"] != profile_type]
+            updated.append(record)
+            JSONRepository(self.config_path).save_all(updated)
         return self.get_profile(profile_type)
 
+    @staticmethod
+    def _digest(path):
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _validate_json_file(path):
+        if path.suffix.lower() != ".json":
+            return
+        try:
+            with path.open("r", encoding="utf-8-sig") as file:
+                json.load(file)
+        except (ValueError, UnicodeError):
+            raise ValueError(f"Invalid JSON data file: {path.name}. Current storage was not changed.") from None
+
+    @staticmethod
+    def _check_target(destination, target):
+        if not target.resolve(strict=False).is_relative_to(destination):
+            raise ValueError("Migration target leaves the selected folder.")
+        for candidate in (target, *target.parents):
+            if candidate == destination.parent:
+                break
+            if candidate.is_symlink():
+                raise ValueError("Migration cannot use linked destination files or folders.")
+        if target.exists() and not target.is_file():
+            raise ValueError(f"Destination is not a file: {target.name}.")
+
+    @staticmethod
+    def _publish_staged_file(staged, destination, created):
+        # Exclusive create: never replace a file that appeared after preflight.
+        with destination.open("xb") as output:
+            created.append((destination, destination.stat().st_ino))
+            with staged.open("rb") as source:
+                shutil.copyfileobj(source, output)
+            output.flush()
+            os.fsync(output.fileno())
+
+    def _write_migration_manifest(self, path, value):
+        from backend.data_paths import _atomic_migration_json
+        _atomic_migration_json(path, value)
+
     def activate_data_folder(self, path):
-        """Test access, copy data without replacing target files, then activate."""
+        """Back up, stage, verify, then atomically activate JSON storage."""
         self.test_folder_access(path)
         destination = Path(str(path).strip()).expanduser().resolve()
-        source = get_active_data_dir().resolve()
-        if source == destination:
-            return destination
-        if not source.is_dir():
-            raise ValueError(
-                "The current active data folder is unavailable; migration was not started."
-            )
-        try:
-            with os.scandir(source) as entries:
-                next(entries, None)
-        except OSError as exc:
-            raise ValueError(
-                "The current active data folder cannot be read; migration was not started."
-            ) from exc
-        if source in destination.parents or destination in source.parents:
-            raise ValueError(
-                "Choose a data folder that is not inside or above the current data folder."
-            )
-
-        files = []
-        for item in source.rglob("*"):
-            relative = item.relative_to(source)
-            if relative.parts[0] in STABLE_DATA_DIRECTORIES:
-                continue
-            if len(relative.parts) == 1 and relative.name in STABLE_DATA_FILES:
-                continue
-            if item.is_symlink():
-                raise ValueError(
-                    f"Cannot migrate linked data file: {relative.as_posix()}."
-                )
-            if item.is_file():
-                files.append((item, relative))
-
-        conflicts = []
-        for source_file, relative in files:
-            target_file = destination / relative
-            for parent in target_file.parents:
-                if parent == destination.parent:
-                    break
-                if parent.exists() and parent.is_symlink():
-                    raise ValueError(
-                        f"Cannot migrate through a linked folder: {parent}."
-                    )
-            if target_file.is_symlink():
-                raise ValueError(
-                    f"Cannot migrate over a linked data file: {relative.as_posix()}."
-                )
-            if not target_file.exists():
-                continue
-            if not target_file.is_file() or not filecmp.cmp(
-                source_file, target_file, shallow=False
-            ):
-                conflicts.append(relative.as_posix())
-        if conflicts:
-            names = ", ".join(conflicts[:5])
-            if len(conflicts) > 5:
-                names += f", and {len(conflicts) - 5} more"
-            raise ValueError(
-                "The selected folder contains files that differ from current data: "
-                f"{names}. No files were replaced and the active folder was not changed."
-            )
-
-        destination.mkdir(parents=True, exist_ok=True)
-        for source_file, relative in files:
-            target_file = destination / relative
-            if target_file.is_symlink():
-                raise ValueError(
-                    f"Cannot migrate over a linked data file: {relative.as_posix()}."
-                )
-            if target_file.exists():
-                continue
-            target_file.parent.mkdir(parents=True, exist_ok=True)
+        from backend.services.assessment_service import _PERSISTENCE_LOCK
+        # The same project-wide lock protects repository writes and path switches.
+        with _PERSISTENCE_LOCK:
+            source = get_active_data_dir().resolve()
+            if source == destination:
+                return destination
+            if not source.is_dir():
+                raise ValueError("The current active data folder is unavailable; migration was not started.")
+            if source in destination.parents or destination in source.parents:
+                raise ValueError("Choose a data folder that is not inside or above the current data folder.")
+            files = []
+            for item in source.rglob("*"):
+                relative = item.relative_to(source)
+                if relative.parts[0] in STABLE_DATA_DIRECTORIES:
+                    continue
+                if len(relative.parts) == 1 and relative.name in STABLE_DATA_FILES:
+                    continue
+                if item.is_symlink():
+                    raise ValueError(f"Cannot migrate linked data file: {relative.as_posix()}.")
+                if item.is_file():
+                    self._validate_json_file(item)
+                    files.append((item, relative))
+            conflicts = []
+            for item, relative in files:
+                target = destination / relative
+                self._check_target(destination, target)
+                if target.exists() and not data_files_equal(item, target):
+                    conflicts.append(relative.as_posix())
+            if conflicts:
+                raise ValueError("The selected folder contains files that differ from current data: "
+                                 + ", ".join(conflicts[:5])
+                                 + ". No files were replaced and the active folder was not changed.")
+            recovery = self.data_dir / ".storage_migrations" / uuid.uuid4().hex
+            backup = recovery / "backup"
+            staged = recovery / "staged"
+            backup.mkdir(parents=True, mode=0o700)
+            staged.mkdir(mode=0o700)
+            manifest = {"source": str(source), "destination": str(destination),
+                        "status": "staging", "files": {}}
+            manifest_path = recovery / "manifest.json"
+            self._write_migration_manifest(manifest_path, manifest)
+            created = []
+            switched = False
             try:
-                copy_file_no_overwrite(source_file, target_file)
-            except OSError as exc:
-                raise ValueError(
-                    f"Could not safely migrate {relative.as_posix()} "
-                    f"({type(exc).__name__})."
-                ) from exc
-
-        save_active_data_dir(destination)
-        return destination
+                for item, relative in files:
+                    original_digest = self._digest(item)
+                    for directory in (backup, staged):
+                        copy = directory / relative
+                        copy.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, copy)
+                        if self._digest(copy) != original_digest:
+                            raise ValueError(f"Migration copy verification failed: {relative.as_posix()}.")
+                    manifest["files"][relative.as_posix()] = original_digest
+                manifest["status"] = "backup_verified"
+                self._write_migration_manifest(manifest_path, manifest)
+                for item, relative in files:
+                    target = destination / relative
+                    self._check_target(destination, target)
+                    if target.exists():
+                        if not data_files_equal(staged / relative, target):
+                            raise ValueError(f"Destination changed during migration: {relative.as_posix()}.")
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    self._publish_staged_file(staged / relative, target, created)
+                # Revalidate the full snapshot, not just successful copy calls.
+                for item, relative in files:
+                    if self._digest(item) != manifest["files"][relative.as_posix()]:
+                        raise ValueError(f"Source changed during migration: {relative.as_posix()}.")
+                    if not data_files_equal(staged / relative, destination / relative):
+                        raise ValueError(f"Destination verification failed: {relative.as_posix()}.")
+                manifest["status"] = "verified_ready_to_activate"
+                self._write_migration_manifest(manifest_path, manifest)
+                # Last fallible step: current configuration remains intact if it fails.
+                save_active_data_dir(destination)
+                switched = True
+                manifest["status"] = "activated"
+                try:
+                    self._write_migration_manifest(manifest_path, manifest)
+                except OSError:
+                    pass  # Active configuration is authoritative if this final annotation fails.
+            except (OSError, ValueError) as exc:
+                if not switched:
+                    for target, inode in reversed(created):
+                        # Remove only files exclusively created by this operation.
+                        if (target.resolve(strict=False).is_relative_to(destination)
+                                and not target.is_symlink() and target.exists()
+                                and target.stat().st_ino == inode):
+                            try:
+                                target.unlink()
+                            except OSError:
+                                pass  # Recovery manifest and backup remain available.
+                    manifest["status"] = "failed_current_storage_unchanged"
+                    try:
+                        self._write_migration_manifest(manifest_path, manifest)
+                    except OSError:
+                        pass
+                raise ValueError(f"Folder migration failed; current storage is unchanged. "
+                                 f"Backup and recovery details: {recovery}. "
+                                 f"Reason: {type(exc).__name__}.") from None
+            return destination
 
     def store_ca_certificate(self, filename, content):
         suffix = Path(filename).suffix.lower()

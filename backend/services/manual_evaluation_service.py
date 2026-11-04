@@ -182,6 +182,8 @@ class ManualEvaluationService:
             "assessment_name": assessment_name,
             "test_name": test_name,
             "evaluation_type": "manual",
+            "evaluated_by": facilitator_id,
+            "evaluated_by_id": facilitator_id,
             "evaluated_at": datetime.now().isoformat(timespec="seconds"),
             "total_marks": total_awarded,
             "max_marks": total_marks,
@@ -237,4 +239,6 @@ class ManualEvaluationService:
             round(evaluation["total_marks"] / evaluation["max_marks"] * 100, 1)
             if evaluation["max_marks"] else 0.0
         )
+        evaluation["evaluated_by"] = facilitator_id
+        evaluation["evaluated_by_id"] = facilitator_id
         return self.repository.save(evaluation, facilitator_id=facilitator_id, role=role)

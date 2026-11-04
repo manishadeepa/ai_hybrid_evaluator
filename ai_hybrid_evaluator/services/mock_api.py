@@ -80,10 +80,7 @@ def change_admin_password(username: str, current_password: str, new_password: st
         master_admin_service = MasterAdminService()
         master_admin = master_admin_service.authenticate(clean_username, clean_current)
         if master_admin:
-            master_admin_service.update(
-                master_admin["username"], master_admin["username"], clean_new
-            )
-            return {"success": True, "error": ""}
+            return {"success": False, "error": "Only the backend developer can change the Master Admin password in the Developer Console."}
 
         group_admin_service = GroupAdminService()
         group_admin = group_admin_service.authenticate(clean_username, clean_current)

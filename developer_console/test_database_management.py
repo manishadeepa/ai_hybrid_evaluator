@@ -248,6 +248,7 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         root_state = rx.State(_reflex_internal_init=True)
         state = asyncio.run(root_state.get_state(State))
         state.is_authenticated = True
+        state._developer_authenticated = True
         state.folder_path = str(Path(self.temp.name))
         selected_path = str(Path(self.temp.name) / "selected")
         with (
@@ -272,6 +273,7 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         root_state = rx.State(_reflex_internal_init=True)
         state = asyncio.run(root_state.get_state(State))
         state.is_authenticated = True
+        state._developer_authenticated = True
         original_path = str(Path(self.temp.name))
         state.folder_path = original_path
         with (
@@ -294,6 +296,7 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         root_state = rx.State(_reflex_internal_init=True)
         state = asyncio.run(root_state.get_state(State))
         state.is_authenticated = True
+        state._developer_authenticated = True
         state.folder_path = str(Path(self.temp.name))
         with (
             patch.object(
@@ -321,6 +324,7 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         root_state = rx.State(_reflex_internal_init=True)
         state = asyncio.run(root_state.get_state(State))
         state.is_authenticated = True
+        state._developer_authenticated = True
         state.mysql_host = "db.example.test"
         state.mysql_database = "evaluation"
         state.mysql_username = "app-user"
@@ -496,10 +500,34 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         ):
             self.assertEqual(data_paths.get_active_data_dir(), default)
             self.assertEqual(
-                (default / legacy_file.name).read_text(encoding="utf-8"),
-                legacy_file.read_text(encoding="utf-8"),
+                json.loads((default / legacy_file.name).read_text(encoding="utf-8")),
+                json.loads(legacy_file.read_text(encoding="utf-8")),
             )
             self.assertTrue(legacy_file.exists())
+
+    def test_equal_json_formatting_does_not_block_folder_activation(self):
+        source = Path(self.temp.name) / "current"
+        destination = Path(self.temp.name) / "destination"
+        source.mkdir(); destination.mkdir()
+        filename = "assessment_pass_percentages.json"
+        (source / filename).write_text('{"QFD 2":{"Formative 1":30}}', encoding="utf-8")
+        (destination / filename).write_text('{\n  "QFD 2": {"Formative 1": 30}\n}', encoding="utf-8-sig")
+        before = (destination / filename).read_bytes()
+        with patch.object(data_paths, "DEFAULT_DATA_DIR", source), patch.object(data_paths, "DATA_LOCATION_FILE", Path(self.temp.name) / "location.json"):
+            data_paths.save_active_data_dir(source)
+            self.service.activate_data_folder(destination)
+            self.assertEqual(data_paths.get_active_data_dir(), destination.resolve())
+        self.assertEqual((destination / filename).read_bytes(), before)
+
+    def test_copy_json_conflict_keeps_both_originals(self):
+        source = Path(self.temp.name) / "source.json"
+        destination = Path(self.temp.name) / "destination.json"
+        source.write_text('{"pass":30}')
+        destination.write_text('{"pass":50}')
+        before = (source.read_bytes(), destination.read_bytes())
+        with self.assertRaisesRegex(ValueError, "Conflicting data file"):
+            data_paths.copy_file_no_overwrite(source, destination)
+        self.assertEqual((source.read_bytes(), destination.read_bytes()), before)
 
 
 if __name__ == "__main__":

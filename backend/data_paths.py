@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = PROJECT_ROOT / "backend" / "data"
 DATA_LOCATION_FILE = PROJECT_ROOT / "backend" / "data_location.json"
 STABLE_DATA_FILES = {"database_configurations.json"}
-STABLE_DATA_DIRECTORIES = {"db_ca_certs"}
+STABLE_DATA_DIRECTORIES = {"db_ca_certs", ".storage_migrations"}
 LEGACY_STATE_FILES = (
     "assessment_completions.json",
     "assessment_pass_percentages.json",
@@ -23,16 +23,30 @@ LEGACY_STATE_FILES = (
 )
 
 
+def data_files_equal(source: Path, destination: Path) -> bool:
+    """Compare JSON values (including BOM/formatting differences), bytes otherwise."""
+    if not source.is_file() or not destination.is_file():
+        return False
+    if source.suffix.lower() == ".json" and destination.suffix.lower() == ".json":
+        try:
+            with source.open("r", encoding="utf-8-sig") as file:
+                left = json.load(file)
+            with destination.open("r", encoding="utf-8-sig") as file:
+                right = json.load(file)
+            return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
+        except (ValueError, UnicodeError):
+            return False
+    return filecmp.cmp(source, destination, shallow=False)
+
+
 def copy_file_no_overwrite(source: Path, destination: Path) -> None:
     if destination.is_symlink():
         raise ValueError(f"Cannot migrate over linked data file: {destination.name}.")
     if destination.exists():
-        if not destination.is_file() or not filecmp.cmp(
-            source, destination, shallow=False
-        ):
+        if not destination.is_file() or not data_files_equal(source, destination):
             raise ValueError(
                 f"Conflicting data file: {destination.name}. "
-                "Existing files were not overwritten."
+                f"Existing files were not overwritten. Compare {source} and {destination}."
             )
         return
     created = False
@@ -52,12 +66,10 @@ def copy_file_no_overwrite(source: Path, destination: Path) -> None:
             os.fsync(target.fileno())
         completed = True
     except FileExistsError:
-        if not destination.is_file() or not filecmp.cmp(
-            source, destination, shallow=False
-        ):
+        if not destination.is_file() or not data_files_equal(source, destination):
             raise ValueError(
                 f"Conflicting data file: {destination.name}. "
-                "Existing files were not overwritten."
+                f"Existing files were not overwritten. Compare {source} and {destination}."
             )
     except OSError as exc:
         raise ValueError(

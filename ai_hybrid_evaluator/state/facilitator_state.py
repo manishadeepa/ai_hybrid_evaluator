@@ -2504,6 +2504,22 @@ class FacilitatorState(rx.State):
         return []
 
     @rx.var(cache=True)
+    async def current_test_lock_states(self) -> dict[str, bool]:
+        return {item["name"]: bool(item.get("is_locked")) for item in await self.current_assessment_test_items}
+
+    @rx.var(cache=True)
+    async def all_current_tests_locked(self) -> bool:
+        items = await self.current_assessment_test_items
+        return bool(items) and all(item.get("is_locked") for item in items)
+
+    def show_locked_test_view_mode(self):
+        return rx.toast.info("View mode only. This test is locked.")
+
+    def show_locked_test_view_mode_key(self, key: str):
+        if key in ("Enter", " "):
+            return self.show_locked_test_view_mode()
+
+    @rx.var(cache=True)
     async def is_selected_test_locked(self) -> bool:
         for item in await self.current_assessment_test_items:
             if item.get("name") == self.selected_test_name:
@@ -2892,52 +2908,11 @@ class FacilitatorState(rx.State):
         match = next((a for a in all_mine if a["name"] == sel_name), None)
         if not match:
             return []
-        all_tests = match.get("all_tests", [])
-
         overview = await self.dashboard_assessments_overview
-        ov_match = next((r for r in overview if r["assessment_name"] == sel_name), None)
-        stats_map = {}
-        if ov_match:
-            for s in ov_match.get("test_stats", []):
-                stats_map[s["test_name"]] = s
-
-        activity = []
-        for i, t in enumerate(all_tests):
-            st = stats_map.get(t, {})
-            eval_comp = st.get("eval_completed", 0)
-            pending = st.get("pending_eval", 0)
-            comp = st.get("completed", 0)
-
-            if eval_comp > 0 and pending == 0:
-                eval_status = "Completed"
-                status_color = "green"
-            elif eval_comp > 0 or pending > 0 or comp > 0:
-                eval_status = "In Progress"
-                status_color = "orange"
-            else:
-                eval_status = "Not Started"
-                status_color = "gray"
-
-            eval_by = ", ".join(st.get("evaluators", [])) or "-"
-
-            # Test lock status & locked by
-            if eval_status == "Completed":
-                lock_status = "Locked"
-                locked_by = eval_by
-            else:
-                lock_status = "Unlocked"
-                locked_by = "-"
-
-            activity.append({
-                "index": str(i + 1),
-                "test_name": t,
-                "evaluation_status": eval_status,
-                "status_color": status_color,
-                "evaluated_by": eval_by,
-                "lock_status": lock_status,
-                "locked_by": locked_by,
-            })
-        return activity
+        ov_match = next((r for r in overview if (
+            r.get("assessment_id") == match.get("assessment_id") if match.get("assessment_id")
+            else r["assessment_name"] == sel_name)), None)
+        return FacilitatorDashboardService.collaboration_activity(match, ov_match)
 
     @rx.var(cache=True)
     async def dashboard_assessments_overview(self) -> list[dict]:

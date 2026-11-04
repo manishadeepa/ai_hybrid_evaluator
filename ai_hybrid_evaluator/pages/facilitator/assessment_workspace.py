@@ -8,6 +8,7 @@ Tabs (state-based, no route change):
 """
 
 import reflex as rx
+from ai_hybrid_evaluator.components.locked_controls import locked_control
 from ai_hybrid_evaluator.components.layout.facilitator_shell import facilitator_shell
 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
@@ -190,7 +191,7 @@ def active_test_uploaded_card() -> rx.Component:
                         color_scheme="indigo",
                         font_family=FONT_BODY,
                     ),
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("refresh-cw", size=13),
                         "Replace",
                         on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
@@ -199,8 +200,8 @@ def active_test_uploaded_card() -> rx.Component:
                         variant="outline",
                         color_scheme="gray",
                         font_family=FONT_BODY,
-                    ),
-                    rx.button(
+                    ), FacilitatorState.is_selected_test_locked),
+                    locked_control(rx.button(
                         rx.icon("trash-2", size=13),
                         "Remove",
                         on_click=FacilitatorState.remove_current_test_question_paper,
@@ -209,7 +210,7 @@ def active_test_uploaded_card() -> rx.Component:
                         variant="soft",
                         color_scheme="red",
                         font_family=FONT_BODY,
-                    ),
+                    ), FacilitatorState.is_selected_test_locked),
                     spacing="2",
                     align_items="center",
                 ),
@@ -269,7 +270,7 @@ def active_test_dropzone_card() -> rx.Component:
                     margin_bottom="0.8em",
                 ),
             ),
-            rx.upload(
+            locked_control(rx.upload(
                 rx.vstack(
                     rx.box(
                         rx.icon("cloud-upload", size=32, color=COLORS["primary"]),
@@ -329,7 +330,7 @@ def active_test_dropzone_card() -> rx.Component:
                     "text/csv": [".csv"],
                 },
                 max_files=1,
-            ),
+            ), FacilitatorState.is_selected_test_locked),
             # File selection feedback and confirm upload button
             rx.cond(
                 rx.selected_files("test_qp_file_upload").length() > 0,
@@ -369,7 +370,7 @@ def active_test_dropzone_card() -> rx.Component:
                             overflow="hidden",
                         ),
                         # Upload button — fixed, never shrinks or overflows
-                        rx.button(
+                        locked_control(rx.button(
                             rx.icon("upload", size=14),
                             "Upload to ", FacilitatorState.selected_test_name,
                             on_click=FacilitatorState.handle_upload_for_test(rx.upload_files(upload_id="test_qp_file_upload")),
@@ -381,7 +382,7 @@ def active_test_dropzone_card() -> rx.Component:
                             flex_shrink="0",
                             white_space="nowrap",
                             _hover={"background": "#05603A"},
-                        ),
+                        ), FacilitatorState.is_selected_test_locked),
                         spacing="3",
                         align_items="center",
                         width="100%",
@@ -456,24 +457,26 @@ def question_paper_overview_row(test_name: str, is_final: bool) -> rx.Component:
                         font_family=FONT_BODY,
                     ),
                 ),
-                rx.button(
+                locked_control(rx.button(
                     rx.cond(has_file, "Replace", "Browse & Upload"),
                     on_click=FacilitatorState.start_replacing_qp(test_name),
+                    disabled=FacilitatorState.current_test_lock_states.get(test_name, False),
                     size="1",
                     variant=rx.cond(is_active, "solid", "outline"),
                     color_scheme=rx.cond(is_final, "amber", "indigo"),
                     font_family=FONT_BODY,
-                ),
+                ), FacilitatorState.current_test_lock_states.get(test_name, False)),
                 rx.cond(
                     has_file,
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("trash-2", size=12),
                         on_click=FacilitatorState.remove_test_question_paper(test_name),
+                        disabled=FacilitatorState.current_test_lock_states.get(test_name, False),
                         size="1",
                         variant="ghost",
                         color=COLORS["danger"],
                         _hover={"background": "#FEE4E2"},
-                    ),
+                    ), FacilitatorState.current_test_lock_states.get(test_name, False)),
                 ),
                 spacing="2",
                 align_items="center",
@@ -594,27 +597,27 @@ def test_management_card(test: dict) -> rx.Component:
                                     on_click=FacilitatorState.open_qp_preview(t_name, FacilitatorState.selected_assessment_name),
                                 ),
                             ),
-                            rx.menu.item(
+                            locked_control(rx.menu.item(
                                 rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
                                 on_click=FacilitatorState.start_replacing_qp(t_name),
                                 disabled=test["is_locked"],
-                            ),
+                            ), test['is_locked']),
                             rx.cond(
                                 has_file,
-                                rx.menu.item(
+                                locked_control(rx.menu.item(
                                     "Remove Question Paper",
                                     on_click=FacilitatorState.remove_test_question_paper(t_name),
                                     color="red",
                                     disabled=test["is_locked"],
-                                ),
+                                ), test['is_locked']),
                             ),
                             rx.menu.separator(),
-                            rx.menu.item(
+                            locked_control(rx.menu.item(
                                 "Delete Test",
                                 on_click=FacilitatorState.facilitator_remove_test(t_name),
                                 color="red",
                                 disabled=test["is_locked"],
-                            ),
+                            ), test['is_locked']),
                         ),
                     ),
                     spacing="2",
@@ -824,27 +827,27 @@ def question_paper_right_column() -> rx.Component:
                                 on_click=FacilitatorState.open_qp_preview(FacilitatorState.selected_test_name, FacilitatorState.selected_assessment_name),
                             ),
                         ),
-                        rx.menu.item(
+                        locked_control(rx.menu.item(
                             rx.cond(FacilitatorState.has_current_test_qp, "Replace File", "Upload File"),
                             on_click=FacilitatorState.start_replacing_qp(FacilitatorState.selected_test_name),
                             disabled=FacilitatorState.is_selected_test_locked,
-                        ),
+                        ), FacilitatorState.is_selected_test_locked),
                         rx.cond(
                             FacilitatorState.has_current_test_qp,
-                            rx.menu.item(
+                            locked_control(rx.menu.item(
                                 "Remove Question Paper",
                                 on_click=FacilitatorState.remove_current_test_question_paper,
                                 color="red",
                                 disabled=FacilitatorState.is_selected_test_locked,
-                            ),
+                            ), FacilitatorState.is_selected_test_locked),
                         ),
                         rx.menu.separator(),
-                        rx.menu.item(
+                        locked_control(rx.menu.item(
                             "Delete Test",
                             on_click=FacilitatorState.facilitator_remove_test(FacilitatorState.selected_test_name),
                             color="red",
                             disabled=FacilitatorState.is_selected_test_locked,
-                        ),
+                        ), FacilitatorState.is_selected_test_locked),
                     ),
                 ),
                 spacing="2",
@@ -928,7 +931,7 @@ def question_paper_right_column() -> rx.Component:
                                 on_click=FacilitatorState.open_qp_preview(FacilitatorState.selected_test_name, FacilitatorState.selected_assessment_name),
                                 cursor="pointer",
                             ),
-                            rx.button(
+                            locked_control(rx.button(
                                 rx.icon("refresh-cw", size=14),
                                 "Replace File",
                                 background=COLORS["primary"],
@@ -940,7 +943,7 @@ def question_paper_right_column() -> rx.Component:
                                 disabled=FacilitatorState.is_selected_test_locked,
                                 _hover={"background": COLORS["primary_hover"]},
                                 cursor="pointer",
-                            ),
+                            ), FacilitatorState.is_selected_test_locked),
                             spacing="3",
                             align_items="center",
                             padding_top="0.5em",
@@ -981,7 +984,7 @@ def question_paper_right_column() -> rx.Component:
                                 border_radius="6px",
                             ),
                         ),
-                        rx.upload(
+                        locked_control(rx.upload(
                             rx.vstack(
                                 rx.box(
                                     rx.icon("cloud-upload", size=30, color=COLORS["primary"]),
@@ -1021,9 +1024,10 @@ def question_paper_right_column() -> rx.Component:
                                 width="100%",
                             ),
                             id="test_qp_file_upload",
+                            disabled=FacilitatorState.is_selected_test_locked,
                             padding="3.5em 2em",
                             width="100%",
-                        ),
+                        ), FacilitatorState.is_selected_test_locked),
                         rx.cond(
                             rx.selected_files("test_qp_file_upload"),
                             rx.hstack(
@@ -1032,16 +1036,17 @@ def question_paper_right_column() -> rx.Component:
                                     lambda f: rx.badge(f, color_scheme="indigo", size="2"),
                                 ),
                                 rx.spacer(),
-                                rx.button(
+                                locked_control(rx.button(
                                     rx.icon("upload", size=14),
                                     "Confirm Upload",
                                     on_click=FacilitatorState.handle_upload_for_test(rx.upload_files(upload_id="test_qp_file_upload")),
+                                    disabled=FacilitatorState.is_selected_test_locked,
                                     background="#027A48",
                                     color="white",
                                     size="2",
                                     border_radius="8px",
                                     _hover={"background": "#05603A"},
-                                ),
+                                ), FacilitatorState.is_selected_test_locked),
                                 spacing="2",
                                 width="100%",
                                 padding="0.8em 1.2em",
@@ -1245,7 +1250,7 @@ def tests_tab_card(test: dict) -> rx.Component:
             # Right: Action buttons + 3-dot menu
             rx.hstack(
                 # Lock Test is backed by persisted creator-owned state.
-                rx.button(
+                locked_control(rx.button(
                     rx.icon("lock", size=14),
                     rx.cond(test["is_locked"], "Locked", "Lock Test"),
                     on_click=FacilitatorState.open_lock_test_confirmation(test["test_id"]),
@@ -1270,7 +1275,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                     font_family=FONT_BODY,
                     border_radius="8px",
                     cursor="pointer",
-                ),
+                ), test['is_locked']),
                 # View File (only when QP uploaded)
                 rx.cond(
                     has_file,
@@ -1290,7 +1295,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                 # Replace File / Upload File
                 rx.cond(
                     has_file,
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("refresh-cw", size=14),
                         "Replace File",
                         on_click=FacilitatorState.start_replacing_qp(t_name),
@@ -1302,8 +1307,8 @@ def tests_tab_card(test: dict) -> rx.Component:
                         border_radius="8px",
                         _hover={"background": "#4338CA"},
                         cursor="pointer",
-                    ),
-                    rx.button(
+                    ), test['is_locked']),
+                    locked_control(rx.button(
                         rx.icon("upload", size=14),
                         "Upload File",
                         on_click=FacilitatorState.start_replacing_qp(t_name),
@@ -1314,7 +1319,7 @@ def tests_tab_card(test: dict) -> rx.Component:
                         font_family=FONT_BODY,
                         border_radius="8px",
                         cursor="pointer",
-                    ),
+                    ), test['is_locked']),
                 ),
                 # 3-dot menu
                 rx.menu.root(
@@ -1336,27 +1341,27 @@ def tests_tab_card(test: dict) -> rx.Component:
                                 on_click=FacilitatorState.open_qp_preview(t_name, FacilitatorState.selected_assessment_name),
                             ),
                         ),
-                        rx.menu.item(
+                        locked_control(rx.menu.item(
                             rx.cond(has_file, "Replace Question Paper", "Upload Question Paper"),
                             on_click=FacilitatorState.start_replacing_qp(t_name),
                             disabled=test["is_locked"],
-                        ),
+                        ), test['is_locked']),
                         rx.cond(
                             has_file,
-                            rx.menu.item(
+                            locked_control(rx.menu.item(
                                 "Remove Question Paper",
                                 on_click=FacilitatorState.remove_test_question_paper(t_name),
                                 color="red",
                                 disabled=test["is_locked"],
-                            ),
+                            ), test['is_locked']),
                         ),
                         rx.menu.separator(),
-                        rx.menu.item(
+                        locked_control(rx.menu.item(
                             "Delete Test",
                             on_click=FacilitatorState.facilitator_remove_test(t_name),
                             color="red",
                             disabled=test["is_locked"],
-                        ),
+                        ), test['is_locked']),
                     ),
                 ),
                 spacing="2",
@@ -2211,7 +2216,7 @@ def evaluation_methods_card() -> rx.Component:
                         min_height="36px",
                     ),
                     rx.hstack(
-                        rx.button(
+                        locked_control(rx.button(
                             rx.icon("pencil", size=14),
                             "Manual Evaluation",
                             on_click=lambda: FacilitatorState.open_candidate_test_status("manual"),
@@ -2224,7 +2229,7 @@ def evaluation_methods_card() -> rx.Component:
                             border_radius="8px",
                             flex="1",
                             _hover={"background": COLORS["primary_hover"]},
-                        ),
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
                         rx.button(
                             rx.icon("eye", size=14),
                             "Review Evaluation",
@@ -2277,7 +2282,7 @@ def evaluation_methods_card() -> rx.Component:
                         min_height="36px",
                     ),
                     rx.hstack(
-                        rx.button(
+                        locked_control(rx.button(
                             rx.icon("play", size=14),
                             "Start AI Evaluation",
                             on_click=lambda: FacilitatorState.open_candidate_test_status("ai"),
@@ -2290,7 +2295,7 @@ def evaluation_methods_card() -> rx.Component:
                             border_radius="8px",
                             flex="1",
                             _hover={"background": "#05603A"},
-                        ),
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
                         rx.button(
                             rx.icon("eye", size=14),
                             "Review Evaluation",
@@ -3308,7 +3313,7 @@ def manual_evaluation_modal() -> rx.Component:
                 rx.hstack(
                     rx.vstack(
                         rx.text("Award Marks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"]),
-                        rx.input(
+                        locked_control(rx.input(
                             value=FacilitatorState.current_manual_mark_val,
                             on_change=FacilitatorState.set_current_manual_mark,
                             disabled=~FacilitatorState.can_evaluate_selected_test,
@@ -3317,7 +3322,7 @@ def manual_evaluation_modal() -> rx.Component:
                             type="number",
                             size="2",
                             width="140px",
-                        ),
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
                         spacing="1",
                         align_items="start",
                     ),
@@ -3329,7 +3334,7 @@ def manual_evaluation_modal() -> rx.Component:
                 # Justification Area
                 rx.vstack(
                     rx.text("Evaluation Justification / Remarks", font_family=FONT_BODY, size="1", weight="bold", color=COLORS["ink"], padding_top="0.5em"),
-                    rx.text_area(
+                    locked_control(rx.text_area(
                         value=FacilitatorState.current_manual_justification_val,
                         on_change=FacilitatorState.set_current_manual_justification,
                         disabled=~FacilitatorState.can_evaluate_selected_test,
@@ -3338,7 +3343,7 @@ def manual_evaluation_modal() -> rx.Component:
                         size="2",
                         width="100%",
                         min_height="80px",
-                    ),
+                    ), FacilitatorState.is_selected_evaluation_test_locked),
                     spacing="1",
                     align_items="start",
                     width="100%",
@@ -3367,7 +3372,7 @@ def manual_evaluation_modal() -> rx.Component:
                         font_family=FONT_BODY,
                     ),
                     rx.spacer(),
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("check", size=14),
                         "Save Evaluation",
                         on_click=FacilitatorState.save_manual_evaluation,
@@ -3378,7 +3383,7 @@ def manual_evaluation_modal() -> rx.Component:
                         size="2",
                         font_family=FONT_BODY,
                         _hover={"background": COLORS["primary_hover"]},
-                    ),
+                    ), FacilitatorState.is_selected_evaluation_test_locked),
                     spacing="2",
                     align_items="center",
                     width="100%",
@@ -3428,7 +3433,7 @@ def answer_key_upload_modal() -> rx.Component:
                     size="2",
                     color=COLORS["slate"],
                 ),
-                rx.upload(
+                locked_control(rx.upload(
                     rx.vstack(
                         rx.icon("file-spreadsheet", size=32, color="#B54708"),
                         rx.text("Click to select answer key (.xlsx, .xls)", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
@@ -3458,7 +3463,7 @@ def answer_key_upload_modal() -> rx.Component:
                     width="100%",
                     margin_y="1em",
                     cursor="pointer",
-                ),
+                ), FacilitatorState.is_selected_evaluation_test_locked),
                 rx.cond(
                     rx.selected_files("answer_key_upload_zone").length() > 0,
                     rx.hstack(
@@ -3471,7 +3476,7 @@ def answer_key_upload_modal() -> rx.Component:
                             color=COLORS["ink"],
                         ),
                         rx.spacer(),
-                        rx.button(
+                        locked_control(rx.button(
                             rx.icon("upload", size=14),
                             "Upload",
                             on_click=FacilitatorState.handle_answer_key_upload(rx.upload_files(upload_id="answer_key_upload_zone")),
@@ -3480,7 +3485,7 @@ def answer_key_upload_modal() -> rx.Component:
                             background="#027A48",
                             color="white",
                             font_family=FONT_BODY,
-                        ),
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
                         spacing="2",
                         align_items="center",
                         background="#ECFDF3",
@@ -3502,7 +3507,7 @@ def answer_key_upload_modal() -> rx.Component:
                             size="2",
                         ),
                     ),
-                    rx.button(
+                    locked_control(rx.button(
                         "Set Default Key (Mock)",
                         on_click=FacilitatorState.simulate_upload_answer_key,
                         disabled=FacilitatorState.is_selected_evaluation_test_locked,
@@ -3510,7 +3515,7 @@ def answer_key_upload_modal() -> rx.Component:
                         color="white",
                         font_family=FONT_BODY,
                         size="2",
-                    ),
+                    ), FacilitatorState.is_selected_evaluation_test_locked),
                     spacing="2",
                     width="100%",
                 ),
@@ -3595,7 +3600,7 @@ def ai_evaluation_trigger_modal() -> rx.Component:
                     rx.dialog.close(
                         rx.button("Cancel", variant="outline", color_scheme="gray", size="2"),
                     ),
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("sparkles", size=14),
                         "Run AI Evaluation",
                         on_click=FacilitatorState.trigger_evaluation_tab_ai_eval,
@@ -3604,7 +3609,7 @@ def ai_evaluation_trigger_modal() -> rx.Component:
                         color="white",
                         size="2",
                         _hover={"background": "#05603A"},
-                    ),
+                    ), FacilitatorState.is_selected_evaluation_test_locked),
                     spacing="2",
                     width="100%",
                 ),
@@ -3851,7 +3856,7 @@ def ai_eval_progress_modal() -> rx.Component:
                     ),
                     # Action buttons (Stop, Resume, Restart)
                     rx.hstack(
-                        rx.button(
+                        locked_control(rx.button(
                             rx.icon("pause", size=14, color="#EF4444"),
                             rx.text("Stop", font_family=FONT_BODY, font_weight="500", size="2", color="#EF4444"),
                             on_click=FacilitatorState.stop_ai_evaluation,
@@ -3863,8 +3868,8 @@ def ai_eval_progress_modal() -> rx.Component:
                             padding="0.5em 1.75em",
                             cursor="pointer",
                             _hover={"background": "#FEF2F2", "border_color": "#F87171"},
-                        ),
-                        rx.button(
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
+                        locked_control(rx.button(
                             rx.icon("play", size=14, color="#6C3FF4"),
                             rx.text("Resume", font_family=FONT_BODY, font_weight="500", size="2", color="#6C3FF4"),
                             on_click=FacilitatorState.resume_ai_evaluation,
@@ -3876,8 +3881,8 @@ def ai_eval_progress_modal() -> rx.Component:
                             padding="0.5em 1.75em",
                             cursor="pointer",
                             _hover={"background": "#F5F3FF", "border_color": "#C4B5FD"},
-                        ),
-                        rx.button(
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
+                        locked_control(rx.button(
                             rx.icon("rotate-ccw", size=14, color="#475569"),
                             rx.text("Restart", font_family=FONT_BODY, font_weight="500", size="2", color="#475569"),
                             on_click=FacilitatorState.open_restart_confirm_modal,
@@ -3889,7 +3894,7 @@ def ai_eval_progress_modal() -> rx.Component:
                             padding="0.5em 1.75em",
                             cursor="pointer",
                             _hover={"background": "#F8FAFC", "border_color": "#94A3B8"},
-                        ),
+                        ), FacilitatorState.is_selected_evaluation_test_locked),
                         spacing="3",
                         justify="center",
                         align_items="center",
@@ -3931,7 +3936,7 @@ def ai_eval_progress_modal() -> rx.Component:
                                         border_radius="6px",
                                         cursor="pointer",
                                     ),
-                                    rx.button(
+                                    locked_control(rx.button(
                                         "Restart",
                                         on_click=FacilitatorState.restart_ai_evaluation,
                                         disabled=FacilitatorState.is_selected_evaluation_test_locked,
@@ -3942,7 +3947,7 @@ def ai_eval_progress_modal() -> rx.Component:
                                         border_radius="6px",
                                         cursor="pointer",
                                         _hover={"background": "#5B32DB"},
-                                    ),
+                                    ), FacilitatorState.is_selected_evaluation_test_locked),
                                     spacing="2",
                                     justify="end",
                                     width="100%",
@@ -4387,7 +4392,7 @@ def review_evaluation_modal() -> rx.Component:
                                             vertical_align="middle",
                                         ),
                                         rx.table.cell(
-                                            rx.input(
+                                            locked_control(rx.input(
                                                 value=row["marks"],
                                                 on_change=lambda val: FacilitatorState.set_review_row_mark(row["key"], val),
                                                 disabled=~FacilitatorState.can_evaluate_selected_test,
@@ -4395,7 +4400,7 @@ def review_evaluation_modal() -> rx.Component:
                                                 size="1",
                                                 width="75px",
                                                 font_family=FONT_BODY,
-                                            ),
+                                            ), FacilitatorState.is_selected_evaluation_test_locked),
                                             vertical_align="middle",
                                         ),
                                         rx.table.cell(
@@ -4409,7 +4414,7 @@ def review_evaluation_modal() -> rx.Component:
                                             vertical_align="middle",
                                         ),
                                         rx.table.cell(
-                                            rx.input(
+                                            locked_control(rx.input(
                                                 value=row["justification"],
                                                 on_change=lambda val: FacilitatorState.set_review_row_justification(row["key"], val),
                                                 disabled=~FacilitatorState.can_evaluate_selected_test,
@@ -4417,11 +4422,11 @@ def review_evaluation_modal() -> rx.Component:
                                                 size="1",
                                                 font_family=FONT_BODY,
                                                 width="100%",
-                                            ),
+                                            ), FacilitatorState.is_selected_evaluation_test_locked),
                                             vertical_align="middle",
                                         ),
                                         rx.table.cell(
-                                            rx.input(
+                                            locked_control(rx.input(
                                                 value=row["remarks"],
                                                 placeholder="Facilitator remarks...",
                                                 on_change=lambda val: FacilitatorState.set_review_row_remarks(row["key"], val),
@@ -4430,11 +4435,11 @@ def review_evaluation_modal() -> rx.Component:
                                                 size="1",
                                                 font_family=FONT_BODY,
                                                 width="100%",
-                                            ),
+                                            ), FacilitatorState.is_selected_evaluation_test_locked),
                                             vertical_align="middle",
                                         ),
                                         rx.table.cell(
-                                            rx.button(
+                                            locked_control(rx.button(
                                                 "Save",
                                                 on_click=lambda: FacilitatorState.save_review_row(row["key"], row["name"], row["max_marks"]),
                                                 disabled=~FacilitatorState.can_evaluate_selected_test,
@@ -4445,7 +4450,7 @@ def review_evaluation_modal() -> rx.Component:
                                                 font_family=FONT_BODY,
                                                 border_radius="6px",
                                                 _hover={"background": COLORS["primary_hover"]},
-                                            ),
+                                            ), FacilitatorState.is_selected_evaluation_test_locked),
                                             vertical_align="middle",
                                         ),
                                     ),
@@ -5639,7 +5644,7 @@ def _weightage_row(test: dict) -> rx.Component:
         # 4. Weightage (%)
         rx.table.cell(
             rx.hstack(
-                rx.input(
+                locked_control(rx.input(
                     placeholder="0",
                     value=test["weightage"],
                     on_change=lambda v: FacilitatorState.set_weightage_input(test["name"], v),
@@ -5654,7 +5659,7 @@ def _weightage_row(test: dict) -> rx.Component:
                     background="white",
                     border=f"1px solid {COLORS['line']}",
                     border_radius="6px",
-                ),
+                ), test['is_locked']),
                 rx.text("%", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
                 spacing="1",
                 align_items="center",
@@ -5663,7 +5668,7 @@ def _weightage_row(test: dict) -> rx.Component:
         # 5. Pass Percentage (%)
         rx.table.cell(
             rx.hstack(
-                rx.input(
+                locked_control(rx.input(
                     placeholder="50",
                     value=test["pass_percentage"],
                     on_change=lambda v: FacilitatorState.set_pass_percentage_input(test["name"], v),
@@ -5678,7 +5683,7 @@ def _weightage_row(test: dict) -> rx.Component:
                     background="white",
                     border=f"1px solid {COLORS['line']}",
                     border_radius="6px",
-                ),
+                ), test['is_locked']),
                 rx.text("%", font_family=FONT_BODY, size="2", color=COLORS["slate"]),
                 spacing="1",
                 align_items="center",
@@ -5802,10 +5807,11 @@ def weightage_tab() -> rx.Component:
                 # ── Save button ─────────────────────────────────────────
                 rx.hstack(
                     rx.spacer(),
-                    rx.button(
+                    locked_control(rx.button(
                         rx.icon("bookmark", size=14),
                         "Save Weightage & Pass %",
                         on_click=FacilitatorState.save_weightage,
+                        disabled=FacilitatorState.all_current_tests_locked,
                         background="#6C3FF4",
                         color="white",
                         size="2",
@@ -5813,7 +5819,7 @@ def weightage_tab() -> rx.Component:
                         border_radius="8px",
                         _hover={"background": "#5B35CC"},
                         cursor="pointer",
-                    ),
+                    ), FacilitatorState.all_current_tests_locked),
                     width="100%",
                 ),
                 spacing="4",

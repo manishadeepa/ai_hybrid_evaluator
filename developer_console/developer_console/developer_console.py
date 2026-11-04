@@ -1,11 +1,11 @@
-﻿import hmac
+import hmac
 import asyncio
 import os
 import sys
 from pathlib import Path
 
 import reflex as rx
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -20,11 +20,20 @@ from backend.services.database_configuration_service import (
 from backend.data_paths import get_active_data_dir
 from backend.services.master_admin_service import MasterAdminService
 
-load_dotenv(PROJECT_ROOT / "developer_console" / ".env")
+CONSOLE_ENV_FILE = PROJECT_ROOT / "developer_console" / ".env"
+
+
+def _developer_credentials():
+    # Read this file exclusively, without interpolation from process variables.
+    values = dotenv_values(CONSOLE_ENV_FILE, interpolate=False)
+    return values.get("DEV_CONSOLE_USERNAME") or "", values.get("DEV_CONSOLE_PASSWORD") or ""
+
 
 
 class State(rx.State):
     is_authenticated: bool = False
+    _developer_authenticated: bool = False
+    master_admin_loaded: bool = False
     login_error: str = ""
     show_password: bool = False
     active_section: str = "overview"
@@ -80,7 +89,7 @@ class State(rx.State):
     show_reset_master_admin_confirm_password: bool = False
 
     def _is_developer_authenticated(self) -> bool:
-        if self.is_authenticated:
+        if self._developer_authenticated and self.is_authenticated:
             return True
         self.admin_management_error = "Sign in to the developer console to manage administrators."
         return False
@@ -100,8 +109,17 @@ class State(rx.State):
         self.show_reset_master_admin_confirm_password = False
 
     def login(self, form_data: dict):
-        expected_username = os.environ.get("DEV_CONSOLE_USERNAME", "")
-        expected_password = os.environ.get("DEV_CONSOLE_PASSWORD", "")
+        self._developer_authenticated = False
+        self.is_authenticated = False
+        self.master_admin_loaded = False
+        self.master_admin = {"username": ""}
+        self._clear_admin_management_forms()
+        self._clear_database_secrets()
+        try:
+            expected_username, expected_password = _developer_credentials()
+        except (OSError, ValueError):
+            self.login_error = "Developer-console credentials could not be read."
+            return
         username = str(form_data.get("username", ""))
         password = str(form_data.get("password", ""))
 
@@ -109,9 +127,10 @@ class State(rx.State):
             self.login_error = "Developer-console credentials are not configured."
             return
 
-        if hmac.compare_digest(username, expected_username) and hmac.compare_digest(
-            password, expected_password
+        if hmac.compare_digest(username.encode(), expected_username.encode()) and hmac.compare_digest(
+            password.encode(), expected_password.encode()
         ):
+            self._developer_authenticated = True
             self.is_authenticated = True
             self.login_error = ""
         else:
@@ -130,12 +149,28 @@ class State(rx.State):
             self.database_view = "overview"
             self.database_error = ""
             self.database_message = ""
-            self.active_storage_status = (
-                f"Active JSON data folder: {get_active_data_dir()}"
-            )
+            self._refresh_active_storage_status()
+
+    def _refresh_active_storage_status(self):
+        try:
+            self.active_storage_status = f"Active JSON data folder: {get_active_data_dir()}"
+        except (OSError, ValueError) as exc:
+            self.active_storage_status = "Active storage could not be determined."
+            self.database_error = str(exc)
+
+    def _clear_database_secrets(self):
+        self.mysql_username = ""
+        self.mysql_password = ""
+        self.show_mysql_password = False
+        self.api_key = ""
+        self.api_token = ""
+        self.api_username = ""
+        self.api_password = ""
+        self.show_api_credential = False
+
 
     def _require_database_access(self) -> bool:
-        if self.is_authenticated:
+        if self._developer_authenticated and self.is_authenticated:
             return True
         self.database_error = "Sign in to the developer console to manage database settings."
         return False
@@ -194,6 +229,8 @@ class State(rx.State):
         self.database_view = "overview"
         self.database_error = ""
         self.database_message = ""
+        self._refresh_active_storage_status()
+        self._clear_database_secrets()
         self.mysql_password = ""
         self.api_key = ""
         self.api_token = ""
@@ -201,6 +238,8 @@ class State(rx.State):
         self.api_password = ""
 
     def set_folder_path(self, value: str):
+        if not self._require_database_access():
+            return
         self.folder_path = value
         self.database_error = ""
         self.database_test_status = "Not tested yet"
@@ -276,6 +315,8 @@ class State(rx.State):
         self.folder_browser_error = ""
 
     def set_folder_browser_open(self, is_open: bool):
+        if not self._require_database_access():
+            return
         self.folder_browser_open = is_open
         if not is_open:
             self.folder_browser_error = ""
@@ -320,34 +361,48 @@ class State(rx.State):
         self.database_test_status = "Folder path migrated and active"
         self.database_message = (
             "The JSON data folder is active. Existing source files were left in place; "
-            "matching files were reused and conflicting files were not overwritten."
+            "a verified backup was retained and conflicting files were not overwritten."
         )
 
     def set_mysql_host(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_host = value
         self._reset_database_test()
 
     def set_mysql_port(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_port = value
         self._reset_database_test()
 
     def set_mysql_database(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_database = value
         self._reset_database_test()
 
     def set_mysql_username(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_username = value
         self._reset_database_test()
 
     def set_mysql_password(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_password = value
         self._reset_database_test()
 
     def set_mysql_ssl_mode(self, value: str):
+        if not self._require_database_access():
+            return
         self.mysql_ssl_mode = value
         self._reset_database_test()
 
     def toggle_mysql_password(self):
+        if not self._require_database_access():
+            return
         self.show_mysql_password = not self.show_mysql_password
 
     def _mysql_form(self):
@@ -395,25 +450,34 @@ class State(rx.State):
         self.mysql_username = ""
         self.mysql_password = ""
         self.mysql_credentials_configured = True
+        self._refresh_active_storage_status()
         self.database_test_status = "MySQL connection verified and saved (not active)"
         self.database_message = (
             "Credentials were saved encrypted. JSON file storage remains active; "
-            "no data migration or backend switch was performed."
+            "MySQL repository support and verified data migration are still required."
         )
 
     def set_api_service_name(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_service_name = value
         self._reset_database_test()
 
     def set_api_base_url(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_base_url = value
         self._reset_database_test()
 
     def set_api_version(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_version = value
         self._reset_database_test()
 
     def set_api_auth_type(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_auth_type = value
         self.api_key = ""
         self.api_token = ""
@@ -423,26 +487,38 @@ class State(rx.State):
         self._reset_database_test()
 
     def set_api_key(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_key = value
         self._reset_database_test()
 
     def set_api_token(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_token = value
         self._reset_database_test()
 
     def set_api_username(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_username = value
         self._reset_database_test()
 
     def set_api_password(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_password = value
         self._reset_database_test()
 
     def set_api_ca_certificate_path(self, value: str):
+        if not self._require_database_access():
+            return
         self.api_ca_certificate_path = value
         self._reset_database_test()
 
     def toggle_api_credential_visibility(self):
+        if not self._require_database_access():
+            return
         self.show_api_credential = not self.show_api_credential
 
     def _api_form(self):
@@ -518,10 +594,11 @@ class State(rx.State):
         self.api_username = ""
         self.api_password = ""
         self.api_credentials_configured = self.api_auth_type != "None"
+        self._refresh_active_storage_status()
         self.database_test_status = "API transport verified and profile saved (not active)"
         self.database_message = (
             "Credentials were saved encrypted. JSON file storage remains active, and "
-            "no API endpoint or data contract was invented."
+            "an API data contract, authentication test, repository adapter, and data migration are still required."
         )
 
     def _reset_database_test(self):
@@ -534,6 +611,7 @@ class State(rx.State):
             return
         self.admin_management_error = ""
         self.admin_management_message = ""
+        self.master_admin_loaded = False
         try:
             master_admin = MasterAdminService().get() or {"username": ""}
         except (OSError, ValueError) as exc:
@@ -541,23 +619,34 @@ class State(rx.State):
             return
 
         self.master_admin = master_admin
+        self.master_admin_loaded = True
 
     def set_new_master_admin_username(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.new_master_admin_username = value
         self.admin_management_error = ""
 
     def set_new_master_admin_password(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.new_master_admin_password = value
         self.admin_management_error = ""
 
     def set_new_master_admin_confirm_password(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.new_master_admin_confirm_password = value
         self.admin_management_error = ""
 
     def toggle_new_master_admin_password(self):
+        if not self._is_developer_authenticated():
+            return
         self.show_new_master_admin_password = not self.show_new_master_admin_password
 
     def toggle_new_master_admin_confirm_password(self):
+        if not self._is_developer_authenticated():
+            return
         self.show_new_master_admin_confirm_password = (
             not self.show_new_master_admin_confirm_password
         )
@@ -584,6 +673,7 @@ class State(rx.State):
                 raise ValueError("A group admin already uses this username.")
             MasterAdminService().create(username, password)
         except (OSError, ValueError) as exc:
+            self.load_admin_accounts()
             self.admin_management_error = str(exc)
             return
         self.new_master_admin_username = ""
@@ -616,6 +706,8 @@ class State(rx.State):
             self.close_edit_master_admin_dialog()
 
     def set_edit_master_admin_username(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.edit_master_admin_username = value
         self.admin_management_error = ""
 
@@ -668,19 +760,27 @@ class State(rx.State):
             self.close_reset_master_admin_dialog()
 
     def set_reset_master_admin_password(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.reset_master_admin_password = value
         self.admin_management_error = ""
 
     def set_reset_master_admin_confirm_password(self, value: str):
+        if not self._is_developer_authenticated():
+            return
         self.reset_master_admin_confirm_password = value
         self.admin_management_error = ""
 
     def toggle_reset_master_admin_password(self):
+        if not self._is_developer_authenticated():
+            return
         self.show_reset_master_admin_password = (
             not self.show_reset_master_admin_password
         )
 
     def toggle_reset_master_admin_confirm_password(self):
+        if not self._is_developer_authenticated():
+            return
         self.show_reset_master_admin_confirm_password = (
             not self.show_reset_master_admin_confirm_password
         )
@@ -706,6 +806,11 @@ class State(rx.State):
         self.admin_management_message = "Master Admin password was reset."
 
     def logout(self):
+        self._clear_database_secrets()
+        self.folder_browser_entries = []
+        self.folder_browser_open = False
+        self._developer_authenticated = False
+        self.master_admin_loaded = False
         self.is_authenticated = False
         self.login_error = ""
         self.show_password = False
@@ -1138,6 +1243,8 @@ def admin_management_page() -> rx.Component:
             rx.fragment(),
         ),
         rx.cond(
+            State.master_admin_loaded,
+            rx.cond(
             State.master_admin["username"] == "",
             master_admin_creation_form(),
             rx.box(
@@ -1177,6 +1284,12 @@ def admin_management_page() -> rx.Component:
                 border="1px solid #e2e8f0",
                 border_left="4px solid #e34332",
                 border_radius="12px",
+            ),
+            ),
+            rx.vstack(
+                rx.text("Account status is unavailable. Resolve the storage error and retry.", color="#64748b"),
+                rx.button("Reload Account", on_click=State.load_admin_accounts),
+                align="start",
             ),
         ),
         master_admin_edit_dialog(),

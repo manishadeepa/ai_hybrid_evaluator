@@ -219,6 +219,7 @@ class FacilitatorDashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         auth = root.get_substate(tuple(AuthState.get_full_name().split(".")))
         auth.facilitator_emp_id = "F001"
+        auth.is_facilitator_authenticated = True
         auth.facilitator_name = "Facilitator One"
         admin.facilitators = []
         admin.candidates = []
@@ -252,7 +253,10 @@ class FacilitatorDashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         facilitator.saved_assessment_weightages = {}
         facilitator.weightage_inputs = {}
 
-        self.assertEqual([row["name"] for row in await facilitator.my_assessments], ["Assigned"])
+        from types import SimpleNamespace
+        catalog = SimpleNamespace(tests=SimpleNamespace(repository=InMemoryRepository([])))
+        with patch.object(state_module, "AssessmentService", return_value=catalog):
+            self.assertEqual([row["name"] for row in await facilitator.my_assessments], ["Assigned"])
 
 
 if __name__ == "__main__":

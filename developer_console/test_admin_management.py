@@ -28,6 +28,7 @@ class DeveloperConsoleAdminManagementTests(unittest.TestCase):
         self.root_state = rx.State(_reflex_internal_init=True)
         self.state = asyncio.run(self.root_state.get_state(State))
         self.state.is_authenticated = True
+        self.state._developer_authenticated = True
         self.patches = [
             patch.object(console, "GroupAdminService", return_value=self.service),
             patch.object(
@@ -247,14 +248,15 @@ class DeveloperConsoleAdminManagementTests(unittest.TestCase):
                 "Group User", "group-password", "new-group-password",
                 "new-group-password",
             )
-            self.assertTrue(mock_login("Master User", "new-master-password")["success"])
+            self.assertTrue(mock_login("Master User", "master-password")["success"])
             self.assertTrue(mock_login("Group User", "new-group-password")["success"])
 
         self.assertEqual(master_login["role"], "Master Admin")
         self.assertEqual(group_login["role"], "Group Admin")
-        self.assertTrue(master_change["success"])
+        self.assertFalse(master_change["success"])
+        self.assertIn("backend developer", master_change["error"])
         self.assertTrue(group_change["success"])
-        self.assertIsNone(self.master_service.authenticate("Master User", "master-password"))
+        self.assertIsNotNone(self.master_service.authenticate("Master User", "master-password"))
         self.assertIsNone(self.service.authenticate("Group User", "group-password"))
 
     def test_developer_can_create_edit_and_reset_master_admin(self):
@@ -290,6 +292,10 @@ class DeveloperConsoleAdminManagementTests(unittest.TestCase):
         self.assertIsNotNone(
             self.master_service.authenticate("Primary Admin", "new-master-pass")
         )
+        with patch("ai_hybrid_evaluator.services.mock_api.MasterAdminService", return_value=self.master_service):
+            self.assertTrue(mock_login("Primary Admin", "new-master-pass")["success"])
+            self.assertFalse(mock_login("Master User", "initial-master-pass")["success"])
+
         self.assertIsNotNone(
             self.service.authenticate("Existing Group User", "existing-pass")
         )
@@ -302,25 +308,80 @@ class DeveloperConsoleAdminManagementTests(unittest.TestCase):
         self.state.create_master_admin()
         self.assertIsNone(self.master_service.get())
 
-    def test_console_login_uses_configured_environment_credentials(self):
-        self.state.is_authenticated = False
-        with patch.dict(
-            os.environ,
-            {
-                "DEV_CONSOLE_USERNAME": "developer",
-                "DEV_CONSOLE_PASSWORD": "private-password",
-            },
-        ):
-            self.state.login(
-                {"username": "developer", "password": "private-password"}
-            )
-        self.assertTrue(self.state.is_authenticated)
-
+    def test_console_login_uses_only_console_dotenv_credentials(self):
+        env_file = Path(self.temp.name) / ".env"
+        env_file.write_text("DEV_CONSOLE_USERNAME=developer\nDEV_CONSOLE_PASSWORD=private-password\n")
         self.state.logout()
-        with patch.dict(
-            os.environ,
-            {"DEV_CONSOLE_USERNAME": "", "DEV_CONSOLE_PASSWORD": ""},
-        ):
+        with patch.object(console, "CONSOLE_ENV_FILE", env_file), patch.dict(os.environ, {
+            "DEV_CONSOLE_USERNAME": "wrong", "DEV_CONSOLE_PASSWORD": "wrong"}):
             self.state.login({"username": "developer", "password": "private-password"})
-        self.assertFalse(self.state.is_authenticated)
-        self.assertIn("not configured", self.state.login_error)
+            self.assertTrue(self.state.is_authenticated)
+            self.assertTrue(self.state._developer_authenticated)
+            env_file.write_text("")
+            self.state.login({"username": "wrong", "password": "wrong"})
+            self.assertFalse(self.state.is_authenticated)
+            self.assertFalse(self.state._developer_authenticated)
+            self.assertIn("not configured", self.state.login_error)
+
+    def test_failed_load_never_enables_creation_form(self):
+        self.master_service.create("Master", "secret")
+        self.state.load_admin_accounts()
+        self.assertTrue(self.state.master_admin_loaded)
+        with patch.object(self.master_service, "get", side_effect=ValueError("Conflicting data file")):
+            self.state.load_admin_accounts()
+        self.assertFalse(self.state.master_admin_loaded)
+        self.assertIn("Conflicting data file", self.state.admin_management_error)
+        self.assertEqual(self.state.master_admin, {"username": "Master"})
+
+    def test_public_auth_flag_does_not_authorize_handlers(self):
+        self.state.logout()
+        self.state.is_authenticated = True
+        self.state.new_master_admin_username = "Intruder"
+        self.state.new_master_admin_password = "pass"
+        self.state.new_master_admin_confirm_password = "pass"
+        self.state.create_master_admin()
+        self.state.save_master_admin_username()
+        self.state.reset_master_admin_password_now()
+        self.assertIsNone(self.master_service.get())
+        self.assertFalse(self.state._require_database_access())
+
+    def test_create_once_and_no_secret_material_in_public_state(self):
+        import json
+        self.state.new_master_admin_username = "Master"
+        self.state.new_master_admin_password = "secret"
+        self.state.new_master_admin_confirm_password = "secret"
+        self.state.create_master_admin()
+        self.assertTrue(self.state.master_admin_loaded)
+        self.assertEqual(self.state.master_admin, {"username": "Master"})
+        self.assertEqual(self.state.new_master_admin_password, "")
+        before = self.master_service.file_path.read_bytes()
+        self.state.new_master_admin_username = "Replacement"
+        self.state.new_master_admin_password = "other"
+        self.state.new_master_admin_confirm_password = "other"
+        self.state.create_master_admin()
+        self.assertEqual(self.master_service.file_path.read_bytes(), before)
+        self.assertEqual(self.state.master_admin, {"username": "Master"})
+        self.assertTrue(self.state.master_admin_loaded)
+        record = json.loads(before)[0]
+        self.assertNotEqual(record["password_hash"], "secret")
+        self.assertEqual(len(bytes.fromhex(record["salt"])), 16)
+        self.assertNotIn("password_hash", self.state.master_admin)
+
+    def test_main_application_cannot_change_master_password(self):
+        self.master_service.create("Master", "old-secret")
+        with patch("ai_hybrid_evaluator.services.mock_api.MasterAdminService", return_value=self.master_service):
+            response = change_admin_password("Master", "old-secret", "new-secret", "new-secret")
+        self.assertFalse(response["success"])
+        self.assertIsNotNone(self.master_service.authenticate("Master", "old-secret"))
+
+    def test_master_creation_is_serialized(self):
+        from concurrent.futures import ThreadPoolExecutor
+        def create(index):
+            try:
+                self.master_service.create("Master" + str(index), "secret")
+                return True
+            except ValueError:
+                return False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(sum(pool.map(create, range(2))), 1)
+        self.assertEqual(len(self.master_service.storage.get_all()), 1)

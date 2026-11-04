@@ -206,6 +206,7 @@ class AIEvaluationRunService:
                 'candidate_scope': candidate_scope, 'candidate_labels': labels,
                 'assessment_name': assessment_name, 'test_name': test_name,
                 'assessment_id': assessment_id, 'test_id': test_id, 'evaluation_type': 'ai',
+                'evaluated_by': facilitator_id, 'evaluated_by_id': facilitator_id,
                 'status': 'restarting' if restarted_from_run_id else 'idle',
                 'questions': [{'pair_id': uuid4().hex, 'record': r, 'status': 'pending', 'result': None, 'error': ''} for r in records],
                 'current_question': None, 'created_at': now, 'updated_at': now,
@@ -431,6 +432,8 @@ class AIEvaluationRunService:
                 result['percentage'] = 100 * marks / maximum if maximum else 0
                 result['status'] = 'unanswered' if q['record']['unanswered'] else 'completed'
                 q.update(status='completed', result=result, error='')
+                run['evaluated_by'] = facilitator_id
+                run['evaluated_by_id'] = facilitator_id
             else:
                 q.update(status='failed', result=None, error=error or 'Evaluation failed.')
             return self._save(run, facilitator_id, role)
