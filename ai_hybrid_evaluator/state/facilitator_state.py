@@ -4076,7 +4076,8 @@ class FacilitatorState(rx.State):
         if self.active_ai_run_id != run['run_id'] or run.get('superseded_by_run_id'):
             return
         revision = (run['run_id'], run.get('updated_at'), run['status'],
-                    self.selected_assessment_name, self.selected_test_name, self.selected_evaluation_candidate)
+                    self.selected_assessment_name, self.selected_test_name, self.selected_evaluation_candidate,
+                    run.get('assessment_id'), run.get('test_id'))
         if not restore and run.get('updated_at') and getattr(self, '_last_ai_revision', ()) == revision:
             return
         self._last_ai_revision = revision
@@ -7197,112 +7198,52 @@ class FacilitatorState(rx.State):
         return f"{submitted}/{total}"
 
     @rx.var
-    async def eval_status_label(self) -> str:
-        """Returns 'Completed', 'In Progress', or 'Pending' for the evaluation status."""
-        asmn = self.selected_assessment_name
-        test_name = self.selected_evaluation_test or self.selected_test_name
-        if not asmn or not test_name:
-            return "Pending"
+    async def evaluation_status_summary(self) -> dict:
+        from backend.services.evaluation_status_service import summarize_evaluation
+        target = self.selected_evaluation_test or self.selected_test_name
         mine = await self.my_assessments
-        match = next((a for a in mine if a["name"] == asmn), None)
-        if not match:
-            return "Pending"
-        total = len(match.get("candidate_details", []))
-        completed = 0
-        for c in match.get("candidate_details", []):
-            cand_name = c.get("name", "")
-            cand_id = c.get("emp_id", "")
-            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
-            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
-            if not saved:
-                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
-            if not saved and cand_id:
-                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if not saved and cand_id:
-                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if saved and saved.get("score"):
-                completed += 1
-        if total > 0 and completed >= total:
-            return "Completed"
-        elif completed > 0:
-            return "In Progress"
-        return "Pending"
+        assessment = next((row for row in mine if (
+            row.get("assessment_id") == self.selected_assessment_id if self.selected_assessment_id
+            else row.get("name") == self.selected_assessment_name)), None)
+        empty = {"status": "Pending", "completed": 0, "total": 0, "test_completed_count": 0}
+        if not assessment or not target:
+            return empty
+        snapshot = self._workspace_snapshot
+        if snapshot.get("scope", [])[:2] != [self.selected_assessment_id, self.selected_assessment_name]:
+            return {**empty, "status": "Loading"}
+        if snapshot.get("errors"):
+            return {**empty, "status": "Unable to load"}
+        aid = assessment.get("assessment_id", "")
+        tid = (assessment.get("test_ids") or {}).get(target, "")
+        if not aid or not tid:
+            return {**empty, "status": "Unable to load"}
+        ids = assessment.get("assigned_candidates") or [row.get("emp_id", "") for row in assessment.get("candidate_details", [])]
+        rows = list(self.assessment_evaluation_results.values())
+        overall = summarize_evaluation(aid, tid, ids, rows)
+        label = self.selected_evaluation_candidate
+        selected = None if label in ("", "All Candidates", "No candidates assigned") else _evaluation_candidate_id(label)
+        revision = self._last_ai_revision
+        active = (len(revision) >= 8 and tuple(revision[6:8]) == (aid, tid)
+                  and self.ai_run_status in ("running", "stop_requested", "paused"))
+        summary = summarize_evaluation(aid, tid, ids, rows, candidate_id=selected, active=active)
+        return {**summary, "test_completed_count": overall["completed"]}
+
+    @rx.var
+    async def eval_status_label(self) -> str:
+        return (await self.evaluation_status_summary)["status"]
+
+    @rx.var
+    async def eval_status_color(self) -> str:
+        return {"Completed": "#16A34A", "In Progress": "#D97706", "Unable to load": "#DC2626"}.get(
+            await self.eval_status_label, "#64748B")
 
     @rx.var
     async def eval_completed_count(self) -> int:
-        """Evaluations completed for the currently selected assessment+test in the evaluation tab."""
-        asmn = self.selected_assessment_name
-        test_name = self.selected_evaluation_test or self.selected_test_name
-        if not asmn or not test_name:
-            return 0
-        mine = await self.my_assessments
-        match = next((a for a in mine if a["name"] == asmn), None)
-        if not match:
-            return 0
-        count = 0
-        for c in match.get("candidate_details", []):
-            cand_name = c.get("name", "")
-            cand_id = c.get("emp_id", "")
-            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
-            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
-            if not saved:
-                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
-            if not saved and cand_id:
-                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if not saved and cand_id:
-                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if saved and saved.get("score"):
-                count += 1
-        return count
+        return int((await self.evaluation_status_summary)["test_completed_count"])
 
     @rx.var
     async def eval_pending_count(self) -> int:
-        """Evaluations pending (submitted but not evaluated) for the selected test.
-        Computes submitted and completed independently to avoid async-var chaining."""
-        asmn = self.selected_assessment_name
-        test_name = self.selected_evaluation_test or self.selected_test_name
-        if not asmn or not test_name:
-            return 0
-        mine = await self.my_assessments
-        match = next((a for a in mine if a["name"] == asmn), None)
-        if not match:
-            return 0
-        seen: set[str] = set()
-        submitted = 0
-        completed = 0
-        for c in match.get("candidate_details", []):
-            cand_name = c.get("name", "")
-            cand_id = c.get("emp_id", "")
-            label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
-            resp = _find_candidate_response(label, test_name, asmn)
-            if resp and resp.get("responses"):
-                submitted += 1
-                seen.add(str(cand_id).casefold())
-                seen.add(str(cand_name).casefold())
-            saved = _saved_evaluation(self.assessment_evaluation_results, label, asmn, test_name)
-            if not saved:
-                saved = _saved_evaluation(self.real_ai_results_per_candidate, label, asmn, test_name)
-            if not saved and cand_id:
-                saved = self.assessment_evaluation_results.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if not saved and cand_id:
-                saved = self.real_ai_results_per_candidate.get(f"{cand_id}:{asmn}:{test_name}", {})
-            if saved and saved.get("score"):
-                completed += 1
-        try:
-            from backend.repositories.response_repository import ResponseRepository
-            for r in ResponseRepository().get_all():
-                if r.get("status") == "Submitted":
-                    if (str(r.get("assessment_name", "")).casefold() == asmn.casefold()
-                            and str(r.get("test_name", "")).casefold() == test_name.casefold()):
-                        cid = str(r.get("candidate_id", "")).strip()
-                        cname = str(r.get("candidate_name", "")).strip()
-                        if cid.casefold() not in seen and cname.casefold() not in seen:
-                            submitted += 1
-                            seen.add(cid.casefold())
-                            seen.add(cname.casefold())
-        except Exception:
-            pass
-        return max(0, submitted - completed)
+        return max(0, await self.eval_submitted_count - await self.eval_completed_count)
 
     @rx.var
     def active_response_candidate_label(self) -> str:

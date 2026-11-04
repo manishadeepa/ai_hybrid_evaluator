@@ -1904,7 +1904,7 @@ def evaluation_candidate_selection_card() -> rx.Component:
             rx.box(
                 rx.hstack(
                     rx.box(
-                        rx.icon("circle-check", size=24, color="#16A34A"),
+                        rx.icon("circle-check", size=24, color=FacilitatorState.eval_status_color),
                         display="flex",
                         align_items="center",
                         justify_content="center",
@@ -1926,7 +1926,7 @@ def evaluation_candidate_selection_card() -> rx.Component:
                                 font_weight="bold",
                                 color="white",
                             ),
-                            background="#16A34A",
+                            background=FacilitatorState.eval_status_color,
                             padding="0.25em 0.85em",
                             border_radius="9999px",
                             display="inline-flex",
