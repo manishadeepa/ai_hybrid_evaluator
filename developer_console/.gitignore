@@ -5,3 +5,8 @@ assets/external/
 .states
 *.py[cod]
 .env
+/backend/data/
+/ai_hybrid_evaluator/data/
+/uploaded_files/
+/developer_console/uploaded_files/
+/backend/demo_data_reset_backups/

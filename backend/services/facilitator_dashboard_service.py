@@ -72,11 +72,11 @@ class FacilitatorDashboardService:
             store = getattr(catalog, "repository", None)
             if store is not None and getattr(store, "file_path", None) is not None:
                 from pathlib import Path
-                from backend.data_paths import resolve_data_path
                 from backend.repositories.facilitator_repository import FacilitatorRepository
+                from backend.repositories.json_repository import json_document_exists
                 path = Path(store.file_path).parent / "facilitators.json"
                 # Dashboard reads must never initialize a missing directory/store.
-                if resolve_data_path(path).exists():
+                if json_document_exists(path):
                     repository = FacilitatorRepository(path)
         rows = repository.get_all() if repository is not None else []
         return {str(row["emp_id"]): str(row["name"]) for row in rows}

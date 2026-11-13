@@ -7,6 +7,7 @@ shapes kept stable on purpose so that swap is easy later.
 
 import json
 import asyncio
+import logging
 import math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -20,6 +21,12 @@ from backend.services.feedback_service import FeedbackService
 from backend.repositories.facilitator_repository import FacilitatorRepository
 from backend.repositories.json_repository import JSONRepository
 from backend.data_paths import get_active_data_dir
+from ai_hybrid_evaluator.state.admin_authorization import (
+    has_admin_session,
+    has_candidate_session,
+    has_facilitator_session,
+    get_auth_state,
+)
 
 from ai_hybrid_evaluator.models.models import (
     Candidate, Facilitator, Assessment,
@@ -287,14 +294,24 @@ class AdminState(rx.State):
     # ---- Mock data ----
     facilitators: list[Facilitator] = list(SHARED_FACILITATORS)
     candidates: list[Candidate] = list(SHARED_CANDIDATES)
+    candidate_directory_profiles: list[dict] = []
+    facilitator_directory_profiles: list[dict] = []
     candidate_password_hash_only_ids: list[str] = []
     pending_evaluations: int = 12
 
-    def load_persisted_candidates(self):
+    async def load_persisted_candidates(self):
         """Load candidate identities from the backend into the existing UI shape."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        self._load_persisted_candidates()
+        self._load_employee_directory_profiles()
+
+    def _load_persisted_candidates(self, include_passwords=True):
         try:
             service = CandidateManagementService()
-            backend_candidates = service.list_candidates(include_passwords=True)
+            backend_candidates = service.list_candidates(
+                include_passwords=include_passwords
+            )
         except (ValueError, OSError):
             return
 
@@ -324,8 +341,13 @@ class AdminState(rx.State):
         self.candidates = loaded_candidates
         self.candidate_password_hash_only_ids = hash_only_ids
 
-    def load_persisted_facilitators(self):
+    async def load_persisted_facilitators(self):
         """Load persisted facilitators from the JSON repository."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        self._load_persisted_facilitators()
+
+    def _load_persisted_facilitators(self):
         try:
             backend_facilitators = FacilitatorRepository().get_all()
         except (ValueError, OSError):
@@ -349,11 +371,33 @@ class AdminState(rx.State):
             for facilitator in self.facilitators
         ]
 
-    def load_assessments_page_data(self):
+    def _load_employee_directory_profiles(self):
+        try:
+            self.candidate_directory_profiles = JSONRepository(
+                CANDIDATE_PROFILE_FILE
+            ).get_all()
+        except (OSError, ValueError, UnicodeError):
+            logging.getLogger(__name__).exception(
+                "Unable to load candidate directory profiles"
+            )
+            self.candidate_directory_profiles = []
+        try:
+            self.facilitator_directory_profiles = JSONRepository(
+                FACILITATOR_PROFILE_FILE
+            ).get_all()
+        except (OSError, ValueError, UnicodeError):
+            logging.getLogger(__name__).exception(
+                "Unable to load facilitator directory profiles"
+            )
+            self.facilitator_directory_profiles = []
+
+    async def load_assessments_page_data(self):
         """Load persisted assessments, candidates and facilitators."""
-        self.load_persisted_assessments()
-        self.load_persisted_candidates()
-        self.load_persisted_facilitators()
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        await self.load_persisted_assessments()
+        await self.load_persisted_candidates()
+        await self.load_persisted_facilitators()
 
     # =========================================================
     # VIEW FACILITATOR PROFILE (dialog)
@@ -361,7 +405,9 @@ class AdminState(rx.State):
     show_view_facilitator_profile: bool = False
     viewing_facilitator_profile: dict = {}
 
-    def open_view_facilitator_profile(self, index: int):
+    async def open_view_facilitator_profile(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if 0 <= index < len(self.facilitators):
             f = self.facilitators[index]
             fid = f["emp_id"]
@@ -386,7 +432,9 @@ class AdminState(rx.State):
     show_view_candidate_profile: bool = False
     viewing_candidate_profile: dict = {}
 
-    def open_view_candidate_profile(self, index: int):
+    async def open_view_candidate_profile(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if 0 <= index < len(self.candidates):
             c = self.candidates[index]
             cid = c["emp_id"]
@@ -425,8 +473,10 @@ class AdminState(rx.State):
     new_facilitator_show_password: bool = False
     facilitator_form_error: str = ""
 
-    def get_next_facilitator_id(self) -> str:
+    async def get_next_facilitator_id(self) -> str:
         """Find the next available sequential facilitator ID (F001, F002, ...)."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         existing_ids = set()
         for f in self.facilitators:
             emp_id = str(f.get("emp_id", "")).strip().upper()
@@ -449,9 +499,11 @@ class AdminState(rx.State):
             num += 1
         return f"F{num:03d}"
 
-    def open_add_facilitator(self):
+    async def open_add_facilitator(self):
         """Open the Add Facilitator dialog with the next available sequential ID."""
-        self.new_facilitator_empid = self.get_next_facilitator_id()
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        self.new_facilitator_empid = await self.get_next_facilitator_id()
         self.new_facilitator_name = ""
         self.new_facilitator_email = ""
         self.new_facilitator_phone = ""
@@ -460,11 +512,13 @@ class AdminState(rx.State):
         self.facilitator_form_error = ""
         self.show_add_facilitator = True
 
-    def set_show_add_facilitator(self, value: bool):
+    async def set_show_add_facilitator(self, value: bool):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.show_add_facilitator = value
         if value:
             if not self.new_facilitator_empid:
-                self.new_facilitator_empid = self.get_next_facilitator_id()
+                self.new_facilitator_empid = await self.get_next_facilitator_id()
             self.facilitator_form_error = ""
         else:
             self.new_facilitator_empid = ""
@@ -493,7 +547,9 @@ class AdminState(rx.State):
     def set_new_facilitator_password(self, value: str):
         self.new_facilitator_password = value
 
-    def add_facilitator(self):
+    async def add_facilitator(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.new_facilitator_empid = self.new_facilitator_empid.strip().upper()
         if not all([
             self.new_facilitator_empid, self.new_facilitator_name,
@@ -566,7 +622,9 @@ class AdminState(rx.State):
     def toggle_edit_facilitator_password(self):
         self.edit_facilitator_show_password = not self.edit_facilitator_show_password
 
-    def open_edit_facilitator(self, index: int):
+    async def open_edit_facilitator(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         f = self.facilitators[index]
         self.edit_facilitator_index = index
         self.edit_facilitator_empid = f["emp_id"]
@@ -600,7 +658,9 @@ class AdminState(rx.State):
     def set_edit_facilitator_password(self, value: str):
         self.edit_facilitator_password = value
 
-    def save_edit_facilitator(self):
+    async def save_edit_facilitator(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not all([
             self.edit_facilitator_empid, self.edit_facilitator_name,
             self.edit_facilitator_email, self.edit_facilitator_phone,
@@ -664,7 +724,9 @@ class AdminState(rx.State):
     delete_facilitator_index: int = -1
     delete_facilitator_name: str = ""
 
-    def open_delete_facilitator(self, index: int):
+    async def open_delete_facilitator(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.delete_facilitator_index = index
         self.delete_facilitator_name = self.facilitators[index]["name"]
         self.show_delete_facilitator = True
@@ -675,7 +737,9 @@ class AdminState(rx.State):
             self.delete_facilitator_index = -1
             self.delete_facilitator_name = ""
 
-    def confirm_delete_facilitator(self):
+    async def confirm_delete_facilitator(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if 0 <= self.delete_facilitator_index < len(self.facilitators):
             facilitator = self.facilitators[
                 self.delete_facilitator_index
@@ -754,24 +818,20 @@ class AdminState(rx.State):
         employees: list[dict] = []
         seen = set()
 
-        # 1. From candidate profiles in JSON store
-        try:
-            cand_profiles = JSONRepository(CANDIDATE_PROFILE_FILE).get_all()
-            for prof in cand_profiles:
-                eid = str(prof.get("emp_id", "")).strip()
-                name = str(prof.get("full_name", "")).strip()
-                dept = str(prof.get("department", "")).strip()
-                email = str(prof.get("email", "")).strip()
-                if eid and eid.casefold() not in seen:
-                    seen.add(eid.casefold())
-                    employees.append({
-                        "emp_id": eid,
-                        "name": name,
-                        "department": dept or "General",
-                        "email": email,
-                    })
-        except Exception:
-            pass
+        # 1. From candidate profiles loaded by the protected Admin handler.
+        for prof in self.candidate_directory_profiles:
+            eid = str(prof.get("emp_id", "")).strip()
+            name = str(prof.get("full_name", "")).strip()
+            dept = str(prof.get("department", "")).strip()
+            email = str(prof.get("email", "")).strip()
+            if eid and eid.casefold() not in seen:
+                seen.add(eid.casefold())
+                employees.append({
+                    "emp_id": eid,
+                    "name": name,
+                    "department": dept or "General",
+                    "email": email,
+                })
 
         # 2. From candidate list loaded in state
         for c in self.candidates:
@@ -797,24 +857,20 @@ class AdminState(rx.State):
                         if not emp["email"] and email:
                             emp["email"] = email
 
-        # 3. From facilitator profiles in JSON store
-        try:
-            fac_profiles = JSONRepository(FACILITATOR_PROFILE_FILE).get_all()
-            for prof in fac_profiles:
-                eid = str(prof.get("emp_id", "")).strip()
-                name = str(prof.get("full_name", "")).strip()
-                dept = str(prof.get("department", "")).strip()
-                email = str(prof.get("email", "")).strip()
-                if eid and eid.casefold() not in seen:
-                    seen.add(eid.casefold())
-                    employees.append({
-                        "emp_id": eid,
-                        "name": name,
-                        "department": dept or "Evaluations",
-                        "email": email,
-                    })
-        except Exception:
-            pass
+        # 3. From facilitator profiles loaded by the protected Admin handler.
+        for prof in self.facilitator_directory_profiles:
+            eid = str(prof.get("emp_id", "")).strip()
+            name = str(prof.get("full_name", "")).strip()
+            dept = str(prof.get("department", "")).strip()
+            email = str(prof.get("email", "")).strip()
+            if eid and eid.casefold() not in seen:
+                seen.add(eid.casefold())
+                employees.append({
+                    "emp_id": eid,
+                    "name": name,
+                    "department": dept or "Evaluations",
+                    "email": email,
+                })
 
         # 4. From facilitator list loaded in state
         for f in self.facilitators:
@@ -859,7 +915,9 @@ class AdminState(rx.State):
     def show_employee_search_dropdown(self) -> bool:
         return (self.employee_search_query.strip() != "") and (not self.employee_selected)
 
-    def select_employee_suggestion_by_id(self, emp_id: str):
+    async def select_employee_suggestion_by_id(self, emp_id: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         target = None
         for emp in self.available_directory_employees:
             if str(emp.get("emp_id", "")).casefold() == str(emp_id).casefold():
@@ -876,7 +934,9 @@ class AdminState(rx.State):
         self.employee_selected = True
         self.candidate_form_error = ""
 
-    def set_new_candidate_id(self, value: str):
+    async def set_new_candidate_id(self, value: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.new_candidate_id = value
         self.new_candidate_name = ""
         self.new_candidate_department = ""
@@ -913,7 +973,9 @@ class AdminState(rx.State):
     def set_new_candidate_password(self, value: str):
         self.new_candidate_password = value
 
-    def add_candidate(self):
+    async def add_candidate(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not all([
             self.new_candidate_id,
             self.new_candidate_name,
@@ -990,7 +1052,9 @@ class AdminState(rx.State):
     def toggle_edit_candidate_password(self):
         self.edit_candidate_show_password = not self.edit_candidate_show_password
 
-    def open_edit_candidate(self, index: int):
+    async def open_edit_candidate(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         c = self.candidates[index]
         self.edit_candidate_index = index
         self.edit_candidate_id = c["emp_id"]
@@ -1028,7 +1092,9 @@ class AdminState(rx.State):
     def set_edit_candidate_password(self, value: str):
         self.edit_candidate_password = value
 
-    def save_edit_candidate(self):
+    async def save_edit_candidate(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not all([
             self.edit_candidate_id,
             self.edit_candidate_name,
@@ -1118,7 +1184,9 @@ class AdminState(rx.State):
     delete_candidate_index: int = -1
     delete_candidate_name: str = ""
 
-    def open_delete_candidate(self, index: int):
+    async def open_delete_candidate(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.delete_candidate_index = index
         self.delete_candidate_name = self.candidates[index]["name"]
         self.show_delete_candidate = True
@@ -1129,7 +1197,9 @@ class AdminState(rx.State):
             self.delete_candidate_index = -1
             self.delete_candidate_name = ""
 
-    def confirm_delete_candidate(self):
+    async def confirm_delete_candidate(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not (0 <= self.delete_candidate_index < len(self.candidates)):
             self.set_show_delete_candidate(False)
             return
@@ -1172,7 +1242,7 @@ class AdminState(rx.State):
             # Legacy aliases (first in list)
             "facilitator_id": "F001",
             "facilitator_name": "Ravi Kumar",
-            "assigned_candidates": ["CAND-2031", "CAND-2054", "CAND-2061"],
+            "assigned_candidates": ["EMP1", "EMP2", "EMP3"],
             "status": "In Progress",
             # Tests are empty by default — Facilitators add them via their workspace
             "tests": [],
@@ -1195,20 +1265,105 @@ class AdminState(rx.State):
             for a in records for test, filename in a.get("question_papers", {}).items()
         }
 
-    def load_persisted_assessments(self):
+    async def load_persisted_assessments(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             self._load_persisted_assessments()
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
 
     async def load_persisted_assessments_async(self, legacy_question_papers: dict | None = None):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
-            self.load_persisted_facilitators()
-            self.load_persisted_candidates()
-            records = await asyncio.to_thread(self._load_persisted_assessments, legacy_question_papers, False)
-            self._apply_assessment_records(records)
+            await self.load_persisted_facilitators()
+            await self.load_persisted_candidates()
+            await self._load_assessment_records(legacy_question_papers)
         except (ValueError, OSError) as exc:
             return rx.toast.error(str(exc))
+
+    async def load_persisted_assessments_for_candidate_async(
+        self,
+        legacy_question_papers: dict | None = None,
+    ):
+        if not await has_candidate_session(self):
+            return rx.redirect("/candidate/login")
+        try:
+            records = await self._load_assessment_records(legacy_question_papers)
+            auth_state = await get_auth_state(self)
+            assigned = [
+                record for record in records
+                if auth_state.candidate_emp_id
+                in record.get("assigned_candidates", [])
+            ]
+            self.candidates = []
+            self.facilitators = []
+            self.candidate_password_hash_only_ids = []
+            self._apply_assessment_records(assigned)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+    async def load_persisted_assessments_for_facilitator_async(
+        self,
+        legacy_question_papers: dict | None = None,
+    ):
+        if not await has_facilitator_session(self):
+            return rx.redirect("/facilitator/signin")
+        try:
+            self._load_persisted_facilitators()
+            self._load_persisted_candidates(include_passwords=False)
+            records = await self._load_assessment_records(legacy_question_papers)
+            auth_state = await get_auth_state(self)
+            assigned = [
+                record for record in records
+                if auth_state.facilitator_emp_id
+                in (
+                    record.get("facilitator_ids")
+                    or [record.get("facilitator_id", "")]
+                )
+            ]
+            candidate_ids = {
+                candidate_id
+                for record in assigned
+                for candidate_id in record.get("assigned_candidates", [])
+            }
+            facilitator_ids = {
+                facilitator_id
+                for record in assigned
+                for facilitator_id in (
+                    record.get("facilitator_ids")
+                    or [record.get("facilitator_id", "")]
+                )
+            }
+            self.candidates = [
+                candidate for candidate in self.candidates
+                if candidate.get("emp_id") in candidate_ids
+            ]
+            self.facilitators = [
+                {
+                    key: value
+                    for key, value in facilitator.items()
+                    if key != "password"
+                }
+                for facilitator in self.facilitators
+                if facilitator.get("emp_id") in facilitator_ids
+            ]
+            self.candidate_password_hash_only_ids = []
+            self._apply_assessment_records(assigned)
+        except (ValueError, OSError) as exc:
+            return rx.toast.error(str(exc))
+
+    async def _load_assessment_records(
+        self,
+        legacy_question_papers: dict | None = None,
+    ):
+        records = await asyncio.to_thread(
+            self._load_persisted_assessments,
+            legacy_question_papers,
+            False,
+        )
+        return records
 
     def _load_persisted_assessments(self, legacy_question_papers=None, apply=True):
         """Restore the shared assessment structures; bootstrap legacy state once."""
@@ -1506,7 +1661,9 @@ class AdminState(rx.State):
             return self.candidates
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
-    def add_assessment(self):
+    async def add_assessment(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             if not self.new_assessment_name or len(self.new_assessment_facilitator_ids) == 0:
                 self.assessment_form_error = "Please fill in name and at least one facilitator."
@@ -1560,7 +1717,9 @@ class AdminState(rx.State):
     show_edit_facilitator_dropdown: bool = False
     edit_candidate_search: str = ""
 
-    def open_edit_assessment(self, index: int):
+    async def open_edit_assessment(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         a = self.assessments[index]
         self.edit_assessment_index = index
         self.edit_assessment_name = a["name"]
@@ -1663,7 +1822,9 @@ class AdminState(rx.State):
             return self.candidates
         return [c for c in self.candidates if q in c["name"].lower() or q in c["emp_id"].lower()]
 
-    def save_edit_assessment(self):
+    async def save_edit_assessment(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             if not self.edit_assessment_name or len(self.edit_assessment_facilitator_ids) == 0:
                 self.edit_assessment_error = "Please fill in name and at least one facilitator."
@@ -1719,7 +1880,9 @@ class AdminState(rx.State):
     delete_assessment_index: int = -1
     delete_assessment_name: str = ""
 
-    def open_delete_assessment(self, index: int):
+    async def open_delete_assessment(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.delete_assessment_index = index
         self.delete_assessment_name = self.assessments[index]["name"]
         self.show_delete_assessment = True
@@ -1730,7 +1893,9 @@ class AdminState(rx.State):
             self.delete_assessment_index = -1
             self.delete_assessment_name = ""
 
-    def confirm_delete_assessment(self):
+    async def confirm_delete_assessment(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             if 0 <= self.delete_assessment_index < len(self.assessments):
                 assessment = self.assessments[self.delete_assessment_index]
@@ -1759,8 +1924,10 @@ class AdminState(rx.State):
     approval_dialog_assessment_name: str = ""
     approval_dialog_facilitators: list[dict] = []
 
-    def open_facilitator_approval_dialog(self, index: int):
+    async def open_facilitator_approval_dialog(self, index: int):
         """Populate and open the Facilitator Approval Status dialog for the given assessment."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not (0 <= index < len(self.assessments)):
             return
         a = self.assessments[index]
@@ -1807,7 +1974,9 @@ class AdminState(rx.State):
     assessment_overview_modal_subtitle: str = ""
     assessment_overview_modal_items: list[dict] = []
 
-    def open_assessment_overview_modal(self, status: str):
+    async def open_assessment_overview_modal(self, status: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.assessment_overview_modal_status = status
         if status == "In Progress":
             self.assessment_overview_modal_title = "Assessments in Progress"
@@ -1838,7 +2007,9 @@ class AdminState(rx.State):
         self.assessment_overview_modal_status = ""
         self.assessment_overview_modal_items = []
 
-    def set_show_assessment_overview_modal(self, value: bool):
+    async def set_show_assessment_overview_modal(self, value: bool):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not value:
             self.close_assessment_overview_modal()
         else:
@@ -1849,18 +2020,22 @@ class AdminState(rx.State):
     # =========================================================
     show_facilitators_modal: bool = False
 
-    def open_facilitators_modal(self):
-        self.load_persisted_facilitators()
+    async def open_facilitators_modal(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        await self.load_persisted_facilitators()
         self.show_facilitators_modal = True
 
     def close_facilitators_modal(self):
         self.show_facilitators_modal = False
 
-    def set_show_facilitators_modal(self, value: bool):
+    async def set_show_facilitators_modal(self, value: bool):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not value:
             self.close_facilitators_modal()
         else:
-            self.open_facilitators_modal()
+            await self.open_facilitators_modal()
 
     @rx.var
     def dashboard_facilitators_modal_items(self) -> list[dict]:
@@ -1878,18 +2053,22 @@ class AdminState(rx.State):
     # =========================================================
     show_candidates_modal: bool = False
 
-    def open_candidates_modal(self):
-        self.load_persisted_candidates()
+    async def open_candidates_modal(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        await self.load_persisted_candidates()
         self.show_candidates_modal = True
 
     def close_candidates_modal(self):
         self.show_candidates_modal = False
 
-    def set_show_candidates_modal(self, value: bool):
+    async def set_show_candidates_modal(self, value: bool):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not value:
             self.close_candidates_modal()
         else:
-            self.open_candidates_modal()
+            await self.open_candidates_modal()
 
     @rx.var
     def dashboard_candidates_modal_items(self) -> list[dict]:
@@ -1924,7 +2103,9 @@ class AdminState(rx.State):
     candidate_saved_forms: dict[str, dict] = {}
 
 
-    def open_feedback_dialog(self, index: int):
+    async def open_feedback_dialog(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not (0 <= index < len(self.assessments)):
             return rx.toast.error("Assessment not found.")
 
@@ -1951,8 +2132,10 @@ class AdminState(rx.State):
     # FACILITATOR FEEDBACK FORM
     # =========================================================
 
-    def open_facilitator_feedback_builder(self):
+    async def open_facilitator_feedback_builder(self):
         """Open the facilitator feedback builder and load its persisted form."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
 
         try:
             self.show_feedback_type_dialog = False
@@ -2093,8 +2276,10 @@ class AdminState(rx.State):
         ]
 
 
-    def submit_facilitator_feedback_form(self):
+    async def submit_facilitator_feedback_form(self):
         """Persist the Admin-created facilitator feedback form."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
 
         try:
             if not (
@@ -2215,8 +2400,10 @@ class AdminState(rx.State):
     # CANDIDATE FEEDBACK FORM
     # =========================================================
 
-    def open_candidate_feedback_builder(self):
+    async def open_candidate_feedback_builder(self):
         """Open candidate feedback builder and load persisted form."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
 
         try:
             self.show_feedback_type_dialog = False
@@ -2366,8 +2553,10 @@ class AdminState(rx.State):
         ]
 
 
-    def submit_candidate_feedback_form(self):
+    async def submit_candidate_feedback_form(self):
         """Persist the Admin-created candidate feedback form."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
 
         try:
             if not (
@@ -2487,7 +2676,9 @@ class AdminState(rx.State):
     show_assessment_tests_dialog: bool = False
     selected_tests_assessment_index: int = -1
 
-    def open_assessment_tests(self, index: int):
+    async def open_assessment_tests(self, index: int):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             """Open the Type of Test modal for the clicked assessment."""
             self.selected_tests_assessment_index = index
@@ -2578,7 +2769,9 @@ class AdminState(rx.State):
             return self.assessments[self.selected_tests_assessment_index].get("test_dates", {})
         return {}
 
-    def set_test_date(self, test_name: str, value: str):
+    async def set_test_date(self, test_name: str, value: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             """Update the per-test conducted date."""
             if 0 <= self.selected_tests_assessment_index < len(self.assessments):
@@ -2600,7 +2793,9 @@ class AdminState(rx.State):
                     ]
             return rx.toast.error(str(exc))
 
-    def add_test_to_selected_assessment(self):
+    async def add_test_to_selected_assessment(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             """Automatically increments formative test count: Formative 1 -> Formative 2 -> Formative N..."""
             if 0 <= self.selected_tests_assessment_index < len(self.assessments):
@@ -2619,7 +2814,9 @@ class AdminState(rx.State):
                     ]
             return rx.toast.error(str(exc))
 
-    def remove_test_from_selected_assessment(self, test_name: str):
+    async def remove_test_from_selected_assessment(self, test_name: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             """Remove a formative test and renumber labels without changing survivor IDs."""
             if 0 <= self.selected_tests_assessment_index < len(self.assessments):
@@ -2649,8 +2846,10 @@ class AdminState(rx.State):
     viewing_test_assessment_index: int = -1
     viewing_test_name: str = ""
 
-    def open_test_details(self, assessment_index: int, test_name: str):
+    async def open_test_details(self, assessment_index: int, test_name: str):
         """Open the Test updates/details modal showing facilitator and candidates."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.viewing_test_assessment_index = assessment_index
         self.viewing_test_name = test_name
         self.show_test_details_dialog = True
@@ -2779,36 +2978,50 @@ class AdminReportsState(rx.State):
     # Active analytics tab in the report detail view
     report_detail_tab: str = "overall"  # "overall"|"co"|"lo"|"knowledge_type"|"domain"|"rbt_level"
 
-    def set_search_query(self, query: str):
+    async def set_search_query(self, query: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.search_query = query
 
-    def select_report(self, report_id: str):
+    async def select_report(self, report_id: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.selected_report_id = report_id
 
-    def open_report(self, report_id: str):
+    async def open_report(self, report_id: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.viewed_report_id = report_id
         self.selected_report_id = report_id
         self.report_detail_tab = "overall"
         self.is_full_view = False
         self.show_report_detail = True
 
-    def open_selected_report(self):
+    async def open_selected_report(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if self.selected_report_id:
-            self.open_report(self.selected_report_id)
+            return await self.open_report(self.selected_report_id)
 
-    def toggle_full_view(self):
+    async def toggle_full_view(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.is_full_view = not self.is_full_view
 
     def close_report(self):
         self.show_report_detail = False
         self.is_full_view = False
 
-    def set_show_report_detail(self, value: bool):
+    async def set_show_report_detail(self, value: bool):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.show_report_detail = value
         if not value:
             self.is_full_view = False
 
-    def set_report_detail_tab(self, tab: str):
+    async def set_report_detail_tab(self, tab: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.report_detail_tab = tab
 
     def consume_facilitator_overall_report(self, report_data: dict):
@@ -3272,7 +3485,9 @@ class AdminReportsState(rx.State):
             "recommendation": recommendation,
         }
 
-    def mock_export_report(self):
+    async def mock_export_report(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         return rx.toast.info("Report exported as PDF (Mock)!")
 
 
@@ -3378,6 +3593,8 @@ class AdminFeedbackState(rx.State):
 
     async def on_load(self):
         """Refresh authoritative feedback once, off the event loop."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             candidates, facilitators = await asyncio.to_thread(self._read_feedback_data)
             catalog = await asyncio.to_thread(AssessmentService().load_assessments)
@@ -3672,6 +3889,8 @@ class AdminFeedbackState(rx.State):
         return ["All Tests"] + sorted(opts, key=str.casefold)
 
     async def set_active_tab(self, tab: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.active_tab = tab
         self.current_page = 1
         return await self.on_load()
@@ -3726,7 +3945,9 @@ class AdminFeedbackState(rx.State):
         if self.current_page < self.total_pages:
             self.current_page += 1
 
-    def export_feedback(self):
+    async def export_feedback(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         count = len(self.filtered_entries)
         tab_name = "Candidate" if self.active_tab == "candidate" else "Facilitator"
         return rx.toast.success(f"{count} {tab_name} feedback records exported successfully!")

@@ -2,6 +2,7 @@
 
 import reflex as rx
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
+from ai_hybrid_evaluator.state.admin_authorization import has_admin_session
 from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import (
     _results_all_average_scores_row,
     _results_all_candidates_table_card,
@@ -9,6 +10,7 @@ from ai_hybrid_evaluator.pages.facilitator.assessment_workspace import (
     _results_control_bar,
     _results_download_pdf_modal,
     _results_individual_scores_row,
+    _results_pdf_preview_modal,
     _results_report_modal,
     _results_top_header,
     results_performance_analysis_card,
@@ -23,10 +25,14 @@ class AdminReportsPageState(rx.State):
 
     @rx.var
     async def assessment_options(self) -> list[str]:
+        if not await has_admin_session(self):
+            return []
         admin_state = await self.get_state(AdminState)
         return [a["name"] for a in admin_state.assessments if "name" in a]
 
     async def select_assessment(self, name: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not name:
             return
         admin_state = await self.get_state(AdminState)
@@ -51,6 +57,8 @@ class AdminReportsPageState(rx.State):
                 return FacilitatorState.refresh_workspace_snapshot()
 
     async def on_load(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         admin_state = await self.get_state(AdminState)
         fac_state = await self.get_state(FacilitatorState)
         target = fac_state.selected_assessment_name
@@ -155,6 +163,7 @@ def reports_page() -> rx.Component:
 
         # Results Download PDF Modal Dialog
         _results_download_pdf_modal(),
+        _results_pdf_preview_modal(),
 
         spacing="4",
         width="100%",

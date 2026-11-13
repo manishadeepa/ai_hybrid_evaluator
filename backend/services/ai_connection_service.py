@@ -1,20 +1,17 @@
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from cryptography.fernet import Fernet
-from dotenv import load_dotenv
 from openai import AzureOpenAI, OpenAI
 
 from backend.repositories.ai_connection_repository import (
     AIConnectionRepository,
 )
+from backend.services.credential_encryption import get_credential_cipher
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 AI_EVALUATION_NOT_CONFIGURED = (
     "AI evaluation is not configured. Please contact an administrator to check Admin Settings."
 )
@@ -27,26 +24,12 @@ class AIConnectionService:
             or AIConnectionRepository()
         )
 
-        load_dotenv(
-            PROJECT_ROOT / ".env",
-            override=False,
-        )
-
     def _cipher(self):
-        key = os.getenv(
-            "AI_CONNECTION_ENCRYPTION_KEY"
-        )
-
-        if not key:
-            raise ValueError(
-                "AI_CONNECTION_ENCRYPTION_KEY is missing from .env."
-            )
-
         try:
-            return Fernet(key.encode("utf-8"))
-        except Exception as exc:
+            return get_credential_cipher()
+        except ValueError as exc:
             raise ValueError(
-                "AI_CONNECTION_ENCRYPTION_KEY is invalid."
+                "Credential encryption is not configured."
             ) from exc
 
     @staticmethod

@@ -123,16 +123,22 @@ def test_api_is_https_only_even_for_localhost(tmp_path):
                 service.test_api_connection({"service_name":"S", "base_url":url, "api_version":"v1", "auth_type":"None"})
         probe.assert_not_called()
 
-def test_pending_profiles_never_change_active_folder_or_expose_secrets(folders, monkeypatch):
+def test_mysql_profile_activates_and_api_profile_remains_pending(folders, monkeypatch):
     source, target, service = folders
-    monkeypatch.setenv("AI_CONNECTION_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("APP_CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
     config_before = paths.DATA_LOCATION_FILE.read_bytes()
-    with patch.object(service, "_probe_mysql"), patch.object(service, "_probe_api"):
+    with (
+        patch.object(service, "_probe_mysql"),
+        patch.object(service, "_probe_api"),
+        patch.object(service, "_migration_documents", return_value=[]),
+        patch.object(db, "MySQLJSONStore"),
+    ):
         mysql = service.save_profile("mysql", {"host":"db.test", "database":"D", "port":3306, "username":"private-user", "password":"private-pass"})
         api = service.save_profile("api", {"service_name":"S", "base_url":"https://api.test", "api_version":"v1", "auth_type":"Bearer Token", "token":"private-token"})
+    assert mysql["active"] is True and mysql["status"] == "success"
+    assert api["active"] is False and api["status"] == "pending"
+    assert "required" in api["activation_requirements"]
     for result in (mysql, api):
-        assert result["active"] is False and result["status"] == "pending"
-        assert "required" in result["activation_requirements"]
         assert "credentials_encrypted" not in result
     raw = service.config_path.read_text()
     assert all(secret not in raw for secret in ["private-user", "private-pass", "private-token"])

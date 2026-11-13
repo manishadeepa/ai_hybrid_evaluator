@@ -42,15 +42,17 @@ def test_mutation_guard(
     from backend.services.assessment_service import _PERSISTENCE_LOCK
 
     with _PERSISTENCE_LOCK:
-        from backend.data_paths import resolve_data_path
+        from backend.repositories.json_repository import json_document_exists
 
         requested_root = Path(data_dir) if data_dir is not None else Path(__file__).resolve().parents[1] / "data"
-        tests_path = resolve_data_path(requested_root / "tests.json")
+        tests_path = requested_root / "tests.json"
         root = tests_path.parent
         assessments_path = root / "assessments.json"
-        if require_creator and not tests_path.exists():
+        tests_exist = json_document_exists(tests_path)
+        assessments_exist = json_document_exists(assessments_path)
+        if require_creator and not tests_exist:
             raise ValueError("Canonical test identity is required for this mutation.")
-        if tests_path.exists():
+        if tests_exist:
             repository = TestRepository(tests_path)
             if test_id:
                 target = repository.get_by_id(test_id)
@@ -74,7 +76,7 @@ def test_mutation_guard(
                     if target is None:
                         raise ValueError("Canonical test identity is required for this mutation.")
                     validate_test_creator(target, facilitator_id, role)
-            elif test_name and assessments_path.exists():
+            elif test_name and assessments_exist:
                 if require_creator:
                     raise ValueError("Canonical test identity is required for this mutation.")
                 from backend.repositories.assessment_repository import AssessmentRepository

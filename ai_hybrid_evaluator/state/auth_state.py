@@ -7,6 +7,7 @@ import re
 import reflex as rx
 from ai_hybrid_evaluator.services.mock_api import mock_login, mock_signup, change_admin_password, EMAIL_REGEX
 from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES, SHARED_FACILITATORS
+from ai_hybrid_evaluator.state.admin_authorization import is_verified_admin_session
 from ai_hybrid_evaluator.state.admin_state import AdminState
 from backend.repositories.facilitator_repository import FacilitatorRepository
 
@@ -102,6 +103,10 @@ class AuthState(rx.State):
             return name[0].upper()
         return "A"
 
+    def require_admin_session(self):
+        if not is_verified_admin_session(self):
+            return rx.redirect("/signin")
+
     # ---- Field setters ----
     def on_signin_page_load(self):
         """Clear any stale error when the Sign In page loads."""
@@ -175,6 +180,14 @@ class AuthState(rx.State):
             self.admin_name = result.get("employee_name", "Admin")
             self.admin_employee_id = result.get("employee_id", "")
             self.admin_email = result.get("employee_mail", "")
+            self.is_facilitator_authenticated = False
+            self.facilitator_name = ""
+            self.facilitator_email = ""
+            self.facilitator_emp_id = ""
+            self.is_candidate_authenticated = False
+            self.candidate_name = ""
+            self.candidate_emp_id = ""
+            self.candidate_email = ""
             return rx.redirect("/admin/dashboard")
         self.signin_error = result["error"]
 
@@ -209,6 +222,8 @@ class AuthState(rx.State):
         self.admin_name = ""
         self.admin_employee_id = ""
         self.admin_email = ""
+        self.is_facilitator_authenticated = False
+        self.is_candidate_authenticated = False
         return rx.redirect("/signin")
 
     # ---- Change Password (Admin) ----
@@ -323,6 +338,15 @@ class AuthState(rx.State):
         self.facilitator_name = str(match.get("name", ""))
         self.facilitator_email = str(match.get("email", ""))
         self.facilitator_emp_id = str(match.get("emp_id", ""))
+        self.is_authenticated = False
+        self.admin_role = ""
+        self.admin_name = ""
+        self.admin_employee_id = ""
+        self.admin_email = ""
+        self.is_candidate_authenticated = False
+        self.candidate_name = ""
+        self.candidate_emp_id = ""
+        self.candidate_email = ""
 
         return rx.redirect("/facilitator/dashboard")
 
@@ -365,6 +389,15 @@ class AuthState(rx.State):
         self.candidate_name = str(match.get("name", ""))
         self.candidate_email = str(match.get("email", ""))
         self.candidate_emp_id = str(match.get("emp_id", ""))
+        self.is_authenticated = False
+        self.admin_role = ""
+        self.admin_name = ""
+        self.admin_employee_id = ""
+        self.admin_email = ""
+        self.is_facilitator_authenticated = False
+        self.facilitator_name = ""
+        self.facilitator_email = ""
+        self.facilitator_emp_id = ""
 
         try:
             from ai_hybrid_evaluator.state.candidate_state import CandidateProfileState
@@ -379,6 +412,15 @@ class AuthState(rx.State):
 
     def candidate_logout(self):
         self.is_candidate_authenticated = False
+        self.is_authenticated = False
+        self.admin_role = ""
+        self.admin_name = ""
+        self.admin_employee_id = ""
+        self.admin_email = ""
+        self.is_facilitator_authenticated = False
+        self.facilitator_name = ""
+        self.facilitator_email = ""
+        self.facilitator_emp_id = ""
         self.candidate_name = ""
         self.candidate_email = ""
         self.candidate_emp_id = ""
@@ -389,6 +431,15 @@ class AuthState(rx.State):
 
     def facilitator_logout(self):
         self.is_facilitator_authenticated = False
+        self.is_authenticated = False
+        self.admin_role = ""
+        self.admin_name = ""
+        self.admin_employee_id = ""
+        self.admin_email = ""
+        self.is_candidate_authenticated = False
+        self.candidate_name = ""
+        self.candidate_emp_id = ""
+        self.candidate_email = ""
         self.facilitator_name = ""
         self.facilitator_email = ""
         self.facilitator_emp_id = ""

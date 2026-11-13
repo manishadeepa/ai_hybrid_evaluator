@@ -21,6 +21,7 @@ from backend.services.test_service import TestService
 from backend.services.response_lifecycle_service import ResponseLifecycleService
 from backend.services.feedback_service import FeedbackService
 from backend.data_paths import active_data_file
+from backend.repositories.json_repository import read_json_document, write_json_document
 
 
 # Ã¢â€â‚¬Ã¢â€â‚¬ Per-session question store Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -278,7 +279,7 @@ def _parse_test_timing_bounds(test_date_str: str, start_time_str: str, end_time_
 
 class CandidateState(rx.State):
     # Candidate identity (emp_id or email)
-    candidate_id: str = "CAND-2031"
+    candidate_id: str = ""
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Active Test Session Metadata Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     active_assessment_name: str = "Quality"
@@ -405,22 +406,27 @@ class CandidateState(rx.State):
 
     # Ã¢â€â‚¬Ã¢â€â‚¬ Candidate Identity Helper Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     async def _get_current_candidate_id(self) -> str:
-        try:
-            auth = await self.get_state(AuthState)
-            cid = str(auth.candidate_emp_id or auth.candidate_email or "").strip()
-            if cid:
-                self.candidate_id = cid
-                return cid
-        except Exception:
-            pass
-        return self.candidate_id or "CAND-2031"
+        auth = await self.get_state(AuthState)
+        return auth.candidate_emp_id if auth.is_candidate_authenticated else ""
+
+    async def _owns_active_test(self) -> bool:
+        candidate_id = await self._get_current_candidate_id()
+        return bool(
+            candidate_id and candidate_id == self.candidate_id
+            and self.active_assessment_id and self.active_test_id
+        )
+
+    def _bind_candidate(self, candidate_id: str):
+        if self.candidate_id != candidate_id:
+            self.reset()
+            self.candidate_id = candidate_id
 
     def _get_current_original_qid_str(self) -> str:
         """The canonical session snapshot already owns the shuffled order."""
         return str(self.current_question_number)
 
     def _save_current_test_record(self, status: str = ""):
-        cand_id = self.candidate_id or "CAND-2031"
+        cand_id = self.candidate_id
         key = f"{cand_id}::{self.active_assessment_name}::{self.active_test_name}"
         existing = PERSISTED_CANDIDATE_TEST_DATA.get(key, {})
 
@@ -722,6 +728,9 @@ class CandidateState(rx.State):
         compatibility fallback.
         """
         cand_id = await self._get_current_candidate_id()
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
 
         subs, dqs = await asyncio.to_thread(_load_dashboard_statuses, cand_id)
 
@@ -776,7 +785,10 @@ class CandidateState(rx.State):
         from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
         from ai_hybrid_evaluator.state.admin_state import AdminState as _AdminState
 
-        cand_id = self.candidate_id or "CAND-2031"
+        cand_id = await self._get_current_candidate_id()
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
 
         try:
             fac_st = await self.get_state(FacilitatorState)
@@ -808,16 +820,14 @@ class CandidateState(rx.State):
             for t_name in all_test_names:
                 flat_key = f"{asmn}::{t_name}"
                 norm: float | None = None
-                for rkey, rval in results.items():
-                    # Key format: "CandidateName (EMP-ID):test_name"
-                    parts = rkey.split(":")
-                    if len(parts) < 2:
-                        continue
-                    r_cand_label = parts[0].strip()
-                    r_test_name = ":".join(parts[1:]).strip()
-                    if r_test_name != t_name:
-                        continue
-                    if cand_id in r_cand_label:
+                for rval in results.values():
+                    if (
+                        rval.get("candidate_id") == cand_id
+                        and rval.get("assessment_id") == a.get("assessment_id")
+                        and a.get("assessment_id")
+                        and rval.get("test_id") == a.get("test_ids", {}).get(t_name)
+                        and rval.get("test_id")
+                    ):
                         try:
                             norm = FacilitatorState._calculate_normalized_score(rval)
                         except Exception:
@@ -837,6 +847,9 @@ class CandidateState(rx.State):
     async def load_candidate_dashboard_data(self):
         """Compute candidate dashboard metrics, donut segments, assessment summary, and recent activity from real backend data."""
         cand_id = await self._get_current_candidate_id()
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
         import math
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -1024,6 +1037,9 @@ class CandidateState(rx.State):
     async def _compute_selected_assessment_data(self):
         """Compute metrics, donut segments, and modal records for the selected assessment."""
         cand_id = await self._get_current_candidate_id()
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
         sel = self.dashboard_selected_assessment
         if not sel:
             return
@@ -1261,7 +1277,9 @@ class CandidateState(rx.State):
         temporary websocket disconnect, or Reflex state recreation.
         """
         cand_id = await self._get_current_candidate_id()
-        self.candidate_id = cand_id
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
 
         lifecycle = ResponseLifecycleService()
         selected = None
@@ -1525,6 +1543,8 @@ class CandidateState(rx.State):
 
     async def handle_time_expired(self):
         """Auto-submit the test through the canonical lifecycle when time expires."""
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted:
             return
 
@@ -1533,7 +1553,7 @@ class CandidateState(rx.State):
                 "Unable to auto-submit because the active test identity is missing."
             )
 
-        cand_id = self.candidate_id or "CAND-2031"
+        cand_id = self.candidate_id
 
         # Combine subjective/rich-text and MCQ answers.
         final_answers = dict(self.answers)
@@ -1603,6 +1623,9 @@ class CandidateState(rx.State):
     async def start_test(self, assessment_name: str, test_name: str):
         """Launch the test session and navigate to /candidate/test. Blocks already submitted tests and checks timing."""
         cand_id = await self._get_current_candidate_id()
+        if not cand_id:
+            return rx.redirect("/candidate/login")
+        self._bind_candidate(cand_id)
 
         # Resolve the UI assessment/test names to their canonical persisted IDs.
         assessment = next(
@@ -1801,6 +1824,8 @@ class CandidateState(rx.State):
             return self._restore_rte_script()
 
     async def update_answer(self, text: str):
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         question_id = self.current_question_number
@@ -1817,7 +1842,7 @@ class CandidateState(rx.State):
         if self.active_assessment_id and self.active_test_id:
             try:
                 await asyncio.to_thread(ResponseLifecycleService().save_answer,
-                    self.candidate_id or "CAND-2031",
+                    self.candidate_id,
                     self.active_assessment_id,
                     self.active_test_id,
                     question_id,
@@ -1829,6 +1854,8 @@ class CandidateState(rx.State):
 
     async def select_mcq_option(self, option: str):
         """Select an MCQ immediately and persist it using the stable question ID."""
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         # Use the ORIGINAL question ID because displayed questions are shuffled.
@@ -1859,7 +1886,7 @@ class CandidateState(rx.State):
             try:
                 await asyncio.to_thread(
                     ResponseLifecycleService().save_answer,
-                    self.candidate_id or "CAND-2031",
+                    self.candidate_id,
                     self.active_assessment_id,
                     self.active_test_id,
                     question_id,
@@ -1871,6 +1898,8 @@ class CandidateState(rx.State):
 
     async def clear_mcq_answer(self):
         """Clear the MCQ answer for the current Objective question."""
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         # Use original question ID because displayed questions are shuffled.
@@ -1892,7 +1921,7 @@ class CandidateState(rx.State):
         if self.active_assessment_id and self.active_test_id:
             try:
                 await asyncio.to_thread(ResponseLifecycleService().save_answer,
-                    self.candidate_id or "CAND-2031",
+                    self.candidate_id,
                     self.active_assessment_id,
                     self.active_test_id,
                     question_id,
@@ -1921,6 +1950,8 @@ class CandidateState(rx.State):
         for the currently active question.
         Guard: never overwrite a non-empty saved answer with an empty value
         (prevents navigation/rerender clearing existing answers)."""
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         # Prefer the question ID captured by the editor event.
@@ -1952,7 +1983,7 @@ class CandidateState(rx.State):
             # Persist rich-text answer in the canonical response backend.
             if self.active_assessment_id and self.active_test_id:
                 await asyncio.to_thread(ResponseLifecycleService().save_answer,
-                    self.candidate_id or "CAND-2031",
+                    self.candidate_id,
                     self.active_assessment_id,
                     self.active_test_id,
                     int(qid_str),
@@ -1964,6 +1995,8 @@ class CandidateState(rx.State):
             self.auto_save_status = "Save failed"
 
     async def toggle_mark_for_review(self):
+        if not await self._owns_active_test():
+            return
         if self.is_test_submitted or self.is_time_expired or self.is_disqualified:
             return
         orig_str = self._get_current_original_qid_str()
@@ -1992,7 +2025,7 @@ class CandidateState(rx.State):
         if self.active_assessment_id and self.active_test_id:
             try:
                 await asyncio.to_thread(ResponseLifecycleService().mark_for_review,
-                    self.candidate_id or "CAND-2031",
+                    self.candidate_id,
                     self.active_assessment_id,
                     self.active_test_id,
                     qid,
@@ -2059,6 +2092,8 @@ class CandidateState(rx.State):
 
     async def _record_violation(self, reason: str):
         """Publish one warning per acknowledged incident, including overlapping signals."""
+        if not await self._owns_active_test():
+            return
         if self.show_violation_modal or self.is_disqualified or self.is_test_submitted:
             return
         self.violation_count = min(self.violation_count + 1, self.max_violations)
@@ -2072,7 +2107,7 @@ class CandidateState(rx.State):
         if self.active_assessment_id and self.active_test_id:
             try:
                 record = await asyncio.to_thread(ResponseLifecycleService().update_violation_count,
-                    self.candidate_id or "CAND-2031", self.active_assessment_id,
+                    self.candidate_id, self.active_assessment_id,
                     self.active_test_id, self.violation_count)
                 self.violation_count = record.get("violation_count", self.violation_count)
                 if self.violation_count >= self.max_violations:
@@ -2114,7 +2149,7 @@ class CandidateState(rx.State):
                 "Unable to terminate because the active test identity is missing."
             )
 
-        cand_id = self.candidate_id or "CAND-2031"
+        cand_id = self.candidate_id
 
         if lifecycle_record is None:
             try:
@@ -2373,30 +2408,26 @@ class CandidateState(rx.State):
         return active_data_file("candidate_feedbacks.json")
 
     def _load_saved_candidate_feedbacks(self) -> dict[str, dict]:
-        fp = CandidateState._get_candidate_feedback_file_path()
-        if fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
+        value = read_json_document(CandidateState._get_candidate_feedback_file_path(), {})
+        if value == []:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("Stored candidate feedback data is invalid.")
+        return value
 
     def _persist_candidate_feedbacks(self):
-        fp = CandidateState._get_candidate_feedback_file_path()
-        try:
-            import json
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(self.saved_candidate_feedbacks, f, indent=2)
-        except Exception:
-            pass
+        write_json_document(
+            CandidateState._get_candidate_feedback_file_path(),
+            self.saved_candidate_feedbacks,
+        )
 
-    def open_candidate_feedback_form(self):
+    async def open_candidate_feedback_form(self):
         """Load and open the pending Admin-created Candidate Feedback Form."""
+        if not await self._owns_active_test():
+            return
         self.candidate_feedback_error = ""
 
-        cand_id = self.candidate_id or "CAND-2031"
+        cand_id = self.candidate_id
 
         if not self.active_assessment_id or not self.active_test_id:
             self.candidate_feedback_error = (
@@ -2605,15 +2636,10 @@ class CandidateState(rx.State):
     def set_work_location(self, v: str): self.work_location = v
 
     async def load_profile(self):
-        """Load candidate profile from shared store."""
-        try:
-            auth = await self.get_state(AuthState)
-            if auth.candidate_emp_id:
-                self.emp_id = auth.candidate_emp_id
-        except Exception:
-            pass
-
-        cid = self.emp_id or "CAND-2031"
+        cid = await self._get_current_candidate_id()
+        if not cid:
+            return rx.redirect("/candidate/login")
+        self.emp_id = cid
         prof = get_candidate_profile(
             cid,
             default_name=self.full_name or "Candidate",
@@ -2635,6 +2661,10 @@ class CandidateState(rx.State):
 
     async def handle_photo_upload(self, files: list[rx.UploadFile]):
         """Upload and display the selected candidate profile image immediately."""
+        cid = await self._get_current_candidate_id()
+        if not cid:
+            return rx.redirect("/candidate/login")
+        self.emp_id = cid
         if not files:
             return rx.toast.error("Please select an image file to upload.")
 
@@ -2665,6 +2695,10 @@ class CandidateState(rx.State):
 
     async def save_profile(self):
         """Save candidate profile changes to shared store."""
+        cid = await self._get_current_candidate_id()
+        if not cid:
+            return rx.redirect("/candidate/login")
+        self.emp_id = cid
         data = {
             "emp_id": self.emp_id,
             "full_name": self.full_name,
@@ -2757,8 +2791,9 @@ class CandidateProfileState(rx.State):
     async def load_profile(self):
         """Load the signed-in candidate's JSON-backed profile."""
         auth = await self.get_state(AuthState)
-        if auth.candidate_emp_id:
-            self.emp_id = auth.candidate_emp_id
+        if not auth.is_candidate_authenticated or not auth.candidate_emp_id:
+            return rx.redirect("/candidate/login")
+        self.emp_id = auth.candidate_emp_id
         cid = self.emp_id
         if not cid:
             return
@@ -2785,8 +2820,9 @@ class CandidateProfileState(rx.State):
     async def handle_photo_upload(self, files: list[rx.UploadFile]):
         """Upload and display the selected candidate profile image immediately."""
         auth = await self.get_state(AuthState)
-        if auth.candidate_emp_id:
-            self.emp_id = auth.candidate_emp_id
+        if not auth.is_candidate_authenticated or not auth.candidate_emp_id:
+            return rx.redirect("/candidate/login")
+        self.emp_id = auth.candidate_emp_id
         if not self.emp_id:
             return rx.toast.error("Could not identify the signed-in candidate.")
         if not files:
@@ -2820,8 +2856,9 @@ class CandidateProfileState(rx.State):
     async def save_profile(self):
         """Save candidate profile changes to the JSON profile store."""
         auth = await self.get_state(AuthState)
-        if auth.candidate_emp_id:
-            self.emp_id = auth.candidate_emp_id
+        if not auth.is_candidate_authenticated or not auth.candidate_emp_id:
+            return rx.redirect("/candidate/login")
+        self.emp_id = auth.candidate_emp_id
         if not self.emp_id:
             return rx.toast.error("Could not identify the signed-in candidate.")
         data = {
@@ -2842,4 +2879,3 @@ class CandidateProfileState(rx.State):
         }
         save_candidate_profile(self.emp_id, data)
         return rx.toast.success("Profile saved successfully!")
-

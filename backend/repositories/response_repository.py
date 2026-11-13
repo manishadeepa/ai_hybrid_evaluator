@@ -1,8 +1,7 @@
 """One response session per candidate/assessment/test, using the common JSON writer."""
 from copy import deepcopy
 from pathlib import Path
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class ResponseRepository:
@@ -38,10 +37,9 @@ class ResponseRepository:
             raise ValueError("Duplicate response session in responses.json.")
 
     def get_all(self):
-        path = resolve_data_path(self.file_path)
-        if not path.exists():
+        if not json_document_exists(self.file_path):
             return []
-        rows = JSONRepository(path).get_all()
+        rows = JSONRepository(self.file_path).get_all()
         self._validate(rows)
         return rows
 

@@ -40,7 +40,7 @@ class AIConnectionConfigurationTests(unittest.TestCase):
         self.environment = patch.dict(
             os.environ,
             {
-                "AI_CONNECTION_ENCRYPTION_KEY": self.key.decode("ascii"),
+                "APP_CREDENTIAL_ENCRYPTION_KEY": self.key.decode("ascii"),
                 "OPENAI_API_KEY": "environment-must-not-be-used",
             },
         )

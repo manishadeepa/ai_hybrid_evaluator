@@ -12,11 +12,12 @@ from datetime import datetime, timezone
 import math
 from pathlib import Path
 
-from backend.data_paths import active_data_file, resolve_data_path
+from backend.data_paths import active_data_file
 from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
 from backend.repositories.manual_evaluation_repository import ManualEvaluationRepository
 from backend.repositories.response_repository import ResponseRepository
 from backend.repositories.test_candidate_repository import TestCandidateRepository
+from backend.repositories.json_repository import json_document_exists
 from backend.services.assessment_service import AssessmentService, _PERSISTENCE_LOCK
 from backend.services.ai_evaluation_run_service import _LOCK as _AI_LOCK
 from backend.services.candidate_management_service import CandidateManagementService
@@ -37,9 +38,8 @@ class EvaluationResultService:
 
     @staticmethod
     def _read(repository):
-        # Some existing repositories create missing files on read. Avoid that here.
         path = getattr(repository, 'file_path', None)
-        if path is not None and not resolve_data_path(Path(path)).exists():
+        if path is not None and not json_document_exists(path):
             return []
         return repository.get_all()
 
@@ -47,13 +47,13 @@ class EvaluationResultService:
         if self.manual_repository is not None:
             return self.manual_repository.get_all()
         path = active_data_file("manual_evaluations.json")
-        return ManualEvaluationRepository().get_all() if path.exists() else []
+        return ManualEvaluationRepository().get_all() if json_document_exists(path) else []
 
     def _candidate_rows(self):
         if self.candidates is not None:
             return self.candidates.list_candidates()
         path = active_data_file("candidates.json")
-        if path.exists():
+        if json_document_exists(path):
             return CandidateManagementService().list_candidates()
         return CandidateManagementService._shared_candidates()
 

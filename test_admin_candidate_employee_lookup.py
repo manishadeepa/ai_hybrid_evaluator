@@ -21,8 +21,8 @@ class AdminCandidateEmployeeLookupTests(unittest.IsolatedAsyncioTestCase):
                 "email": "ada@example.com",
                 "department": "Engineering",
             },
-        ):
-            admin.set_new_candidate_id("E001")
+        ), patch("ai_hybrid_evaluator.state.admin_state.has_admin_session", return_value=True):
+            await admin.set_new_candidate_id("E001")
 
         self.assertEqual(admin.new_candidate_name, "Ada Example")
         self.assertEqual(admin.new_candidate_email, "ada@example.com")
@@ -38,8 +38,8 @@ class AdminCandidateEmployeeLookupTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "ai_hybrid_evaluator.state.admin_state.find_employee_by_id",
             return_value=None,
-        ):
-            admin.set_new_candidate_id("E999")
+        ), patch("ai_hybrid_evaluator.state.admin_state.has_admin_session", return_value=True):
+            await admin.set_new_candidate_id("E999")
 
         self.assertEqual(admin.new_candidate_name, "")
         self.assertEqual(admin.new_candidate_email, "")

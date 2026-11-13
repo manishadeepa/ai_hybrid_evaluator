@@ -96,7 +96,7 @@ class CandidateResultsState(rx.State):
         self.clear_selected_test()
         self.results_revision += 1
         if not cid:
-            return
+            return rx.redirect("/candidate/login")
         try:
             snapshot = await asyncio.to_thread(_read_candidate_results, cid, assessment_id)
         except (ValueError, OSError) as exc:

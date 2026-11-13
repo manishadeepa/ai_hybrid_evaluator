@@ -1,8 +1,7 @@
 from copy import deepcopy
 from pathlib import Path
 
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class FacilitatorRepository:
@@ -20,7 +19,7 @@ class FacilitatorRepository:
 
         # Bootstrap only the default store, and only when it does not exist.
         # This preserves the existing seeded accounts on first startup.
-        should_bootstrap = use_default_path and not resolve_data_path(self.file_path).exists()
+        should_bootstrap = use_default_path and not json_document_exists(self.file_path)
         self.storage = JSONRepository(self.file_path)
 
         if should_bootstrap:

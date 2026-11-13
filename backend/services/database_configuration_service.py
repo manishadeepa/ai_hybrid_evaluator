@@ -14,12 +14,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from cryptography import x509
-from cryptography.fernet import Fernet, InvalidToken
-from dotenv import load_dotenv
+from cryptography.fernet import InvalidToken
 from sqlalchemy import URL, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.repositories.json_repository import JSONRepository
+from backend.database.mysql_json_store import (
+    MySQLJSONStore,
+    active_mysql_store,
+)
+from backend.services.credential_encryption import get_credential_cipher
 from backend.data_paths import (
     DEFAULT_DATA_DIR,
     STABLE_DATA_DIRECTORIES,
@@ -59,17 +63,27 @@ class DatabaseConfigurationService:
             raise ValueError("Invalid database configuration profiles.")
         return rows
 
-    def _cipher(self):
-        load_dotenv(PROJECT_ROOT / ".env", override=False)
-        key = os.getenv("AI_CONNECTION_ENCRYPTION_KEY", "")
-        if not key:
-            raise ValueError(
-                "AI_CONNECTION_ENCRYPTION_KEY is required to save credentials securely."
+    def active_storage_description(self):
+        mysql = next(
+            (
+                row for row in self._records()
+                if row.get("profile_type") == "mysql" and row.get("active") is True
+            ),
+            None,
+        )
+        if mysql:
+            configuration = mysql.get("configuration", {})
+            return (
+                f"Active MySQL database: {configuration.get('host', '')}/"
+                f"{configuration.get('database', '')}"
             )
+        return f"Active JSON data folder: {get_active_data_dir()}"
+
+    def _cipher(self):
         try:
-            return Fernet(key.encode("utf-8"))
+            return get_credential_cipher()
         except ValueError as exc:
-            raise ValueError("AI_CONNECTION_ENCRYPTION_KEY is invalid.") from exc
+            raise ValueError("Credential encryption is not configured.") from exc
 
     def _credentials(self, profile_type):
         row = next(
@@ -94,10 +108,14 @@ class DatabaseConfigurationService:
             raise ValueError("Unknown database profile type.")
         if profile_type == "folder":
             path = get_active_data_dir()
+            mysql_active = any(
+                row.get("profile_type") == "mysql" and row.get("active") is True
+                for row in self._records()
+            )
             return {
                 "path": str(path),
                 "profile_type": "folder",
-                "active": True,
+                "active": not mysql_active,
             }
         row = next(
             (item for item in self._records() if item["profile_type"] == profile_type),
@@ -112,14 +130,19 @@ class DatabaseConfigurationService:
             "profile_type": profile_type,
             "credentials_configured": bool(row.get("credentials_encrypted")),
             "tested_at": row.get("tested_at", ""),
-            "active": False,
-            "status": "pending",
-            "validation_scope": "mysql_connection" if profile_type == "mysql" else "https_transport_only",
-            "activation_requirements": (
-                "MySQL repository adapters and verified JSON data migration are required."
-                if profile_type == "mysql" else
-                "An API data contract, authentication test, repository adapter, and verified data migration are required."
+            "active": bool(row.get("active")),
+            "status": row.get("status", "pending"),
+            "validation_scope": (
+                "active_application_storage" if profile_type == "mysql" and row.get("active")
+                else "mysql_connection" if profile_type == "mysql"
+                else "https_transport_only"
             ),
+            **({
+                "activation_requirements": (
+                    "An API data contract, authentication test, repository adapter, "
+                    "and verified data migration are required."
+                )
+            } if profile_type == "api" else {}),
         }
 
     @staticmethod
@@ -357,10 +380,43 @@ class DatabaseConfigurationService:
         )
         return {"status": "success"}
 
+    def _migration_documents(self):
+        source_store = active_mysql_store()
+        if source_store is not None:
+            return source_store.list_documents()
+
+        source_dir = get_active_data_dir()
+        documents = []
+        for path in sorted(source_dir.rglob("*.json")):
+            relative = path.relative_to(source_dir)
+            if relative.parts[0] in STABLE_DATA_DIRECTORIES:
+                continue
+            if len(relative.parts) == 1 and relative.name in STABLE_DATA_FILES:
+                continue
+            if path.is_symlink():
+                raise ValueError(f"Cannot migrate linked data file: {relative.as_posix()}.")
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"Cannot migrate invalid JSON data file: {relative.name}."
+                ) from exc
+            documents.append((relative.as_posix(), payload))
+        return documents
+
     def save_profile(self, profile_type, form):
-        """Retest profiles and activate only the app's JSON folder."""
+        """Validate and activate MySQL storage or save a non-active API profile."""
         if profile_type == "folder":
             active_path = self.activate_data_folder(form.get("path", ""))
+            from backend.services.assessment_service import _PERSISTENCE_LOCK
+            with _PERSISTENCE_LOCK:
+                rows = self._records()
+                updated = [
+                    {**row, "active": False}
+                    if row.get("profile_type") == "mysql" else row
+                    for row in rows
+                ]
+                JSONRepository(self.config_path).save_all(updated)
             return {
                 "path": str(active_path),
                 "profile_type": "folder",
@@ -375,6 +431,9 @@ class DatabaseConfigurationService:
             for key, value in saved_credentials.items():
                 if not credentials.get(key):
                     credentials[key] = value
+            target_store = MySQLJSONStore(
+                {**configuration, **credentials}
+            )
         elif profile_type == "api":
             self.test_api_connection(form)
             normalized = self._normalize_api(form, allow_missing_credentials=True)
@@ -408,13 +467,20 @@ class DatabaseConfigurationService:
             "configuration": configuration,
             "credentials_encrypted": encrypted_credentials,
             "tested_at": datetime.now(timezone.utc).isoformat(),
-            "active": False,
-            "status": "pending",
+            "active": profile_type == "mysql",
+            "status": "success" if profile_type == "mysql" else "pending",
         }
         from backend.services.assessment_service import _PERSISTENCE_LOCK
         with _PERSISTENCE_LOCK:
+            if profile_type == "mysql":
+                target_store.import_documents(self._migration_documents())
             rows = self._records()
             updated = [row for row in rows if row["profile_type"] != profile_type]
+            if profile_type == "mysql":
+                updated = [
+                    {**row, "active": False}
+                    for row in updated
+                ]
             updated.append(record)
             JSONRepository(self.config_path).save_all(updated)
         return self.get_profile(profile_type)
@@ -463,6 +529,87 @@ class DatabaseConfigurationService:
         from backend.data_paths import _atomic_migration_json
         _atomic_migration_json(path, value)
 
+    def _activate_json_folder_from_mysql(self, destination, source, store):
+        from backend.data_paths import _atomic_migration_json
+
+        documents = store.list_documents()
+        plans = []
+        conflicts = []
+        for document_key, payload in documents:
+            relative = Path(document_key)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("MySQL contains an unsafe application data path.")
+            target = destination / relative
+            self._check_target(destination, target)
+            current = None
+            if target.exists():
+                try:
+                    current = json.loads(target.read_text(encoding="utf-8-sig"))
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    conflicts.append(relative.as_posix())
+                    continue
+                if current != payload and not (current == [] and payload):
+                    conflicts.append(relative.as_posix())
+            plans.append((target, relative, current, payload))
+        if conflicts:
+            raise ValueError(
+                "The selected folder contains files that differ from MySQL data: "
+                + ", ".join(conflicts[:5])
+                + ". No files were replaced and MySQL remains active."
+            )
+
+        recovery = self.data_dir / ".storage_migrations" / uuid.uuid4().hex
+        backup = recovery / "backup"
+        backup.mkdir(parents=True, mode=0o700)
+        manifest = {
+            "source": "active MySQL",
+            "destination": str(destination),
+            "status": "staging",
+            "files": {},
+        }
+        manifest_path = recovery / "manifest.json"
+        self._write_migration_manifest(manifest_path, manifest)
+        for target, relative, current, payload in plans:
+            if current == payload:
+                continue
+            if target.exists():
+                backup_path = backup / relative
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, backup_path)
+            _atomic_migration_json(target, payload)
+            if json.loads(target.read_text(encoding="utf-8")) != payload:
+                raise ValueError(
+                    f"JSON migration verification failed: {relative.as_posix()}."
+                )
+            manifest["files"][relative.as_posix()] = "verified"
+
+        manifest["status"] = "verified_ready_to_activate"
+        self._write_migration_manifest(manifest_path, manifest)
+        save_active_data_dir(destination)
+        try:
+            rows = self._records()
+            updated = [
+                {**row, "active": False}
+                if row.get("profile_type") == "mysql" else row
+                for row in rows
+            ]
+            JSONRepository(self.config_path).save_all(updated)
+        except (OSError, ValueError) as exc:
+            try:
+                save_active_data_dir(source)
+            except (OSError, ValueError) as rollback_exc:
+                raise ValueError(
+                    "Could not finish switching storage to JSON, and the previous "
+                    f"data-folder setting could not be restored ({type(rollback_exc).__name__})."
+                ) from None
+            raise ValueError(
+                f"Could not deactivate MySQL storage ({type(exc).__name__}); "
+                "the previous storage remains active."
+            ) from None
+        manifest["status"] = "activated"
+        self._write_migration_manifest(manifest_path, manifest)
+        return destination
+
     def activate_data_folder(self, path):
         """Back up, stage, verify, then atomically activate JSON storage."""
         self.test_folder_access(path)
@@ -471,8 +618,15 @@ class DatabaseConfigurationService:
         # The same project-wide lock protects repository writes and path switches.
         with _PERSISTENCE_LOCK:
             source = get_active_data_dir().resolve()
-            if source == destination:
+            mysql_store = active_mysql_store()
+            if source == destination and mysql_store is None:
                 return destination
+            if mysql_store is not None:
+                if source in destination.parents or destination in source.parents:
+                    raise ValueError("Choose a data folder that is not inside or above the current data folder.")
+                return self._activate_json_folder_from_mysql(
+                    destination, source, mysql_store
+                )
             if not source.is_dir():
                 raise ValueError("The current active data folder is unavailable; migration was not started.")
             if source in destination.parents or destination in source.parents:

@@ -27,7 +27,18 @@ method_names = {'run_ai_evaluation', 'run_all_candidates_ai_evaluation', '_start
                 'review_eval_candidate_rows', 'current_assessment_test_items',
                 'is_selected_evaluation_test_locked', 'can_evaluate_selected_test',
                 'evaluation_permission_tooltip'}
-namespace = {'asyncio': asyncio, 'Path': Path, 'datetime': datetime, 'AuthState': object}
+method_names.update({
+    'results_assessment_tests',
+    'results_individual_overall_card',
+    'results_all_candidates_table_rows',
+})
+namespace = {
+    'asyncio': asyncio,
+    'Path': Path,
+    'datetime': datetime,
+    'AuthState': object,
+    'AdminState': object,
+}
 _TEST_SCOPE = {}
 for node in tree.body:
     if isinstance(node, ast.FunctionDef) and node.name in helper_names:
@@ -68,6 +79,8 @@ for name in method_names:
     method = namespace[name]
     setattr(StateHarness, name, property(method) if name in (
         'assessment_evaluation_results', 'results_eval_status', 'has_ai_evaluated_current_candidate',
+        'results_assessment_tests', 'results_individual_overall_card',
+        'results_all_candidates_table_rows',
         'current_candidate_ai_score_display', 'current_candidate_ai_percentage_display',
         '_review_eval_questions_data', 'review_eval_question_options',
         'review_eval_selected_question_max_marks', 'review_eval_candidate_rows',
@@ -383,6 +396,81 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         # assessment/reporting results.
         self.assertEqual(obj.assessment_evaluation_results, {})
         self.assertIn('Alice (A):Test', obj.real_ai_results_per_candidate)
+
+    async def test_admin_reports_reads_tests_and_scores_from_admin_assessment(self):
+        obj = state()
+        obj.assessments = []
+        obj.saved_assessment_weightages = {}
+        obj.results_selected_candidate = 'Alice (A)'
+        obj.results_pass_percentage = 50
+        obj._workspace_snapshot = {
+            'scope': [obj.selected_assessment_id, obj.selected_assessment_name],
+            'results': {
+                'Alice (A):Test': {'normalized_score': 80},
+            },
+        }
+        admin_assessment = {
+            'name': obj.selected_assessment_name,
+            'assessment_id': obj.selected_assessment_id,
+            'tests': ['Test'],
+            'final_test': '',
+        }
+
+        async def get_admin_state(_state_type):
+            return SimpleNamespace(assessments=[admin_assessment])
+
+        async def effective_candidate():
+            return obj.results_selected_candidate
+
+        obj.get_state = get_admin_state
+        obj.results_effective_candidate = effective_candidate()
+        obj._calculate_normalized_score = lambda result: result['normalized_score']
+
+        result = await obj.results_individual_overall_card
+
+        self.assertEqual(result['score_str'], '80%')
+        self.assertEqual(result['status_str'], 'Pass')
+
+    async def test_admin_candidate_performance_searches_assigned_candidates(self):
+        obj = state()
+        obj.assessments = []
+        obj.saved_assessment_weightages = {}
+        obj.results_pass_percentage = 50
+        obj._workspace_snapshot = {
+            'scope': [obj.selected_assessment_id, obj.selected_assessment_name],
+            'results': {
+                'Shivani R (EMP1):Test': {'normalized_score': 80},
+            },
+        }
+        admin_assessment = {
+            'name': obj.selected_assessment_name,
+            'assessment_id': obj.selected_assessment_id,
+            'tests': ['Test'],
+            'final_test': '',
+            'assigned_candidates': ['EMP1'],
+        }
+
+        async def get_admin_state(_state_type):
+            return SimpleNamespace(
+                assessments=[admin_assessment],
+                candidates=[{'emp_id': 'EMP1', 'name': 'Shivani R'}],
+            )
+
+        obj.get_state = get_admin_state
+        obj._calculate_normalized_score = lambda result: result['normalized_score']
+        obj.results_search_candidate = 'EMP1'
+        id_rows = await obj.results_all_candidates_table_rows
+        self.assertEqual(
+            [(row['cand_id'], row['cand_name'], row['overall_score']) for row in id_rows],
+            [('EMP1', 'Shivani R', '80%')],
+        )
+
+        obj.results_search_candidate = 'Shivani'
+        name_rows = await obj.results_all_candidates_table_rows
+        self.assertEqual(
+            [(row['cand_id'], row['cand_name']) for row in name_rows],
+            [('EMP1', 'Shivani R')],
+        )
 
 
 class ResponseScopeTests(unittest.TestCase):

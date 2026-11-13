@@ -29,7 +29,7 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
         self.service = DatabaseConfigurationService(Path(self.temp.name))
         self.key_patch = patch.dict(
             "os.environ",
-            {"AI_CONNECTION_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii")},
+            {"APP_CREDENTIAL_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii")},
         )
         self.key_patch.start()
         self.addCleanup(self.key_patch.stop)
@@ -65,9 +65,16 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
             "password": "mysql-secret-value",
             "ssl_mode": "PREFERRED",
         }
-        with patch.object(self.service, "_probe_mysql") as probe:
+        with (
+            patch.object(self.service, "_probe_mysql") as probe,
+            patch.object(self.service, "_migration_documents", return_value=[]),
+            patch(
+                "backend.services.database_configuration_service.MySQLJSONStore"
+            ) as store,
+        ):
             saved = self.service.save_profile("mysql", form)
             probe.assert_called_once()
+            store.return_value.import_documents.assert_called_once_with([])
             self.service.test_mysql_connection(
                 {
                     "host": "db.example.test",
@@ -83,7 +90,8 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
                 {"username": "app-user", "password": "mysql-secret-value"},
             )
 
-            self.assertFalse(saved["active"])
+            self.assertTrue(saved["active"])
+            self.assertEqual(saved["status"], "success")
             self.assertTrue(saved["credentials_configured"])
             self.assertNotIn("password", saved)
             contents_before_failure = self.service.config_path.read_text(
@@ -340,6 +348,10 @@ class DatabaseConfigurationServiceTests(unittest.TestCase):
             patch.object(console, "DatabaseConfigurationService", return_value=self.service),
             patch.object(self.service, "_probe_mysql"),
             patch.object(self.service, "_probe_api"),
+            patch.object(self.service, "_migration_documents", return_value=[]),
+            patch(
+                "backend.services.database_configuration_service.MySQLJSONStore"
+            ),
         ):
             async def save_profiles():
                 await state.save_mysql_configuration()

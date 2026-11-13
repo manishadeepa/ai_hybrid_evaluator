@@ -1,7 +1,6 @@
 from copy import deepcopy
 from pathlib import Path
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class TestCandidateRepository:
@@ -9,10 +8,9 @@ class TestCandidateRepository:
         self.file_path = Path(file_path) if file_path else Path(__file__).resolve().parents[1] / "data" / "test_candidates.json"
 
     def get_all(self):
-        path = resolve_data_path(self.file_path)
-        if not path.exists():
+        if not json_document_exists(self.file_path):
             return []
-        rows = JSONRepository(path).get_all()
+        rows = JSONRepository(self.file_path).get_all()
         self._validate(rows)
         return rows
 

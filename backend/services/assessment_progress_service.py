@@ -1,6 +1,6 @@
 """Read-only assessment evidence summary; does not grade, score, or mark reports complete."""
 from backend.data_paths import active_data_file
-from backend.repositories.json_repository import JSONRepository
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class AssessmentProgressService:
@@ -17,7 +17,7 @@ class AssessmentProgressService:
     @staticmethod
     def _manual_records():
         path = active_data_file("manual_evaluations.json")
-        return JSONRepository(path).get_all() if path.exists() else []
+        return JSONRepository(path).get_all() if json_document_exists(path) else []
 
     def get_progress(self, assessment_id, ai_results=None):
         assessment = self.assessments.get_assessment(assessment_id)

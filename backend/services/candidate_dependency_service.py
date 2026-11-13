@@ -1,9 +1,11 @@
 """Read-only candidate deletion safeguards across the current data stores."""
-import json
 from pathlib import Path
 import sys
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import (
+    JSONRepository,
+    json_document_exists,
+    read_json_document,
+)
 
 
 class CandidateDependencyService:
@@ -19,20 +21,17 @@ class CandidateDependencyService:
         if any(matches(r) for r in test_assignments):
             raise ValueError("Candidate cannot be deleted because test assignments exist.")
         for name in ("manual_evaluations.json", "ai_evaluation_runs.json"):
-            path = resolve_data_path(self.data_dir / name)
-            if path.exists() and any(matches(r) for r in JSONRepository(path).get_all()):
+            path = self.data_dir / name
+            if json_document_exists(path) and any(matches(r) for r in JSONRepository(path).get_all()):
                 raise ValueError("Candidate cannot be deleted because evaluation data exists.")
         for name in ("candidate_feedbacks.json", "facilitator_feedbacks.json"):
-            path = resolve_data_path(self.app_data_dir / name)
-            if path.exists():
-                try:
-                    records = json.loads(path.read_text(encoding="utf-8-sig"))
-                except (ValueError, UnicodeError) as exc:
-                    raise ValueError("Cannot verify candidate dependencies: unreadable feedback data.") from exc
-                if not isinstance(records, dict):
-                    raise ValueError("Cannot verify candidate dependencies: invalid feedback data.")
-                if any(str(key).split(":")[-1] == identity or (isinstance(value, dict) and matches(value)) for key, value in records.items()):
-                    raise ValueError("Candidate cannot be deleted because feedback data exists.")
+            records = read_json_document(self.app_data_dir / name, {})
+            if records == []:
+                records = {}
+            if not isinstance(records, dict):
+                raise ValueError("Cannot verify candidate dependencies: invalid feedback data.")
+            if any(str(key).split(":")[-1] == identity or (isinstance(value, dict) and matches(value)) for key, value in records.items()):
+                raise ValueError("Candidate cannot be deleted because feedback data exists.")
         module = sys.modules.get("ai_hybrid_evaluator.state.candidate_state")
         if module and any(matches(r) for r in getattr(module, "PERSISTED_CANDIDATE_TEST_DATA", {}).values()):
             raise ValueError("Candidate cannot be deleted because a test attempt exists.")

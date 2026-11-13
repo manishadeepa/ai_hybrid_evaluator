@@ -1,6 +1,10 @@
 import reflex as rx
 from datetime import datetime
 from ai_hybrid_evaluator.components.layout.dashboard_shell import admin_shell
+from ai_hybrid_evaluator.state.admin_authorization import (
+    has_admin_session,
+    is_verified_admin_session,
+)
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.theme import COLORS, FONT_BODY, FONT_DISPLAY
 from backend.services.ai_connection_service import AIConnectionService
@@ -69,7 +73,9 @@ class SettingsState(rx.State):
 
     # ── AI Connection actions ─────────────────────────────────
 
-    def load_active_connection(self):
+    async def load_active_connection(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         service = AIConnectionService()
         connection = service.get_active_public()
 
@@ -95,7 +101,9 @@ class SettingsState(rx.State):
             "api_key": self.ai_conn_api_key,
         }
 
-    def ai_test_connection(self):
+    async def ai_test_connection(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         try:
             service = AIConnectionService()
             form = self._connection_form()
@@ -130,7 +138,9 @@ class SettingsState(rx.State):
             self.ai_saved_status = "error"
             return rx.toast.error(str(exc))
 
-    def ai_save_and_use(self):
+    async def ai_save_and_use(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         form = self._connection_form()
         editing_existing = self.ai_conn_editing_existing and bool(self.ai_conn_edit_id)
         if not form.get("name") and self.ai_saved_name and not editing_existing:
@@ -199,10 +209,12 @@ class SettingsState(rx.State):
         self.active_view = "new"
         self.show_selection_dialog = False
 
-    def ai_edit_connection(self):
+    async def ai_edit_connection(self):
         """Unlock the active connection fields for editing."""
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         if not self.ai_saved_connection_id:
-            self.load_active_connection()
+            await self.load_active_connection()
         if not self.ai_saved_connection_id:
             return rx.toast.error("No saved AI connection is available to edit.")
         self.ai_conn_editing_existing = True
@@ -248,7 +260,10 @@ class SettingsState(rx.State):
 
     async def _require_master_admin(self) -> bool:
         auth_state = await self.get_state(AuthState)
-        if auth_state.is_authenticated and auth_state.admin_role == "Master Admin":
+        if (
+            is_verified_admin_session(auth_state)
+            and auth_state.admin_role == "Master Admin"
+        ):
             self.admin_management_error = ""
             return True
         self.admin_management_error = (
@@ -256,8 +271,10 @@ class SettingsState(rx.State):
         )
         return False
 
-    def load_admin_accounts(self):
+    async def load_admin_accounts(self):
         """Reload safe account identities from the persistent account services."""
+        if not await self._require_master_admin():
+            return
         self.admin_management_error = ""
         try:
             master_admin = MasterAdminService().get()
@@ -288,9 +305,15 @@ class SettingsState(rx.State):
         )
         self.admin_accounts = accounts
 
-    def on_page_load(self):
-        self.load_active_connection()
-        self.load_admin_accounts()
+    async def on_page_load(self):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        await self.load_active_connection()
+        auth_state = await self.get_state(AuthState)
+        if auth_state.admin_role == "Master Admin":
+            await self.load_admin_accounts()
+        else:
+            self.admin_accounts = []
 
     # ── Add Admin Handlers ────────────────────────────────────
     async def open_add_admin_dialog(self):
@@ -361,7 +384,7 @@ class SettingsState(rx.State):
             self.add_admin_error = str(exc)
             return
 
-        self.load_admin_accounts()
+        await self.load_admin_accounts()
         self.show_add_admin_dialog = False
         self.new_admin_password = ""
         self.new_admin_confirm_password = ""
@@ -372,7 +395,7 @@ class SettingsState(rx.State):
         if not await self._require_master_admin():
             self.edit_admin_error = self.admin_management_error
             return
-        self.load_admin_accounts()
+        await self.load_admin_accounts()
         if not (0 <= index < len(self.admin_accounts)):
             return
         target = self.admin_accounts[index]
@@ -446,7 +469,7 @@ class SettingsState(rx.State):
             self.edit_admin_error = str(exc)
             return
 
-        self.load_admin_accounts()
+        await self.load_admin_accounts()
         self.show_edit_admin_dialog = False
         self.edit_admin_password = ""
         self.edit_admin_confirm_password = ""
@@ -456,7 +479,7 @@ class SettingsState(rx.State):
     async def open_delete_admin_dialog(self, index: int):
         if not await self._require_master_admin():
             return
-        self.load_admin_accounts()
+        await self.load_admin_accounts()
         if not (0 <= index < len(self.admin_accounts)):
             return
         target = self.admin_accounts[index]
@@ -490,7 +513,7 @@ class SettingsState(rx.State):
             self.admin_management_error = str(exc)
             return
 
-        self.load_admin_accounts()
+        await self.load_admin_accounts()
         self.show_delete_admin_dialog = False
         self.delete_admin_index = -1
         self.delete_admin_username = ""

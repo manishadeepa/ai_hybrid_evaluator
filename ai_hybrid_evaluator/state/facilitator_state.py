@@ -30,6 +30,7 @@ from backend.services.assessment_approval import (
 from backend.services.ai_evaluation_run_service import AIEvaluationRunService
 from backend.services.feedback_service import FeedbackService
 from backend.data_paths import active_data_file
+from backend.repositories.json_repository import read_json_document, write_json_document
 from backend.services.report_service import ReportService
 from backend.services.facilitator_dashboard_service import (
     FacilitatorDashboardService,
@@ -446,7 +447,7 @@ class FacilitatorState(rx.State):
 
     async def _refresh_after_locked_mutation(self):
         admin_state = await self.get_state(AdminState)
-        error = await admin_state.load_persisted_assessments_async(self.question_papers)
+        error = await admin_state.load_persisted_assessments_for_facilitator_async(self.question_papers)
         if error:
             return error
         self.question_papers = {
@@ -500,7 +501,7 @@ class FacilitatorState(rx.State):
             return rx.redirect("/signin")
         admin_state = await self.get_state(AdminState)
         try:
-            error = await admin_state.load_persisted_assessments_async(self.question_papers)
+            error = await admin_state.load_persisted_assessments_for_facilitator_async(self.question_papers)
             if error:
                 return error
         except (ValueError, OSError) as exc:
@@ -1166,46 +1167,39 @@ class FacilitatorState(rx.State):
         return active_data_file("assessment_weightages.json")
 
     def _load_saved_weightages(self) -> dict[str, dict[str, int]]:
-        """Load saved weightages from disk."""
-        fp = self._get_weightages_file_path()
-        if fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
+        """Load saved weightages from the active application data store."""
+        value = read_json_document(self._get_weightages_file_path(), {})
+        if value == []:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("Stored assessment weightages are invalid.")
+        return value
 
     def _persist_weightages(self):
-        """Persist saved weightages to disk."""
-        fp = self._get_weightages_file_path()
-        import json
-        with open(fp, "w", encoding="utf-8") as f:
-            json.dump(self.saved_assessment_weightages, f, indent=2)
+        """Persist saved weightages to the active application data store."""
+        write_json_document(
+            self._get_weightages_file_path(), self.saved_assessment_weightages
+        )
 
     @staticmethod
     def _get_pass_percentages_file_path() -> Path:
         return active_data_file("assessment_pass_percentages.json")
 
     def _load_saved_pass_percentages(self) -> dict[str, dict[str, int]]:
-        """Load saved test-level pass percentages from disk."""
-        fp = self._get_pass_percentages_file_path()
-        if fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
+        """Load saved test-level pass percentages from the active data store."""
+        value = read_json_document(self._get_pass_percentages_file_path(), {})
+        if value == []:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("Stored assessment pass percentages are invalid.")
+        return value
 
     def _persist_pass_percentages(self):
-        """Persist saved test-level pass percentages to disk."""
-        fp = self._get_pass_percentages_file_path()
-        import json
-        with open(fp, "w", encoding="utf-8") as f:
-            json.dump(self.saved_assessment_pass_percentages, f, indent=2)
+        """Persist saved test-level pass percentages to the active data store."""
+        write_json_document(
+            self._get_pass_percentages_file_path(),
+            self.saved_assessment_pass_percentages,
+        )
 
     # â”€â”€ Assessment Completion State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Tracks which assessments the facilitator has explicitly marked as Complete.
@@ -1218,36 +1212,21 @@ class FacilitatorState(rx.State):
         return active_data_file("assessment_completions.json")
 
     def _load_saved_completions(self) -> dict[str, bool]:
-        """Load persisted assessment completion flags from disk."""
-        fp = self._get_completion_file_path()
-        if fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    completions = json.load(f)
-                # Older or manually reset data may contain a list (for
-                # example, []), while completion flags are keyed by name.
-                # Normalize invalid shapes so downstream .get() calls are safe.
-                if not isinstance(completions, dict):
-                    return {}
-                return {
-                    name: is_complete
-                    for name, is_complete in completions.items()
-                    if isinstance(name, str) and isinstance(is_complete, bool)
-                }
-            except Exception:
-                return {}
-        return {}
+        """Load persisted assessment completion flags from the active data store."""
+        completions = read_json_document(self._get_completion_file_path(), {})
+        if not isinstance(completions, dict):
+            return {}
+        return {
+            name: is_complete
+            for name, is_complete in completions.items()
+            if isinstance(name, str) and isinstance(is_complete, bool)
+        }
 
     def _persist_completions(self):
-        """Persist completion flags to disk."""
-        fp = self._get_completion_file_path()
-        try:
-            import json
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(self.completed_assessments, f, indent=2)
-        except Exception:
-            pass
+        """Persist completion flags to the active application data store."""
+        write_json_document(
+            self._get_completion_file_path(), self.completed_assessments
+        )
 
     async def mark_assessment_complete(self):
         """Facilitator explicitly marks the current assessment as Complete from Reports page.
@@ -1499,26 +1478,20 @@ class FacilitatorState(rx.State):
         return active_data_file("facilitator_feedbacks.json")
 
     def _load_saved_feedbacks(self) -> dict[str, dict]:
-        """Load persisted facilitator feedbacks from disk."""
-        fp = FacilitatorState._get_feedback_file_path()
-        if fp.exists():
-            try:
-                import json
-                with open(fp, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
+        """Load persisted facilitator feedbacks from the active data store."""
+        value = read_json_document(FacilitatorState._get_feedback_file_path(), {})
+        if value == []:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("Stored facilitator feedback data is invalid.")
+        return value
 
     def _persist_feedbacks(self):
-        """Persist facilitator feedbacks to disk."""
-        fp = FacilitatorState._get_feedback_file_path()
-        try:
-            import json
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(self.saved_facilitator_feedbacks, f, indent=2)
-        except Exception:
-            pass
+        """Persist facilitator feedbacks to the active application data store."""
+        write_json_document(
+            FacilitatorState._get_feedback_file_path(),
+            self.saved_facilitator_feedbacks,
+        )
 
     def _get_feedback_key(self, asmn: str, test_name: str, cand_str: str) -> str:
         cand_id = ""
@@ -2245,16 +2218,13 @@ class FacilitatorState(rx.State):
                 if not assessment_id:
                     raise ValueError("Selected assessment could not be resolved; refresh and try again.")
 
-                import json
-
                 def read_saved_values(path: Path, label: str) -> dict[str, dict[str, int]]:
-                    if not path.exists():
-                        return {}
                     try:
-                        with open(path, "r", encoding="utf-8") as saved_file:
-                            value = json.load(saved_file)
+                        value = read_json_document(path, {})
                     except (OSError, ValueError) as exc:
                         raise ValueError(f"Unable to read stored {label}; refresh and try again.") from exc
+                    if value == []:
+                        return {}
                     if not isinstance(value, dict) or any(
                         not isinstance(assessment_values, dict)
                         for assessment_values in value.values()
@@ -3317,7 +3287,7 @@ class FacilitatorState(rx.State):
             self.show_lock_test_confirmation = False
             self.lock_test_confirmation_id = ""
             admin_state = await self.get_state(AdminState)
-            refresh_error = await admin_state.load_persisted_assessments_async(self.question_papers)
+            refresh_error = await admin_state.load_persisted_assessments_for_facilitator_async(self.question_papers)
             self.question_papers = {
                 row["name"]: dict(row.get("question_papers", {}))
                 for row in admin_state.assessments
@@ -6148,20 +6118,38 @@ class FacilitatorState(rx.State):
         mine = await self.my_assessments
         match = next((a for a in mine if a["name"] == asmn), None)
         saved_w = self.saved_assessment_weightages.get(asmn, {})
-        
+        if match:
+            test_items = match.get("test_items", [])
+        else:
+            admin_state = await self.get_state(AdminState)
+            match = next((
+                a for a in admin_state.assessments
+                if a.get("name") == asmn
+                and (
+                    not self.selected_assessment_id
+                    or a.get("assessment_id") == self.selected_assessment_id
+                )
+            ), None)
+            if not match:
+                return []
+            final_test = match.get("final_test", "")
+            test_items = [
+                {"name": name, "is_final": name == final_test}
+                for name in list(match.get("tests", [])) + ([final_test] if final_test else [])
+            ]
+
         tests = []
         seen = set()
-        if match:
-            for t in match.get("test_items", []):
-                t_name = t["name"]
-                if t_name not in seen:
-                    seen.add(t_name)
-                    w = saved_w.get(t_name, t.get("weightage", 0))
-                    tests.append({
-                        "name": t_name,
-                        "is_final": t.get("is_final", False) or "summative" in t_name.lower(),
-                        "weightage": int(w) if str(w).isdigit() else 0,
-                    })
+        for t in test_items:
+            t_name = t["name"]
+            if t_name not in seen:
+                seen.add(t_name)
+                w = saved_w.get(t_name, t.get("weightage", 0))
+                tests.append({
+                    "name": t_name,
+                    "is_final": t.get("is_final", False) or "summative" in t_name.lower(),
+                    "weightage": int(w) if str(w).isdigit() else 0,
+                })
         return tests
 
     @rx.var(cache=True)
@@ -6459,6 +6447,47 @@ class FacilitatorState(rx.State):
                         "name": cname,
                         "emp_id": cid,
                     })
+        else:
+            admin_state = await self.get_state(AdminState)
+            admin_match = next((
+                a for a in admin_state.assessments
+                if a.get("name") == asmn
+                and (
+                    not self.selected_assessment_id
+                    or a.get("assessment_id") == self.selected_assessment_id
+                )
+            ), None)
+            if admin_match:
+                candidate_names = {}
+                for c in admin_state.candidates:
+                    cid = str(
+                        c.get("emp_id")
+                        or c.get("candidate_id")
+                        or ""
+                    ).strip()
+                    if cid:
+                        candidate_names[cid.casefold()] = str(
+                            c.get("name") or cid
+                        ).strip()
+                for c in admin_match.get("candidate_details", []):
+                    cid = str(
+                        c.get("emp_id")
+                        or c.get("candidate_id")
+                        or ""
+                    ).strip()
+                    if cid:
+                        candidate_names[cid.casefold()] = str(
+                            c.get("name") or candidate_names.get(cid.casefold()) or cid
+                        ).strip()
+
+                for candidate_id in admin_match.get("assigned_candidates", []):
+                    cid = str(candidate_id).strip()
+                    if cid and cid.casefold() not in seen_ids:
+                        seen_ids.add(cid.casefold())
+                        candidates_list.append({
+                            "name": candidate_names.get(cid.casefold(), cid),
+                            "emp_id": cid,
+                        })
 
         query = (self.results_search_candidate or "").strip().lower()
         rows = []

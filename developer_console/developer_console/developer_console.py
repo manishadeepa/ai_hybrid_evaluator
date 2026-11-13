@@ -153,7 +153,9 @@ class State(rx.State):
 
     def _refresh_active_storage_status(self):
         try:
-            self.active_storage_status = f"Active JSON data folder: {get_active_data_dir()}"
+            self.active_storage_status = (
+                DatabaseConfigurationService().active_storage_description()
+            )
         except (OSError, ValueError) as exc:
             self.active_storage_status = "Active storage could not be determined."
             self.database_error = str(exc)
@@ -192,9 +194,7 @@ class State(rx.State):
         self.database_test_status = "Not tested yet"
         if profile_type == "folder":
             self.folder_path = profile.get("path", str(DEFAULT_DATA_DIR))
-            self.active_storage_status = (
-                f"Active JSON data folder: {self.folder_path}"
-            )
+            self._refresh_active_storage_status()
         elif profile_type == "mysql":
             self.mysql_host = profile.get("host", "")
             self.mysql_port = str(profile.get("port", 3306))
@@ -451,10 +451,10 @@ class State(rx.State):
         self.mysql_password = ""
         self.mysql_credentials_configured = True
         self._refresh_active_storage_status()
-        self.database_test_status = "MySQL connection verified and saved (not active)"
+        self.database_test_status = "MySQL verified and active"
         self.database_message = (
-            "Credentials were saved encrypted. JSON file storage remains active; "
-            "MySQL repository support and verified data migration are still required."
+            "The application is now using MySQL. Existing JSON records were imported "
+            "without overwriting any different data."
         )
 
     def set_api_service_name(self, value: str):
@@ -992,7 +992,14 @@ def module_card(
     )
 
 
-def password_field(value, on_change, show, on_toggle, placeholder: str) -> rx.Component:
+def password_field(
+    value,
+    on_change,
+    show,
+    on_toggle,
+    placeholder: str,
+    database_field: bool = False,
+) -> rx.Component:
     return rx.input(
         rx.input.slot(
             rx.icon_button(
@@ -1015,6 +1022,7 @@ def password_field(value, on_change, show, on_toggle, placeholder: str) -> rx.Co
         type=rx.cond(show, "text", "password"),
         placeholder=placeholder,
         width="100%",
+        style={"height": "54px", "padding": "12px 14px"} if database_field else {},
     )
 
 
@@ -1360,7 +1368,8 @@ def database_input(label: str, value, on_change, placeholder: str = "", input_ty
             background="white",
             border="1px solid #cbd5e1",
             border_radius="8px",
-            padding="10px 12px",
+            height="54px",
+            padding="12px 14px",
         ),
         spacing="2",
         width="100%",
@@ -1508,7 +1517,7 @@ def database_overview_page() -> rx.Component:
             ),
             database_option_card(
                 "MySQL",
-                "Validate a MySQL connection and securely save a pending profile.",
+                "Test, securely save, and activate MySQL as the application's live data store.",
                 "Configure MySQL",
                 "mysql",
             ),
@@ -1666,7 +1675,7 @@ def mysql_configuration_page() -> rx.Component:
                     rx.vstack(
                         rx.heading("Configure MySQL Database", size="5", color="#17233c"),
                         rx.text(
-                            "Validate and save MySQL connection details for review.",
+                            "Test the connection, then save to use this database for application data.",
                             color="#64748b",
                         ),
                         align="start",
@@ -1708,6 +1717,7 @@ def mysql_configuration_page() -> rx.Component:
                             State.show_mysql_password,
                             State.toggle_mysql_password,
                             "Enter password or leave blank to reuse the saved secret",
+                            database_field=True,
                         ),
                         rx.cond(
                             State.mysql_credentials_configured,
@@ -1756,6 +1766,7 @@ def mysql_configuration_page() -> rx.Component:
                     State.save_mysql_configuration,
                     State.back_to_database_management,
                     "Test Connection",
+                    "Save and Use MySQL",
                 ),
                 width="100%",
                 align="start",
@@ -1784,6 +1795,7 @@ def api_credential_fields() -> rx.Component:
                 State.show_api_credential,
                 State.toggle_api_credential_visibility,
                 "Enter API key",
+                database_field=True,
             ),
             rx.cond(
                 State.api_credentials_configured,
@@ -1804,6 +1816,7 @@ def api_credential_fields() -> rx.Component:
                     State.show_api_credential,
                     State.toggle_api_credential_visibility,
                     "Enter bearer token",
+                    database_field=True,
                 ),
                 rx.cond(
                     State.api_credentials_configured,
@@ -1825,6 +1838,7 @@ def api_credential_fields() -> rx.Component:
                         State.show_api_credential,
                         State.toggle_api_credential_visibility,
                         "Enter API password",
+                        database_field=True,
                     ),
                     rx.cond(
                         State.api_credentials_configured,

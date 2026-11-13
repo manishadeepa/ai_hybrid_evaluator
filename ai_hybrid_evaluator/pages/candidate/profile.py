@@ -107,7 +107,7 @@ def profile_page_content() -> rx.Component:
             section_header("Employee Information"),
             rx.grid(
                 form_field("Full Name", "Enter your full name", CandidateProfileState.full_name, CandidateProfileState.set_full_name),
-                form_field("Employee ID", "e.g. CAND-2031", CandidateProfileState.emp_id, CandidateProfileState.set_emp_id),
+                form_field("Employee ID", "e.g. EMP1", CandidateProfileState.emp_id, CandidateProfileState.set_emp_id),
                 form_field("Official Email", "Enter your official email", CandidateProfileState.email, CandidateProfileState.set_email, "email"),
                 form_field("Phone Number", "Enter your phone number", CandidateProfileState.phone, CandidateProfileState.set_phone, "tel"),
                 form_field("Location", "e.g. Bangalore, India", CandidateProfileState.location, CandidateProfileState.set_location),

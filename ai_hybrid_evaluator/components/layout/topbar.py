@@ -94,7 +94,6 @@ def unified_topbar(
                 spacing="0",
                 align_items="start",
             ),
-            rx.icon("chevron-down", size=14, color=COLORS["slate"]),
             spacing="3",
             align_items="center",
             min_width="220px",

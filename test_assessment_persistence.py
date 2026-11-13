@@ -119,7 +119,8 @@ class PersistenceTests(unittest.TestCase):
     def test_completion_loader_normalizes_legacy_list_json(self):
         path = self.folder / 'assessment_completions.json'
         path.write_text('[]', encoding='utf-8')
-        namespace = {'Path': Path}
+        from backend.repositories.json_repository import read_json_document
+        namespace = {'Path': Path, 'read_json_document': read_json_document}
         Harness = extract_methods(
             'ai_hybrid_evaluator/state/facilitator_state.py',
             'FacilitatorState',
@@ -145,20 +146,49 @@ class PersistenceTests(unittest.TestCase):
     def harnesses(self):
         toast = SimpleNamespace(success=lambda *args, **kw: args, error=lambda *args, **kw: args, info=lambda *args, **kw: args)
         ns = {'asyncio': asyncio, 'AssessmentService': lambda: self.service, 'rx': SimpleNamespace(toast=toast), 'datetime': datetime, 'date': date, 'today_ist': lambda: date(2026, 10, 8)}
+        ns['AuthState'] = type('AuthHarness', (), {})
+        async def has_admin_session(state):
+            auth_state = await state.get_state(ns['AuthState'])
+            return auth_state.is_admin_session()
+        async def has_facilitator_session(state):
+            auth_state = await state.get_state(ns['AuthState'])
+            return bool(
+                auth_state.is_facilitator_authenticated
+                and auth_state.facilitator_emp_id
+            )
+        async def get_auth_state(state):
+            return await state.get_state(ns['AuthState'])
+        ns['has_admin_session'] = has_admin_session
+        ns['has_facilitator_session'] = has_facilitator_session
+        ns['get_auth_state'] = get_auth_state
         names = {'_apply_assessment_records', '_load_persisted_assessments', 'load_persisted_assessments', 'load_persisted_assessments_async', '_persist_assessment_record', '_add_assessment_test',
+                 '_load_assessment_records', 'load_persisted_assessments_for_facilitator_async',
                  'add_assessment', 'save_edit_assessment', 'confirm_delete_assessment',
                  'add_test_to_selected_assessment', 'remove_test_from_selected_assessment', 'set_test_date'}
         Admin = extract_methods('ai_hybrid_evaluator/state/admin_state.py', 'AdminState', names, ns)
         admin = Admin()
         admin.assessments = [sample()]
         admin.test_question_papers = {}
+        admin.facilitators = []
         admin.candidates = [{'emp_id':'C1','name':'One'}, {'emp_id':'C2','name':'Two'}]
         admin.set_show_add_assessment = lambda value: None
         admin.set_show_edit_assessment = lambda value: None
         admin.set_show_delete_assessment = lambda value: None
+        admin_auth = SimpleNamespace(
+            is_admin_session=lambda: True,
+            is_facilitator_authenticated=True,
+            facilitator_emp_id='F001',
+        )
+        async def admin_get_state(cls):
+            return admin_auth
+        admin.get_state = admin_get_state
+        admin._load_persisted_facilitators = lambda: None
+        admin._load_persisted_candidates = lambda **_kwargs: None
         ns['AdminState'] = Admin
-        ns['AuthState'] = type('AuthHarness', (), {})
-        auth = SimpleNamespace(facilitator_emp_id='F001')
+        auth = SimpleNamespace(
+            facilitator_emp_id='F001',
+            is_facilitator_authenticated=True,
+        )
         from backend.repositories.candidate_repository import CandidateRepository
         from backend.services.candidate_management_service import CandidateManagementService
         from backend.services.candidate_assignment_service import CandidateAssignmentService
@@ -166,6 +196,8 @@ class PersistenceTests(unittest.TestCase):
         for cid in ('C1', 'C2'):
             candidates.create_candidate({'candidate_id':cid,'name':cid,'email':cid+'@example.com'})
         ns['CandidateAssignmentService'] = lambda: CandidateAssignmentService(candidates)
+        from backend.services.assessment_approval import all_facilitators_approved
+        ns['all_facilitators_approved'] = all_facilitators_approved
         fnames = {'_workspace_assessment', 'load_persisted_assessment_workspace', 'create_new_test', 'facilitator_remove_test', 'remove_test_question_paper'}
         Fac = extract_methods('ai_hybrid_evaluator/state/facilitator_state.py', 'FacilitatorState', fnames, ns)
         fac = Fac()
@@ -200,14 +232,14 @@ class PersistenceTests(unittest.TestCase):
 
     def test_admin_state_creation_edit_deletion(self):
         admin, fac = self.harnesses()
-        admin.load_persisted_assessments()
+        asyncio.run(admin.load_persisted_assessments())
         admin.facilitators = [{'emp_id':'F001','name':'Facilitator'}]
         admin.new_assessment_name='Created'
         admin.new_assessment_date='date'
         admin.new_assessment_facilitator_ids=['F001']
         admin.new_assessment_candidate_ids=['C1']
         admin.new_assessment_status='Draft'
-        admin.add_assessment()
+        asyncio.run(admin.add_assessment())
         self.assertEqual(len(self.service.load_assessments()), 2)
         admin.edit_assessment_index=1
         identity=admin.assessments[1]['assessment_id']
@@ -216,11 +248,11 @@ class PersistenceTests(unittest.TestCase):
         admin.edit_assessment_facilitator_ids=['F001']
         admin.edit_assessment_candidate_ids=['C2']
         admin.edit_assessment_status='Scheduled'
-        admin.save_edit_assessment()
+        asyncio.run(admin.save_edit_assessment())
         self.assertEqual(self.service.load_assessments()[1]['assessment_id'], identity)
         self.assertEqual(self.service.load_assessments()[1]['name'], 'Edited')
         admin.delete_assessment_index=1
-        admin.confirm_delete_assessment()
+        asyncio.run(admin.confirm_delete_assessment())
         self.assertEqual(len(self.service.load_assessments()),1)
 
     def test_state_restore_facilitator_create_remove_and_qp(self):
@@ -250,20 +282,20 @@ class PersistenceTests(unittest.TestCase):
 
     def test_admin_renumber_event_preserves_qp(self):
         admin, fac=self.harnesses()
-        admin.load_persisted_assessments()
+        asyncio.run(admin.load_persisted_assessments())
         survivor=admin.assessments[0]['test_ids']['Formative 2']
         admin.selected_tests_assessment_index=0
-        admin.remove_test_from_selected_assessment('Formative 1')
+        asyncio.run(admin.remove_test_from_selected_assessment('Formative 1'))
         self.assertEqual(admin.assessments[0]['test_ids']['Formative 1'],survivor)
         self.assertEqual(admin.test_question_papers['Quality__Formative 1'],'second.xlsx')
-        admin.add_test_to_selected_assessment()
-        admin.set_test_date('Formative 2','2099-09-21')
+        asyncio.run(admin.add_test_to_selected_assessment())
+        asyncio.run(admin.set_test_date('Formative 2','2099-09-21'))
         self.assertEqual(self.service.load_assessments()[0]['test_dates']['Formative 2'],'2099-09-21')
 
 
     def test_invalid_form_assignment_is_reported_without_write(self):
         admin, fac = self.harnesses()
-        admin.load_persisted_assessments()
+        asyncio.run(admin.load_persisted_assessments())
         admin.facilitators = [{'emp_id':'F001','name':'Facilitator'}]
         admin.new_assessment_name='Invalid'
         admin.new_assessment_date=''
@@ -271,12 +303,12 @@ class PersistenceTests(unittest.TestCase):
         admin.new_assessment_candidate_ids=['C1']
         admin.new_assessment_status='Draft'
         before=self.assessments.file_path.read_bytes()
-        admin.add_assessment()
+        asyncio.run(admin.add_assessment())
         self.assertIn('facilitator',admin.assessment_form_error)
         self.assertEqual(self.assessments.file_path.read_bytes(),before)
         admin.new_assessment_facilitator_ids=['F001']
         admin.new_assessment_candidate_ids=['missing']
-        admin.add_assessment()
+        asyncio.run(admin.add_assessment())
         self.assertIn('candidate',admin.assessment_form_error)
         self.assertEqual(self.assessments.file_path.read_bytes(),before)
 

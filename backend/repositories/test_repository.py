@@ -1,9 +1,8 @@
 from pathlib import Path
 from copy import deepcopy
 from datetime import datetime, timezone
-from backend.repositories.json_repository import JSONRepository
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 from backend.services.question_type_schema import validate_test_type
-from backend.data_paths import resolve_data_path
 
 
 LOCKED_TEST_ERROR = "This test is locked and is view-only."
@@ -16,7 +15,7 @@ class TestRepository:
         self.file_path = Path(file_path) if file_path is not None else Path(__file__).resolve().parents[1] / "data" / "tests.json"
 
     def exists(self):
-        return resolve_data_path(self.file_path).exists()
+        return json_document_exists(self.file_path)
 
     @staticmethod
     def _lock():

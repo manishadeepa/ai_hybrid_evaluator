@@ -18,15 +18,20 @@ The console serves its UI on port 3001 and its Reflex backend on port 8001. Its 
 adds the repository root to `sys.path`, so it can import the shared `backend` services
 without copying those modules.
 
-For encrypted MySQL/API credentials, configure `AI_CONNECTION_ENCRYPTION_KEY` in the
-repository-root `.env` as a Fernet key. Generate a new key locally with:
+The app creates `backend/.credential_encryption.key` on first use to encrypt MySQL/API
+credentials and Admin AI connections. Keep it private and preserve it across
+deployments and backups; losing or changing it makes saved credentials unreadable.
+Managed deployments may instead provide `APP_CREDENTIAL_ENCRYPTION_KEY` through the
+host's secret manager. Database connection settings are entered in this console and
+are not read from an application `.env` file.
 
-```powershell
-& ..\.venv\Scripts\python.exe -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+Saving a tested MySQL profile activates it for application data. Existing JSON
+repository data is imported without overwriting conflicting MySQL data. The API
+checker verifies HTTPS transport only: no API contract or authentication endpoint is
+configured, so it does not claim API authentication.
 
-Keep that key private and backed up; losing it makes saved credentials unreadable.
-Saved MySQL/API profiles are pending only. JSON remains active unless the Folder Path
-workflow successfully migrates the existing files and explicitly activates the
-selected folder. The API checker verifies HTTPS transport only: no API contract or
-authentication endpoint is configured, so it does not claim API authentication.
+The compatibility layer stores each existing JSON data file as one JSON value in
+MySQL to preserve current repository behavior. This is not a normalized schema, and
+whole-collection writes are not a production-scale multi-instance design. Uploaded
+assessment and response files also remain in the configured server-side upload
+directory; activating MySQL does not migrate those files.

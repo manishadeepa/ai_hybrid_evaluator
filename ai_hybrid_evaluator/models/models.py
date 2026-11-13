@@ -27,28 +27,9 @@ class Facilitator(TypedDict):
 # Shared in-memory data stores (persists across sessions/tabs)
 # ─────────────────────────────────────────────────────────────
 
-SHARED_CANDIDATES: list[Candidate] = [
-    {"name": "Priya Sharma", "emp_id": "CAND-2031", "email": "priya.sharma@tvsmotor.com", "password": "Priya@123"},
-    {"name": "Arjun Rao", "emp_id": "CAND-2054", "email": "arjun.rao@tvsmotor.com", "password": "Arjun@123"},
-    {"name": "Divya Nair", "emp_id": "CAND-2061", "email": "divya.nair@tvsmotor.com", "password": "Divya@123"},
-]
+SHARED_CANDIDATES: list[Candidate] = []
 
-SHARED_FACILITATORS: list[Facilitator] = [ 
-    {
-        "name": "Ravi Kumar",
-        "emp_id": "F001",
-        "email": "ravi.kumar@tvsmotor.com",
-        "phone": "9876543210",
-        "password": "Ravi@123",
-    },
-    {
-        "name": "Meena Iyer",
-        "emp_id": "F002",
-        "email": "meena.iyer@tvsmotor.com",
-        "phone": "9876500000",
-        "password": "Meena@123",
-    },
-]
+SHARED_FACILITATORS: list[Facilitator] = []
 
 # Profile details are stored independently from login credentials and keyed by account ID.
 _PROFILE_DATA_DIR = Path(__file__).resolve().parents[2] / "backend" / "data"

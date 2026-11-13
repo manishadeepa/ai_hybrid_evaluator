@@ -1,8 +1,7 @@
 """Survey-only stores. Reads never create files or migrate legacy evaluation comments."""
 from copy import deepcopy
 from pathlib import Path
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class FeedbackRepository:
@@ -21,15 +20,14 @@ class FeedbackRepository:
                 raise ValueError("Duplicate feedback response.")
 
     def get_all(self):
-        path = resolve_data_path(self.file_path)
-        rows = JSONRepository(path).get_all() if path.exists() else []
+        rows = JSONRepository(self.file_path).get_all() if json_document_exists(self.file_path) else []
         self._validate(rows)
         return rows
 
     def save(self, row):
         rows = [r for r in self.get_all() if r[self.identity] != row[self.identity]] + [deepcopy(row)]
         self._validate(rows)
-        JSONRepository(resolve_data_path(self.file_path)).save_all(rows)
+        JSONRepository(self.file_path).save_all(rows)
         return deepcopy(row)
 
 

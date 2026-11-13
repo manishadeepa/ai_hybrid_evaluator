@@ -1,5 +1,6 @@
 ﻿"""Test business rules with temporary stores; no Azure or production data writes."""
 import json
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -210,16 +211,15 @@ class TestManagementTests(unittest.TestCase):
         first = self.create()
         admin._apply_assessment_records(self.assessments.load_assessments())
         admin.selected_tests_assessment_index = 0
-        error = admin.set_test_date("Formative 1", "bad date")
+        error = asyncio.run(admin.set_test_date("Formative 1", "bad date"))
         self.assertIn("Invalid test date", error[0])
-        past_error = admin.set_test_date("Formative 1", "2026-09-20")
+        past_error = asyncio.run(admin.set_test_date("Formative 1", "2026-09-20"))
         self.assertIn("cannot be earlier than today", past_error[0])
         self.assertEqual(self.service.get_test(first["test_id"])["date"], "")
-        admin.set_test_date("Formative 1", "2099-09-20")
+        asyncio.run(admin.set_test_date("Formative 1", "2099-09-20"))
         self.assertEqual(self.service.get_test(first["test_id"])["date"], "2099-09-20")
         (self.root / "manual_evaluations.json").write_text(json.dumps([{"assessment_name": "First", "test_name": "Formative 1"}]))
         fac.selected_assessment_name = "First"
-        import asyncio
         error = asyncio.run(fac.facilitator_remove_test("Formative 1"))
         self.assertIn("dependent data", error[0])
         self.assertIsNotNone(self.service.get_test(first["test_id"]))

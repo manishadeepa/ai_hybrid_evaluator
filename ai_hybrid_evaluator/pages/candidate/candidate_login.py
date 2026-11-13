@@ -20,7 +20,7 @@ def candidate_login_page() -> rx.Component:
         ),
         auth_input(
             "Employee ID",
-            "e.g. CAND-2031",
+            "e.g. EMP1",
             AuthState.candidate_signin_id,
             AuthState.set_candidate_signin_id,
             on_key_down=AuthState.handle_candidate_keydown,

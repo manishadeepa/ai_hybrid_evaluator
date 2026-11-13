@@ -1,8 +1,7 @@
 """Read-only safeguards for name-scoped test data; never deletes dependent data."""
 import sys
 from pathlib import Path
-from backend.repositories.json_repository import JSONRepository
-from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import JSONRepository, json_document_exists
 
 
 class TestDependencyService:
@@ -24,12 +23,12 @@ class TestDependencyService:
         # Completed/in-progress candidate activity and evaluation data DO block
         # deletion. Plain "Assigned" rows do not.
         for name in ("manual_evaluations.json", "ai_evaluation_runs.json"):
-            path = resolve_data_path(self.data_dir / name)
-            if path.exists() and any(matches(r) for r in JSONRepository(path).get_all()):
+            path = self.data_dir / name
+            if json_document_exists(path) and any(matches(r) for r in JSONRepository(path).get_all()):
                 reasons.append(name)
 
-        candidate_path = resolve_data_path(self.data_dir / "test_candidates.json")
-        if candidate_path.exists():
+        candidate_path = self.data_dir / "test_candidates.json"
+        if json_document_exists(candidate_path):
             candidate_rows = JSONRepository(candidate_path).get_all()
             if any(
                 matches(r) and r.get("status") != "Assigned"
