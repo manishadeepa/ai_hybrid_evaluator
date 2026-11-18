@@ -1233,29 +1233,7 @@ class AdminState(rx.State):
     # =========================================================
     # ASSESSMENTS
     # =========================================================
-    assessments: list[Assessment] = [
-        {
-            "name": "Quality",
-            # Multi-facilitator (primary)
-            "facilitator_ids": ["F001", "F002"],
-            "facilitator_names": ["Ravi Kumar", "Meena Iyer"],
-            # Legacy aliases (first in list)
-            "facilitator_id": "F001",
-            "facilitator_name": "Ravi Kumar",
-            "assigned_candidates": ["EMP1", "EMP2", "EMP3"],
-            "status": "In Progress",
-            # Tests are empty by default — Facilitators add them via their workspace
-            "tests": [],
-            "final_test": "",
-            "approval_status": "approved",
-            "facilitator_approvals": {
-                "F001": "approved",
-                "F002": "approved",
-            },
-            "question_papers": {},
-            "test_dates": {},
-        },
-    ]
+    assessments: list[Assessment] = []
 
 
     def _apply_assessment_records(self, records):
