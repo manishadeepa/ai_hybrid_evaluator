@@ -23,3 +23,12 @@ backend/data/.storage_migrations/
 /uploaded_files/
 /developer_console/uploaded_files/
 /backend/demo_data_reset_backups/
+# Virtual environments (missing right now, this is the important one)
+.venv/
+venv/
+
+# Logs and local artifacts
+*.log
+reflex.log
+*.backup
+scratch/
