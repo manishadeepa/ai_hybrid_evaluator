@@ -34,7 +34,7 @@ class FacilitatorDashboardService:
 
     @staticmethod
     def _legacy_response(candidate_id, assessment_name, test_name):
-        from ai_hybrid_evaluator.services.candidate_response_service import get_latest_candidate_response
+        from backend.services.candidate_response_service import get_latest_candidate_response
 
         return get_latest_candidate_response(
             candidate_id=candidate_id,

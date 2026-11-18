@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 
 # Development reload should watch source code directories, not saved answers,
@@ -15,9 +16,12 @@ os.environ["REFLEX_HOT_RELOAD_OVERRIDE_PATHS"] = ":".join(_reload_dirs)
 os.environ["REFLEX_USE_GRANIAN"] = "false"
 import reflex as rx
 
+_default_npm = Path(r"C:\Program Files\nodejs\npm.cmd")
+_npm_path = Path(shutil.which("npm.cmd") or shutil.which("npm") or _default_npm)
+
 config = rx.Config(
     app_name="ai_hybrid_evaluator",
-    bun_path=Path(r"C:\Program Files\nodejs\npm.cmd"),
+    bun_path=_npm_path if _npm_path.exists() else _default_npm,
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),

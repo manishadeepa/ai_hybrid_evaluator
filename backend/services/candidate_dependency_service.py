@@ -43,7 +43,7 @@ class CandidateDependencyService:
                         rows = pd.read_excel(book, sheet_name="Submission", dtype=str).fillna("").to_dict("records")
                         found = any(matches(r) for r in rows)
                     else:
-                        from ai_hybrid_evaluator.services.candidate_response_service import _safe_slug
+                        from backend.services.candidate_response_service import _safe_slug
                         found = any(_safe_slug(v) in _safe_slug(path.stem) for v in (identity, candidate["name"]))
             except Exception as exc:
                 raise ValueError("Cannot verify candidate dependencies: unreadable response workbook.") from exc

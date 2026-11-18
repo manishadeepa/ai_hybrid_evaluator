@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import pandas as pd
-from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+from backend.services import ai_evaluation_service as engine
 import test_ai_state_integration as integration
 
 

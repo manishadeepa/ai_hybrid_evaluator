@@ -6,30 +6,12 @@ from pathlib import Path
 from typing import TypedDict
 
 from backend.repositories.json_repository import JSONRepository
-
-
-class Candidate(TypedDict, total=False):
-    name: str
-    emp_id: str
-    department: str
-    email: str
-    password: str
-
-class Facilitator(TypedDict):
-    name: str
-    emp_id: str
-    email: str
-    phone: str
-    password: str
-
-
-# ─────────────────────────────────────────────────────────────
-# Shared in-memory data stores (persists across sessions/tabs)
-# ─────────────────────────────────────────────────────────────
-
-SHARED_CANDIDATES: list[Candidate] = []
-
-SHARED_FACILITATORS: list[Facilitator] = []
+from backend.shared_catalog import (
+    CandidateDict as Candidate,
+    FacilitatorDict as Facilitator,
+    SHARED_CANDIDATES,
+    SHARED_FACILITATORS,
+)
 
 # Profile details are stored independently from login credentials and keyed by account ID.
 _PROFILE_DATA_DIR = Path(__file__).resolve().parents[2] / "backend" / "data"

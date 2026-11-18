@@ -42,12 +42,12 @@ from ai_hybrid_evaluator.state.admin_state import AdminState
 from ai_hybrid_evaluator.state.auth_state import AuthState
 from ai_hybrid_evaluator.models.models import AssessmentDetail, get_facilitator_profile, save_facilitator_profile
 try:
-    from ai_hybrid_evaluator.services.ai_evaluation_service import evaluate_candidate as _evaluate_candidate
+    from backend.services.ai_evaluation_service import evaluate_candidate as _evaluate_candidate
 except ImportError:
     _evaluate_candidate = None
 
 try:
-    from ai_hybrid_evaluator.services.ai_evaluation_service import evaluate_candidates_questionwise as _evaluate_candidates_questionwise
+    from backend.services.ai_evaluation_service import evaluate_candidates_questionwise as _evaluate_candidates_questionwise
 except ImportError:
     _evaluate_candidates_questionwise = None
 
@@ -55,11 +55,11 @@ except ImportError:
 WORKSPACE_TABS = ["tests", "question_paper", "evaluation", "weightage", "results", "reports", "report_detail"]
 
 
-from ai_hybrid_evaluator.services.candidate_response_service import (
+from backend.services.candidate_response_service import (
     find_candidate_response_file,
     get_latest_candidate_response,
 )
-from ai_hybrid_evaluator.services.pdf_report_generator import (
+from backend.services.pdf_report_generator import (
     build_all_candidates_pdf_html,
     build_individual_test_pdf_html,
     generate_iframe_print_script,
@@ -8332,7 +8332,7 @@ class FacilitatorState(rx.State):
         method = self.review_eval_method
         from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
         from backend.repositories.manual_evaluation_repository import ManualEvaluationRepository
-        from ai_hybrid_evaluator.services.candidate_response_service import get_latest_candidate_response
+        from backend.services.candidate_response_service import get_latest_candidate_response
 
         ai_run = None
         if method == "ai":

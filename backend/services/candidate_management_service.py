@@ -32,7 +32,7 @@ class CandidateManagementService:
 
     @staticmethod
     def _shared_candidates():
-        from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
+        from backend.shared_catalog import SHARED_CANDIDATES
         return [
             {
                 "candidate_id": c["emp_id"],
@@ -191,7 +191,7 @@ class CandidateManagementService:
             }
 
         # Keep the existing built-in demo accounts working.
-        from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES
+        from backend.shared_catalog import SHARED_CANDIDATES
 
         for candidate in SHARED_CANDIDATES:
             identity = str(candidate.get("emp_id", "")).casefold()

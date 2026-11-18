@@ -296,7 +296,7 @@ class CandidateManagementTests(unittest.TestCase):
     def test_response_service_and_old_candidate_wrapper_compatible(self):
         import os
         from backend.services.candidate_service import CandidateService
-        from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response, find_candidate_response_file, get_latest_candidate_response
+        from backend.services.candidate_response_service import save_candidate_response, find_candidate_response_file, get_latest_candidate_response
         self.create()
         self.assertEqual(CandidateService(self.repo).get_candidate("C1")["name"], "Candidate One")
         question = {"id": 1, "title": "Q1", "text": "Question", "marks": 2, "co": "CO1", "lo": "LO1", "knowledge_type": "Fact", "category": "Cognitive", "rbt_level": "Remember"}

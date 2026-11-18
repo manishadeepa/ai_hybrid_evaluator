@@ -284,7 +284,7 @@ class AssessmentService:
         if self.facilitator_catalog is not None:
             return self.facilitator_catalog()
         # Existing facilitator directory is in memory; authentication is not involved.
-        from ai_hybrid_evaluator.models.models import SHARED_FACILITATORS
+        from backend.shared_catalog import SHARED_FACILITATORS
         return SHARED_FACILITATORS
 
     @staticmethod

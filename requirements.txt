@@ -1,7 +1,42 @@
+# ============================================================
+# AI Hybrid Evaluator — Full Requirements
+# Install: pip install -r requirements.txt
+# ============================================================
 
+# ── Core Web Framework ────────────────────────────────────────
 reflex==0.9.11
-reportlab>=4.4,<5
-PyMySQL>=1.1,<2
+
+# ── ASGI Server & Web Middleware ──────────────────────────────
+uvicorn>=0.29.0
+starlette>=1.3.1
+python-multipart>=0.0.9
+
+# ── Database & ORM ────────────────────────────────────────────
 SQLAlchemy>=2.0,<3
+PyMySQL>=1.1,<2
+greenlet>=3.0.0
+
+# ── Data Processing & Spreadsheet Support ────────────────────
 pandas>=2.2,<3
 openpyxl>=3.1,<4
+numpy>=1.26.0
+
+# ── PDF Report Generation ─────────────────────────────────────
+reportlab>=4.4,<5
+pillow>=10.0.0
+
+# ── AI / LLM Integration ─────────────────────────────────────
+openai>=1.50.0
+httpx>=0.27.0
+
+# ── Security & Credential Encryption ────────────────────────
+cryptography>=42.0.0
+
+# ── Async & Networking Utilities ─────────────────────────────
+anyio>=4.0.0
+redis>=6.4.0
+psutil>=6.0.0
+python-dotenv>=1.0.0
+
+# ── Testing ───────────────────────────────────────────────────
+pytest>=8.0.0

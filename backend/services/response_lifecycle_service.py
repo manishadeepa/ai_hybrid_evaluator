@@ -20,7 +20,7 @@ class ResponseLifecycleService:
         self.repository = repository or ResponseRepository(self.assignments.repository.file_path.parent / "responses.json")
         self.question_loader = question_loader or self._load_questions
         if excel_writer is None:
-            from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response
+            from backend.services.candidate_response_service import save_candidate_response
             excel_writer = save_candidate_response
         self.excel_writer = excel_writer
 

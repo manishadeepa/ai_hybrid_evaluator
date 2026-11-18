@@ -56,7 +56,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
             return_value=[],
         ).start()
 
-        patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')).start()
+        patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')).start()
         self.addCleanup(patch.stopall)
         root=rx.State(_reflex_internal_init=True)
         from ai_hybrid_evaluator.state.auth_state import AuthState
@@ -127,7 +127,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
                 entered.set()
                 if not release.wait(5): raise RuntimeError('Test timeout')
             return result()
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
+        with patch('backend.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             task=asyncio.create_task(self.execute(self.run['run_id']))
             try:
                 self.assertTrue(await asyncio.to_thread(entered.wait,5))
@@ -156,7 +156,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(state_module.FacilitatorState.execute_ai_run.is_background)
 
     async def test_selection_and_late_worker_cannot_overwrite_new_state(self):
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
+        with patch('backend.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
             await self.execute(self.run['run_id'])
         old=self.service.get_run(self.run['run_id'])
         self.fac.set_selected_evaluation_candidate('Other (C2)')
@@ -218,7 +218,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
             return result()
 
         with patch(
-            'ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',
+            'backend.services.ai_evaluation_service._evaluate_with_retry',
             side_effect=grade,
         ):
             emitted = []
@@ -242,7 +242,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fac.eval_progress_current, 3)
         self.assertTrue(emitted)
     async def test_restore_does_not_replace_manual_result(self):
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
+        with patch('backend.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
             await self.execute(self.run['run_id'])
         saved=dict(self.fac.real_ai_results_per_candidate)
         saved['C1:Assessment:Test']={**saved['C1:Assessment:Test'],'evaluation_type':'manual','score':'6 / 6'}
@@ -306,7 +306,7 @@ class ReflexRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prepared['assessment_id'],new['assessment_id']);self.assertEqual(prepared['test_id'],typed['test_id'])
         self.assertEqual(prepared['status'],'idle');self.assertEqual(prepared['completed_questions'],0)
         self.assertTrue(any(getattr(event,'handler',None) is not None and event.handler.is_background for event in events))
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
+        with patch('backend.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
             await self.execute(prepared['run_id'])
         self.assertEqual(self.fac.real_ai_score_display,'1 / 2')
 

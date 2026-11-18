@@ -11,8 +11,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from ai_hybrid_evaluator.services import ai_evaluation_service as engine
-from ai_hybrid_evaluator.services import candidate_response_service as responses
+from backend.services import ai_evaluation_service as engine
+from backend.services import candidate_response_service as responses
 
 STATE_PATH = Path('ai_hybrid_evaluator/state/facilitator_state.py')
 tree = ast.parse(STATE_PATH.read_text(encoding='utf-8'))

@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from ai_hybrid_evaluator.services import ai_evaluation_service as service
+from backend.services import ai_evaluation_service as service
 
 
 def grade(response_id, marks=4):

@@ -145,7 +145,7 @@ class RunTests(unittest.TestCase):
             calls.append(record['question_no'])
             if record['question_no']=='Q1': self.service.request_stop(rid)
             return result()
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('backend.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             run=self.service.execute(rid)
             self.assertEqual(run['status'],'paused');self.assertEqual(calls,['Q1'])
             run=self.service.execute(rid)
@@ -157,7 +157,7 @@ class RunTests(unittest.TestCase):
         def grade(client,deployment,record,*args):
             if record['question_no']=='Q2': raise ValueError('Azure error')
             return result()
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('backend.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             run=self.service.execute(rid)
         self.assertEqual(run['status'],'failed');self.assertEqual(run['completed_questions'],2)
         self.assertEqual(run['failed_questions'],1)
@@ -175,7 +175,7 @@ class RunTests(unittest.TestCase):
         def execute():
             try: self.service.execute(rid)
             except Exception as exc: failures.append(exc)
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('backend.services.ai_evaluation_service._evaluate_with_retry',side_effect=grade):
             thread=threading.Thread(target=execute);thread.start()
             try:
                 self.assertTrue(entered.wait(5))
@@ -196,7 +196,7 @@ class RunTests(unittest.TestCase):
             calls.append([(r['candidate_id'],r['question_no']) for r in chunk])
             if chunk[0]['question_no']=='Q1': self.service.request_stop(rid)
             return [dict(result(),response_id=r['response_id'],status='completed') for r in chunk]
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_question_batch',side_effect=grade):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('backend.services.ai_evaluation_service._evaluate_question_batch',side_effect=grade):
             paused=self.service.execute(rid)
             self.assertEqual(paused['completed_questions'],2);self.assertEqual(paused['status'],'paused')
             finished=self.service.execute(rid)
@@ -208,7 +208,7 @@ class RunTests(unittest.TestCase):
         rows=records()
         for row in rows: row.update(unanswered=True,candidate_answer=None)
         rid=self.service.create_run('Assessment','Test',rows,**self.ids)['run_id']
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client') as client:
+        with patch('backend.services.ai_evaluation_service._load_client') as client:
             run=self.service.execute(rid)
         client.assert_not_called()
         self.assertEqual(run['status'],'completed')
@@ -228,7 +228,7 @@ class RunTests(unittest.TestCase):
         with patch.object(self.service,'_canonical_test',return_value={'test_type':'objective'}), \
              patch.object(self.service,'_validate_submission_snapshot',return_value={}), \
              patch.object(AIConnectionService,'validate_active_configuration') as configuration, \
-             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client') as client:
+             patch('backend.services.ai_evaluation_service._load_client') as client:
             run=self.service.execute(rid)
         configuration.assert_not_called()
         client.assert_not_called()
@@ -257,9 +257,9 @@ class RunTests(unittest.TestCase):
                  '_evaluate_objective_locally',
                  return_value=dict(result(),awarded_marks=2,answer_status='Correct'),
              ) as local_grade, \
-             patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',
+             patch('backend.services.ai_evaluation_service._load_client',
                    return_value=(object(),'deployment')) as client, \
-             patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',
+             patch('backend.services.ai_evaluation_service._evaluate_with_retry',
                    return_value=dict(result(),awarded_marks=1)) as ai_grade:
             run=self.service.execute(rid)
         configuration.assert_called_once()
@@ -344,7 +344,7 @@ class RunTests(unittest.TestCase):
         )
         self.assertEqual(run['candidate_id'],'C1');self.assertEqual(run['total_questions'],3)
         response.write_bytes(b'changed file')
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(object(),'deployment')), patch('backend.services.ai_evaluation_service._evaluate_with_retry',return_value=result()):
             self.assertEqual(self.service.execute(run['run_id'])['status'],'completed')
 
     def test_partial_batch_success_saved_before_retry(self):
@@ -364,7 +364,7 @@ class RunTests(unittest.TestCase):
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({'results':[grade(a['response_id'],1) for a in chosen]})))])
         client.chat.completions.create.side_effect=create
         counts=[]
-        with patch('ai_hybrid_evaluator.services.ai_evaluation_service._load_client',return_value=(client,'deployment')), patch('ai_hybrid_evaluator.services.ai_evaluation_service.time.sleep',side_effect=lambda delay: counts.append(self.service.get_run(rid)['completed_questions']) if delay >= 1 else None):
+        with patch('backend.services.ai_evaluation_service._load_client',return_value=(client,'deployment')), patch('backend.services.ai_evaluation_service.time.sleep',side_effect=lambda delay: counts.append(self.service.get_run(rid)['completed_questions']) if delay >= 1 else None):
             run=self.service.execute(rid)
         self.assertEqual(counts,[1]);self.assertEqual([len(c) for c in calls],[2,1])
         self.assertEqual(run['completed_questions'],2)

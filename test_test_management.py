@@ -1,4 +1,4 @@
-﻿"""Test business rules with temporary stores; no Azure or production data writes."""
+"""Test business rules with temporary stores; no Azure or production data writes."""
 import json
 import asyncio
 import tempfile
@@ -250,7 +250,7 @@ class TestManagementTests(unittest.TestCase):
 
     def test_response_lookup_and_manual_evaluation_keep_scope(self):
         import os
-        from ai_hybrid_evaluator.services.candidate_response_service import save_candidate_response, get_latest_candidate_response
+        from backend.services.candidate_response_service import save_candidate_response, get_latest_candidate_response
         from backend.services.manual_evaluation_service import ManualEvaluationService
         from backend.repositories.json_repository import JSONRepository
         first = self.create()

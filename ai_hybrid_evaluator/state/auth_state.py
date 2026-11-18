@@ -5,7 +5,7 @@ Calls into services/mock_api.py so the mock logic stays out of the UI layer.
 
 import re
 import reflex as rx
-from ai_hybrid_evaluator.services.mock_api import mock_login, mock_signup, change_admin_password, EMAIL_REGEX
+from backend.services.mock_api import mock_login, mock_signup, change_admin_password, EMAIL_REGEX
 from ai_hybrid_evaluator.models.models import SHARED_CANDIDATES, SHARED_FACILITATORS
 from ai_hybrid_evaluator.state.admin_authorization import is_verified_admin_session
 from ai_hybrid_evaluator.state.admin_state import AdminState

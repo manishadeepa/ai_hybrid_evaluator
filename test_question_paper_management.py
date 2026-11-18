@@ -238,7 +238,7 @@ class QuestionPaperTests(unittest.TestCase):
         records = rows()
         for row in records: row["Candidate Answer"] = "Actual answer"
         pd.DataFrame(records).to_excel(response, index=False)
-        from ai_hybrid_evaluator.services.ai_evaluation_service import prepare_candidate_records
+        from backend.services.ai_evaluation_service import prepare_candidate_records
         normalized = prepare_candidate_records(self.papers.upload_dir / paper["filename"], response)
         self.assertEqual(len(normalized), 2)
         self.assertEqual(normalized[0]["answer_key"], " First answer ")

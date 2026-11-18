@@ -555,7 +555,7 @@ class AIEvaluationRunService:
 
     def prepare_single(self, assessment, test, candidate_id, label, paper, response, answer_key=None,
                        *, facilitator_id, role, **ids):
-        from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+        from backend.services import ai_evaluation_service as engine
 
         self.tests.authorize_evaluation(ids.get('test_id'), facilitator_id, role)
         test_record = self._canonical_test(ids)
@@ -616,7 +616,7 @@ class AIEvaluationRunService:
 
     def prepare_batch(self, assessment, test, rows, labels, paper, answer_key=None, skipped=None,
                       *, facilitator_id, role, **ids):
-        from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+        from backend.services import ai_evaluation_service as engine
 
         self.tests.authorize_evaluation(ids.get('test_id'), facilitator_id, role)
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
@@ -699,7 +699,7 @@ class AIEvaluationRunService:
         try:
             # Pure Objective tests are deterministic and do not require an AI
             # connection. Mixed tests use AI only for subjective questions.
-            from ai_hybrid_evaluator.services import ai_evaluation_service as engine
+            from backend.services import ai_evaluation_service as engine
 
             while True:
                 chunk = self._next_chunk(

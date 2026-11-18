@@ -11,7 +11,7 @@ class AssessmentProgressService:
 
     @staticmethod
     def _responses(**identity):
-        from ai_hybrid_evaluator.services.candidate_response_service import get_latest_candidate_response
+        from backend.services.candidate_response_service import get_latest_candidate_response
         return get_latest_candidate_response(**identity, require_assessment_scope=True)
 
     @staticmethod

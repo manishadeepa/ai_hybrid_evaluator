@@ -17,17 +17,12 @@ class FacilitatorRepository:
             / "facilitators.json"
         )
 
-        # Bootstrap only the default store, and only when it does not exist.
-        # This preserves the existing seeded accounts on first startup.
+        # Bootstrap an empty store on first startup when no file exists yet.
         should_bootstrap = use_default_path and not json_document_exists(self.file_path)
         self.storage = JSONRepository(self.file_path)
 
         if should_bootstrap:
-            from ai_hybrid_evaluator.models.models import SHARED_FACILITATORS
-
-            initial_records = [dict(row) for row in SHARED_FACILITATORS]
-            self._validate(initial_records)
-            self.storage.save_all(deepcopy(initial_records))
+            self.storage.save_all([])
 
     @staticmethod
     def _validate(records):

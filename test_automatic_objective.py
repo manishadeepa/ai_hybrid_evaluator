@@ -22,7 +22,7 @@ from backend.services.question_type_schema import selected_option
 from backend.services.manual_evaluation_service import ManualEvaluationService
 
 ROOT = Path(__file__).parent
-ENGINE = 'ai_hybrid_evaluator.services.ai_evaluation_service.'
+ENGINE = 'backend.services.ai_evaluation_service.'
 
 def workbook(kind='objective', questions=None):
     book = Workbook(); book.active.append(COLUMNS)

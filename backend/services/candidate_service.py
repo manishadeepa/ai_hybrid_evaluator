@@ -1,4 +1,4 @@
-﻿from backend.repositories.candidate_repository import CandidateRepository
+from backend.repositories.candidate_repository import CandidateRepository
 
 
 class CandidateService:

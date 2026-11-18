@@ -80,7 +80,7 @@ class TestDependencyService:
                             reasons.append("candidate response")
                             break
                     elif include_unscoped_legacy_responses:
-                        from ai_hybrid_evaluator.services.candidate_response_service import _safe_slug
+                        from backend.services.candidate_response_service import _safe_slug
                         if _safe_slug(test["test_name"]) in _safe_slug(path.stem):
                             reasons.append("legacy response with uncertain assessment ownership")
             except Exception as exc:
