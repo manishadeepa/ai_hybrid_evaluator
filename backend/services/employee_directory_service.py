@@ -4,14 +4,12 @@ import pandas as pd
 
 
 EMPLOYEE_WORKBOOK_PATH = (
-    Path.home() / "OneDrive" / "Desktop" / "EMP_information.xlsx"
+    Path(__file__).resolve().parents[1] / "data" / "EMP_information.xlsx"
 )
 
 
-def find_employee_by_id(employee_id: str) -> dict[str, str] | None:
-    """Return one employee's public form details from the local directory."""
-    if not employee_id:
-        return None
+def list_directory_employees() -> list[dict[str, str]]:
+    """Read public employee details from the project-local workbook."""
 
     if not EMPLOYEE_WORKBOOK_PATH.is_file():
         raise FileNotFoundError(
@@ -35,19 +33,28 @@ def find_employee_by_id(employee_id: str) -> dict[str, str] | None:
             + ", ".join(missing_columns)
         )
 
-    employee_id_column = columns["employee id"]
-    matches = employees.loc[employees[employee_id_column] == employee_id]
-    if matches.empty:
+    records = []
+    for _, employee in employees.iterrows():
+        def cell_text(column_name: str) -> str:
+            value = employee[columns[column_name]]
+            return "" if pd.isna(value) else str(value).strip()
+
+        employee_id = cell_text("employee id")
+        if employee_id:
+            records.append({
+                "emp_id": employee_id,
+                "name": cell_text("name"),
+                "email": cell_text("email id"),
+                "department": cell_text("department"),
+            })
+    return records
+
+
+def find_employee_by_id(employee_id: str) -> dict[str, str] | None:
+    """Return one employee's public form details by exact Employee ID."""
+    if not employee_id:
         return None
-
-    employee = matches.iloc[0]
-
-    def cell_text(column_name: str) -> str:
-        value = employee[columns[column_name]]
-        return "" if pd.isna(value) else str(value).strip()
-
-    return {
-        "name": cell_text("name"),
-        "email": cell_text("email id"),
-        "department": cell_text("department"),
-    }
+    for employee in list_directory_employees():
+        if employee["emp_id"] == employee_id:
+            return {key: employee[key] for key in ("name", "email", "department")}
+    return None

@@ -16,7 +16,7 @@ import re
 import reflex as rx
 from backend.services.assessment_service import AssessmentService
 from backend.services.candidate_management_service import CandidateManagementService
-from backend.services.employee_directory_service import find_employee_by_id
+from backend.services.employee_directory_service import find_employee_by_id, list_directory_employees
 from backend.services.feedback_service import FeedbackService
 from backend.repositories.facilitator_repository import FacilitatorRepository
 from backend.repositories.json_repository import JSONRepository
@@ -776,6 +776,7 @@ class AdminState(rx.State):
     candidate_form_error: str = ""
 
     # Employee search state
+    workbook_directory_employees: list[dict] = []
     employee_search_query: str = ""
     employee_selected: bool = False
 
@@ -790,14 +791,31 @@ class AdminState(rx.State):
             self.new_candidate_show_password = False
             self.candidate_form_error = ""
             self.employee_search_query = ""
+            self.workbook_directory_employees = []
             self.employee_selected = False
 
     def toggle_new_candidate_password(self):
         self.new_candidate_show_password = not self.new_candidate_show_password
 
-    def set_employee_search_query(self, value: str):
+    async def set_employee_search_query(self, value: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
         self.employee_search_query = value
         self.employee_selected = False
+        self.candidate_form_error = ""
+        self.workbook_directory_employees = []
+        if not value.strip():
+            return
+        try:
+            self.workbook_directory_employees = list_directory_employees()
+        except (OSError, ValueError) as exc:
+            self.candidate_form_error = f"Unable to look up employee information: {exc}"
+            return
+        query = value.strip().casefold()
+        exact_matches = [emp for emp in self.workbook_directory_employees
+                         if query in (emp["emp_id"].casefold(), emp["name"].casefold())]
+        if len(exact_matches) == 1:
+            await self.select_employee_suggestion_by_id(exact_matches[0]["emp_id"])
 
     def open_employee_search_dropdown(self):
         if self.employee_search_query.strip():
@@ -815,8 +833,8 @@ class AdminState(rx.State):
     @rx.var
     def available_directory_employees(self) -> list[dict]:
         """Aggregate employee identities already available in the frontend and state."""
-        employees: list[dict] = []
-        seen = set()
+        employees: list[dict] = [dict(emp) for emp in self.workbook_directory_employees]
+        seen = {emp["emp_id"].casefold() for emp in employees}
 
         # 1. From candidate profiles loaded by the protected Admin handler.
         for prof in self.candidate_directory_profiles:
@@ -929,8 +947,7 @@ class AdminState(rx.State):
         self.new_candidate_id = target.get("emp_id", "")
         self.new_candidate_name = target.get("name", "")
         self.new_candidate_department = target.get("department", "")
-        if target.get("email"):
-            self.new_candidate_email = target.get("email", "")
+        self.new_candidate_email = target.get("email", "")
         self.employee_selected = True
         self.candidate_form_error = ""
 
@@ -961,8 +978,11 @@ class AdminState(rx.State):
         self.new_candidate_email = employee.get("email", "")
         self.new_candidate_department = employee.get("department", "")
 
-    def set_new_candidate_name(self, value: str):
-        self.new_candidate_name = value
+    async def set_new_candidate_name(self, value: str):
+        if not await has_admin_session(self):
+            return rx.redirect("/signin")
+        await self.set_employee_search_query(value)
+        self.new_candidate_name = value if not self.employee_selected else self.new_candidate_name
 
     def set_new_candidate_department(self, value: str):
         self.new_candidate_department = value
