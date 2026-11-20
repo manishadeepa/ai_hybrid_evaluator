@@ -6881,10 +6881,10 @@ class FacilitatorState(rx.State):
 
     @rx.var
     async def submitted_candidate_options(self) -> list[str]:
-        """Populate dropdown dynamically with candidates who have submitted responses for currently selected assessment and test."""
+        """Populate dropdown dynamically with candidates for currently selected assessment and test."""
         asmn = self.selected_assessment_name
         test_name = self.selected_evaluation_test or self.selected_test_name
-        if not asmn or not test_name:
+        if not asmn:
             return []
         mine = await self.my_assessments
         match = next((a for a in mine if a["name"] == asmn), None)
@@ -6895,25 +6895,49 @@ class FacilitatorState(rx.State):
                 cand_id = str(c.get("emp_id", "")).strip()
                 cand_name = str(c.get("name", "")).strip()
                 label = f"{cand_name} ({cand_id})" if cand_name and cand_id else (cand_name or cand_id)
-                resp = _find_candidate_response(label, test_name, asmn)
-                if resp and resp.get("responses"):
+                if label and label not in options:
                     options.append(label)
-                    seen.add(cand_id.casefold())
-                    seen.add(cand_name.casefold())
-        try:
-            from backend.repositories.response_repository import ResponseRepository
-            for r in ResponseRepository().get_all():
-                if r.get("status") == "Submitted":
+                    if cand_id:
+                        seen.add(cand_id.casefold())
+                    if cand_name:
+                        seen.add(cand_name.casefold())
+        if not options:
+            try:
+                from backend.repositories.assessment_repository import AssessmentRepository
+                from backend.repositories.candidate_repository import CandidateRepository
+                assessments = AssessmentRepository().get_all()
+                cand_map = {str(c.get("candidate_id", "")).casefold(): c for c in CandidateRepository().get_all()}
+                for a in assessments:
+                    if str(a.get("name", "")).casefold() == asmn.casefold():
+                        for cid in a.get("assigned_candidates", []):
+                            cand = cand_map.get(str(cid).strip().casefold())
+                            cname = cand.get("name", "") if cand else ""
+                            label = f"{cname} ({cid})" if cname and cid else (cname or str(cid))
+                            if label and label not in options:
+                                options.append(label)
+                                if cid:
+                                    seen.add(str(cid).casefold())
+                                if cname:
+                                    seen.add(cname.casefold())
+            except Exception:
+                pass
+        if test_name:
+            try:
+                from backend.repositories.response_repository import ResponseRepository
+                for r in ResponseRepository().get_all():
                     if str(r.get("assessment_name", "")).casefold() == asmn.casefold() and str(r.get("test_name", "")).casefold() == test_name.casefold():
                         cid = str(r.get("candidate_id", "")).strip()
                         cname = str(r.get("candidate_name", "")).strip()
                         if cid.casefold() not in seen and cname.casefold() not in seen:
                             label = f"{cname} ({cid})" if cname and cid else (cname or cid)
-                            options.append(label)
-                            seen.add(cid.casefold())
-                            seen.add(cname.casefold())
-        except Exception:
-            pass
+                            if label and label not in options:
+                                options.append(label)
+                                if cid:
+                                    seen.add(cid.casefold())
+                                if cname:
+                                    seen.add(cname.casefold())
+            except Exception:
+                pass
         return options
 
     # ── Evaluation Tab Stats ───────────────────────────────────────────────────
@@ -7365,14 +7389,7 @@ class FacilitatorState(rx.State):
 
     @rx.var
     async def eval_batch_responses_subtitle(self) -> str:
-        mine = await self.my_assessments
-        c_count = 0
-        for a in mine:
-            if a["name"] == self.selected_assessment_name:
-                c_count = len(a.get("candidate_details", []))
-                break
-        t_name = self.selected_evaluation_test or self.selected_test_name or "Test"
-        return f"{c_count} submitted candidate responses • {t_name} • Batch file"
+        return ""
 
     @rx.var
     async def eval_batch_candidates_badge(self) -> str:

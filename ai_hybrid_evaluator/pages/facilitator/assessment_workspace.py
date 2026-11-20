@@ -2055,15 +2055,14 @@ def evaluation_files_card() -> rx.Component:
                         weight="bold",
                         color=COLORS["ink"],
                     ),
-                    rx.text(
-                        rx.cond(
-                            FacilitatorState.is_all_candidates_evaluation,
-                            FacilitatorState.eval_batch_responses_subtitle,
+                    rx.cond(
+                        ~FacilitatorState.is_all_candidates_evaluation,
+                        rx.text(
                             FacilitatorState.current_candidate_excel_file,
+                            font_family=FONT_BODY,
+                            size="1",
+                            color=COLORS["slate"],
                         ),
-                        font_family=FONT_BODY,
-                        size="1",
-                        color=COLORS["slate"],
                     ),
                     spacing="0",
                     align_items="start",
