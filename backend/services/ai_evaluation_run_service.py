@@ -9,7 +9,9 @@ from uuid import uuid4
 from backend.repositories.ai_evaluation_run_repository import AIEvaluationRunRepository
 from backend.services.question_type_schema import evaluate_objective, objective_question
 
-_LOCK = RLock()
+from backend.persistence_lock import PERSISTENCE_LOCK
+
+_LOCK = PERSISTENCE_LOCK
 _PROCESS = uuid4().hex
 _ACTIVE = set()
 _TRANSITIONS = {

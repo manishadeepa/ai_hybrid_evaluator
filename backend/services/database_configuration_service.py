@@ -471,9 +471,20 @@ class DatabaseConfigurationService:
             "status": "success" if profile_type == "mysql" else "pending",
         }
         from backend.services.assessment_service import _PERSISTENCE_LOCK
-        with _PERSISTENCE_LOCK:
+        operation = _PERSISTENCE_LOCK.for_store(target_store) if profile_type == "mysql" else _PERSISTENCE_LOCK.local_only()
+        with operation:
             if profile_type == "mysql":
-                target_store.import_documents(self._migration_documents())
+                source_store = active_mysql_store()
+                def endpoint(store):
+                    config = getattr(store, "configuration", None)
+                    if not isinstance(config, dict):
+                        return None
+                    return (str(config.get("host", "")).casefold(), int(config.get("port", 3306)),
+                            str(config.get("database", "")))
+                same_database = source_store is not None and endpoint(source_store) is not None and endpoint(source_store) == endpoint(target_store)
+                # Updating credentials for the same database needs no data migration.
+                if not same_database:
+                    target_store.import_documents(self._migration_documents())
             rows = self._records()
             updated = [row for row in rows if row["profile_type"] != profile_type]
             if profile_type == "mysql":

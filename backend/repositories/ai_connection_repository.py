@@ -1,8 +1,10 @@
+from backend.persistence_lock import persistence_operation
 from copy import deepcopy
 from pathlib import Path
 
 from backend.repositories.json_repository import JSONRepository
 from backend.data_paths import resolve_data_path
+from backend.repositories.json_repository import json_document_exists
 
 
 class AIConnectionRepository:
@@ -17,7 +19,7 @@ class AIConnectionRepository:
 
     def get_all(self):
         path = resolve_data_path(self.file_path)
-        if not path.exists():
+        if not json_document_exists(path):
             return []
 
         rows = JSONRepository(path).get_all()
@@ -50,6 +52,7 @@ class AIConnectionRepository:
             None,
         )
 
+    @persistence_operation
     def save_and_activate(self, record):
         rows = self.get_all()
         connection_id = record["connection_id"]

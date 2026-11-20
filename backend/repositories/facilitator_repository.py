@@ -1,3 +1,4 @@
+from backend.persistence_lock import persistence_operation
 from copy import deepcopy
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from backend.repositories.json_repository import JSONRepository, json_document_e
 class FacilitatorRepository:
     """Persist facilitator accounts using the backend JSON repository."""
 
+    @persistence_operation
     def __init__(self, file_path=None):
         use_default_path = file_path is None
         self.file_path = (
@@ -77,6 +79,7 @@ class FacilitatorRepository:
         self._validate(records)
         return self.storage.save_all(deepcopy(records))
 
+    @persistence_operation
     def save(self, facilitator):
         records = self.get_all()
         new_id = str(facilitator.get("emp_id", "")).strip().casefold()
@@ -89,6 +92,7 @@ class FacilitatorRepository:
         self.save_all(records)
         return deepcopy(updated)
 
+    @persistence_operation
     def replace(self, old_emp_id, facilitator):
         records = self.get_all()
         old_id = str(old_emp_id).strip().casefold()
@@ -110,6 +114,7 @@ class FacilitatorRepository:
         self.save_all(records)
         return deepcopy(updated)
 
+    @persistence_operation
     def delete(self, emp_id):
         target = str(emp_id).strip().casefold()
         records = self.get_all()

@@ -1,3 +1,4 @@
+from backend.persistence_lock import persistence_operation
 from copy import deepcopy
 from pathlib import Path
 from backend.repositories.json_repository import JSONRepository
@@ -35,6 +36,7 @@ class CandidateRepository:
         self._validate(records)
         return self.storage.save_all(deepcopy(records))
 
+    @persistence_operation
     def save(self, candidate):
         rows = self.get_all(include_deleted=True)
         identity = candidate["candidate_id"]
@@ -42,5 +44,6 @@ class CandidateRepository:
         self.save_all(rows)
         return deepcopy(candidate)
 
+    @persistence_operation
     def delete(self, candidate_id):
         self.save_all([r for r in self.get_all(include_deleted=True) if r["candidate_id"] != candidate_id])

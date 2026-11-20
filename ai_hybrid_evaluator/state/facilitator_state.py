@@ -1,3 +1,5 @@
+from copy import deepcopy
+from backend.document_updates import merge_session_document
 """
 Facilitator dashboard state.
 
@@ -416,6 +418,10 @@ def get_two_segment_donut_data(
     return segments
 
 class FacilitatorState(rx.State):
+    _baseline_saved_assessment_weightages: dict = {}
+    _baseline_saved_assessment_pass_percentages: dict = {}
+    _baseline_completed_assessments: dict = {}
+    _baseline_saved_facilitator_feedbacks: dict = {}
     # â”€â”€ Dashboard selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     # Backend-only snapshots: raw rows are not sent with every browser event.
@@ -1166,40 +1172,41 @@ class FacilitatorState(rx.State):
     def _get_weightages_file_path() -> Path:
         return active_data_file("assessment_weightages.json")
 
-    def _load_saved_weightages(self) -> dict[str, dict[str, int]]:
-        """Load saved weightages from the active application data store."""
+    def _load_saved_weightages(self):
         value = read_json_document(self._get_weightages_file_path(), {})
         if value == []:
-            return {}
+            value = {}
         if not isinstance(value, dict):
-            raise ValueError("Stored assessment weightages are invalid.")
+            raise ValueError("Stored application settings are invalid.")
+        self._baseline_saved_assessment_weightages = deepcopy(value)
         return value
 
     def _persist_weightages(self):
-        """Persist saved weightages to the active application data store."""
-        write_json_document(
-            self._get_weightages_file_path(), self.saved_assessment_weightages
+        merged = merge_session_document(
+            self._get_weightages_file_path(), getattr(self, "_baseline_saved_assessment_weightages", {}), self.saved_assessment_weightages
         )
+        self.saved_assessment_weightages = merged
+        self._baseline_saved_assessment_weightages = deepcopy(merged)
 
     @staticmethod
     def _get_pass_percentages_file_path() -> Path:
         return active_data_file("assessment_pass_percentages.json")
 
-    def _load_saved_pass_percentages(self) -> dict[str, dict[str, int]]:
-        """Load saved test-level pass percentages from the active data store."""
+    def _load_saved_pass_percentages(self):
         value = read_json_document(self._get_pass_percentages_file_path(), {})
         if value == []:
-            return {}
+            value = {}
         if not isinstance(value, dict):
-            raise ValueError("Stored assessment pass percentages are invalid.")
+            raise ValueError("Stored application settings are invalid.")
+        self._baseline_saved_assessment_pass_percentages = deepcopy(value)
         return value
 
     def _persist_pass_percentages(self):
-        """Persist saved test-level pass percentages to the active data store."""
-        write_json_document(
-            self._get_pass_percentages_file_path(),
-            self.saved_assessment_pass_percentages,
+        merged = merge_session_document(
+            self._get_pass_percentages_file_path(), getattr(self, "_baseline_saved_assessment_pass_percentages", {}), self.saved_assessment_pass_percentages
         )
+        self.saved_assessment_pass_percentages = merged
+        self._baseline_saved_assessment_pass_percentages = deepcopy(merged)
 
     # â”€â”€ Assessment Completion State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Tracks which assessments the facilitator has explicitly marked as Complete.
@@ -1211,22 +1218,21 @@ class FacilitatorState(rx.State):
     def _get_completion_file_path() -> Path:
         return active_data_file("assessment_completions.json")
 
-    def _load_saved_completions(self) -> dict[str, bool]:
-        """Load persisted assessment completion flags from the active data store."""
-        completions = read_json_document(self._get_completion_file_path(), {})
-        if not isinstance(completions, dict):
-            return {}
-        return {
-            name: is_complete
-            for name, is_complete in completions.items()
-            if isinstance(name, str) and isinstance(is_complete, bool)
-        }
+    def _load_saved_completions(self):
+        value = read_json_document(self._get_completion_file_path(), {})
+        if not isinstance(value, dict):
+            value = {}
+        value = {name: complete for name, complete in value.items()
+                 if isinstance(name, str) and isinstance(complete, bool)}
+        self._baseline_completed_assessments = deepcopy(value)
+        return value
 
     def _persist_completions(self):
-        """Persist completion flags to the active application data store."""
-        write_json_document(
-            self._get_completion_file_path(), self.completed_assessments
+        merged = merge_session_document(
+            self._get_completion_file_path(), getattr(self, "_baseline_completed_assessments", {}), self.completed_assessments
         )
+        self.completed_assessments = merged
+        self._baseline_completed_assessments = deepcopy(merged)
 
     async def mark_assessment_complete(self):
         """Facilitator explicitly marks the current assessment as Complete from Reports page.
@@ -1477,21 +1483,21 @@ class FacilitatorState(rx.State):
     def _get_feedback_file_path() -> Path:
         return active_data_file("facilitator_feedbacks.json")
 
-    def _load_saved_feedbacks(self) -> dict[str, dict]:
-        """Load persisted facilitator feedbacks from the active data store."""
+    def _load_saved_feedbacks(self):
         value = read_json_document(FacilitatorState._get_feedback_file_path(), {})
         if value == []:
-            return {}
+            value = {}
         if not isinstance(value, dict):
-            raise ValueError("Stored facilitator feedback data is invalid.")
+            raise ValueError("Stored application settings are invalid.")
+        self._baseline_saved_facilitator_feedbacks = deepcopy(value)
         return value
 
     def _persist_feedbacks(self):
-        """Persist facilitator feedbacks to the active application data store."""
-        write_json_document(
-            FacilitatorState._get_feedback_file_path(),
-            self.saved_facilitator_feedbacks,
+        merged = merge_session_document(
+            FacilitatorState._get_feedback_file_path(), getattr(self, "_baseline_saved_facilitator_feedbacks", {}), self.saved_facilitator_feedbacks
         )
+        self.saved_facilitator_feedbacks = merged
+        self._baseline_saved_facilitator_feedbacks = deepcopy(merged)
 
     def _get_feedback_key(self, asmn: str, test_name: str, cand_str: str) -> str:
         cand_id = ""

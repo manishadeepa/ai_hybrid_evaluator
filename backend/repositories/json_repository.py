@@ -33,6 +33,13 @@ def repository_read_scope():
         _READ_SCOPE.reset(token)
 
 
+def _repository_lock(file_path):
+    from backend.persistence_lock import PERSISTENCE_LOCK
+    if Path(file_path).name in STABLE_DATA_FILES:
+        return PERSISTENCE_LOCK.local_only()
+    return PERSISTENCE_LOCK
+
+
 def _mysql_target(file_path: str | Path):
     path = resolve_data_path(Path(file_path))
     if Path(file_path).name in STABLE_DATA_FILES:
@@ -48,7 +55,7 @@ def _mysql_target(file_path: str | Path):
 def read_json_document(file_path: str | Path, default=None):
     """Read an arbitrary JSON value from active MySQL storage or its JSON folder."""
     from backend.services.assessment_service import _PERSISTENCE_LOCK
-    with _PERSISTENCE_LOCK:
+    with _repository_lock(file_path):
         path, store, key = _mysql_target(file_path)
         if store is not None:
             return store.get_document(key, deepcopy(default))
@@ -64,7 +71,7 @@ def read_json_document(file_path: str | Path, default=None):
 def json_document_exists(file_path: str | Path) -> bool:
     """Check for a JSON document without creating a missing folder-backed file."""
     from backend.services.assessment_service import _PERSISTENCE_LOCK
-    with _PERSISTENCE_LOCK:
+    with _repository_lock(file_path):
         path, store, key = _mysql_target(file_path)
         return store.has_document(key) if store is not None else path.exists()
 
@@ -72,7 +79,7 @@ def json_document_exists(file_path: str | Path) -> bool:
 def write_json_document(file_path: str | Path, value) -> None:
     """Atomically persist an arbitrary JSON value to active MySQL or JSON storage."""
     from backend.services.assessment_service import _PERSISTENCE_LOCK
-    with _PERSISTENCE_LOCK:
+    with _repository_lock(file_path):
         path, store, key = _mysql_target(file_path)
         if store is not None:
             store.save_document(key, value)
@@ -118,7 +125,7 @@ class JSONRepository:
     def _ensure_file_exists(self) -> None:
         """Initialize once, serialized with writes and storage migration."""
         from backend.services.assessment_service import _PERSISTENCE_LOCK
-        with _PERSISTENCE_LOCK:
+        with _repository_lock(self.file_path):
             if self._active_mysql_store() is not None:
                 return
             path = self._resolved_path()
@@ -130,7 +137,10 @@ class JSONRepository:
         """Read and return records from the JSON file."""
         store = self._active_mysql_store()
         if store is not None:
-            data = store.get_document(self._document_key(self._resolved_path()))
+            key = self._document_key(self._resolved_path())
+            if not store.has_document(key):
+                return []
+            data = store.get_document(key)
             if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
                 raise ValueError(f"Invalid MySQL application data: {self.file_path.name}")
             return data
@@ -151,7 +161,7 @@ class JSONRepository:
     def _write_data(self, data: list[dict[str, Any]]) -> None:
         """Resolve and commit under the shared storage-switch lock."""
         from backend.services.assessment_service import _PERSISTENCE_LOCK
-        with _PERSISTENCE_LOCK:
+        with _repository_lock(self.file_path):
             self._write_data_locked(data)
 
     def _write_data_locked(self, data: list[dict[str, Any]]) -> None:
@@ -188,7 +198,7 @@ class JSONRepository:
         """Return all stored records."""
         path = self._resolved_path()
         scope = _READ_SCOPE.get()
-        if scope is None:
+        if scope is None or self._active_mysql_store() is not None:
             return self._read_data()
         key = path.resolve()
         stat = key.stat()

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from backend.repositories.json_repository import JSONRepository
 from backend.data_paths import active_data_file
+from backend.persistence_lock import persistence_operation
 
 
 class GroupAdminService:
@@ -61,6 +62,7 @@ class GroupAdminService:
             return None
         return None
 
+    @persistence_operation
     def create(self, username, password):
         username = self._normalise_username(username)
         password = str(password or "").strip()
@@ -78,6 +80,7 @@ class GroupAdminService:
         self.storage.save_all(rows)
         return {"username": username}
 
+    @persistence_operation
     def update(self, old_username, username, password=""):
         old_username = self._normalise_username(old_username).casefold()
         username = self._normalise_username(username)
@@ -98,6 +101,7 @@ class GroupAdminService:
         self.storage.save_all(rows)
         return {"username": username}
 
+    @persistence_operation
     def delete(self, username):
         target = self._normalise_username(username).casefold()
         rows = self.get_all()

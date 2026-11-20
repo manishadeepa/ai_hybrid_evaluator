@@ -31,6 +31,8 @@ class EvaluationResultTests(unittest.TestCase):
                 test = self.candidates.assessments.tests.create_test(
                     assessment['assessment_id'], {'test_name': test_name}, created_by='F001')
                 self.test_ids[(assessment['name'], test_name)] = test['test_id']
+        self.a = self.candidates.assessments.get_assessment(self.a['assessment_id'])
+        self.b = self.candidates.assessments.get_assessment(self.b['assessment_id'])
         self.key = ('C1', self.a['assessment_id'], self.test_ids[('A', 'Formative 1')])
         self.manual = object.__new__(ManualEvaluationRepository)
         self.manual.storage = JSONRepository(self.root / 'manual.json')

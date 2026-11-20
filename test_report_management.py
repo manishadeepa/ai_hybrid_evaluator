@@ -56,6 +56,8 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(report['test_category'], 'Formative')
 
     def test_summative_is_separate(self):
+        self.f.candidates.assessments.tests.create_test(
+            self.aid, {'test_name': 'Summative 1', 'is_final': True}, created_by='F001')
         a = self.f.candidates.assessments.update_assessment(
             self.aid,
             {'final_test': 'Summative 1'},
@@ -65,6 +67,7 @@ class ReportTests(unittest.TestCase):
         # creates its candidate assignments in the normal Assigned state.
         # This report fixture represents an already-completed test.
         summative_tid = a['test_ids']['Summative 1']
+        self.f.test_ids[('A', 'Summative 1')] = summative_tid
         for candidate_id in ('C1', 'C2'):
             row = self.f.service.assignment_repository.get(
                 candidate_id,
@@ -117,7 +120,7 @@ class ReportTests(unittest.TestCase):
         for pair in run['questions']:
             pair['result']['test_type'] = 'objective'
             pair['result']['correct_option'] = 'B'
-        self.f.runs.repository.save(run)
+        self.f.runs.repository.save(run, facilitator_id='F001', role='facilitator')
         repo = self.f.service.assessments.tests.repository
         test = repo.get_by_id(self.tid); test['test_type'] = 'objective'; repo.save(test)
         report = self.build()

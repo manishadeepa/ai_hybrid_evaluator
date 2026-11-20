@@ -303,7 +303,9 @@ class AutomaticTests(unittest.TestCase):
         run=self.prepare()
         with patch(ENGINE+'_load_client',return_value=(object(),'deployment')) as client, patch(ENGINE+'_evaluate_with_retry',return_value={'awarded_marks':0,'justification':'Existing engine'}) as grade:
             self.assertEqual(self.runs.execute(run['run_id'])['status'],'completed');client.assert_called_once();self.assertEqual(grade.call_count,3)
+        # A completed candidate cannot be graded twice; use a fresh fixture for batch coverage.
         rows=[q['record'] for q in run['questions']]
+        self.doCleanups(); self.setUp(); self.ingest('subjective'); self.submit()
         run=self.runs.prepare_batch('Assessment','Test',rows,{},self.papers.upload_dir/self.paper['filename'],assessment_id=self.aid,test_id=self.tid)
         with patch(ENGINE+'_load_client',return_value=(object(),'deployment')) as client, patch(ENGINE+'_evaluate_question_batch',side_effect=lambda c,d,rows,*args:[{'awarded_marks':0,'justification':'Batch'} for r in rows]) as grade:
             self.assertEqual(self.runs.execute(run['run_id'])['status'],'completed');client.assert_called_once();self.assertEqual(grade.call_count,3)
@@ -336,8 +338,9 @@ class AutomaticTests(unittest.TestCase):
             finished=self.execute_local(paused);self.assertEqual(finished['status'],'completed')
         self.assertEqual(set(calls), {'Q1','Q2','Q3'})
         self.assertEqual(len(calls), 3)
-        restarted=self.runs.restart(run['run_id'])
-        self.assertEqual(self.execute_local(restarted)['completed_questions'],3)
+        with self.assertRaisesRegex(ValueError, 'EVALUATION ALREADY COMPLETED'):
+            self.runs.restart(run['run_id'])
+        self.assertEqual(self.runs.get_run(run['run_id'])['completed_questions'],3)
 
     def test_candidate_state_uses_safe_canonical_snapshot(self):
         import asyncio
@@ -348,7 +351,7 @@ class AutomaticTests(unittest.TestCase):
         source=ast.parse((ROOT/'ai_hybrid_evaluator/state/candidate_state.py').read_text(encoding='utf-8'))
         cls=next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='CandidateState')
         method=next(n for n in cls.body if isinstance(n,ast.AsyncFunctionDef) and n.name=='start_test')
-        state=SimpleNamespace(_get_current_candidate_id=AsyncMock(return_value='C1'),max_violations=3,timer_session_id=0,_save_current_test_record=Mock())
+        state=SimpleNamespace(_bind_candidate=Mock(),_get_current_candidate_id=AsyncMock(return_value='C1'),max_violations=3,timer_session_id=0,_save_current_test_record=Mock())
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
         rx=SimpleNamespace(call_script=lambda script:script,redirect=lambda url:url,toast=SimpleNamespace(error=lambda text: (_ for _ in ()).throw(AssertionError(text))))

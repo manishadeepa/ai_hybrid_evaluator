@@ -1,3 +1,4 @@
+from backend.persistence_lock import persistence_operation
 from pathlib import Path
 from copy import deepcopy
 from backend.repositories.json_repository import JSONRepository, json_document_exists
@@ -27,6 +28,7 @@ class AssessmentRepository:
     def get_by_id(self, record_id):
         return next((r for r in self.get_all() if r["assessment_id"] == record_id), None)
 
+    @persistence_operation
     def save(self, record):
         records = self.get_all()
         for index, existing in enumerate(records):
@@ -38,5 +40,6 @@ class AssessmentRepository:
         self.save_all(records)
         return deepcopy(record)
 
+    @persistence_operation
     def delete(self, record_id):
         self.save_all([r for r in self.get_all() if r["assessment_id"] != record_id])

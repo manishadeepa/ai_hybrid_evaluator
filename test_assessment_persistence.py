@@ -120,7 +120,7 @@ class PersistenceTests(unittest.TestCase):
         path = self.folder / 'assessment_completions.json'
         path.write_text('[]', encoding='utf-8')
         from backend.repositories.json_repository import read_json_document
-        namespace = {'Path': Path, 'read_json_document': read_json_document}
+        namespace = {'Path': Path, 'read_json_document': read_json_document, 'deepcopy': deepcopy}
         Harness = extract_methods(
             'ai_hybrid_evaluator/state/facilitator_state.py',
             'FacilitatorState',

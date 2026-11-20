@@ -1,3 +1,5 @@
+from copy import deepcopy
+from backend.document_updates import merge_session_document
 """
 Candidate State Ã¢â‚¬â€ manages candidate dashboard and active test environment session.
 Includes question loading from Facilitator-uploaded papers, answers, navigation,
@@ -278,6 +280,7 @@ def _parse_test_timing_bounds(test_date_str: str, start_time_str: str, end_time_
 
 
 class CandidateState(rx.State):
+    _baseline_saved_candidate_feedbacks: dict = {}
     # Candidate identity (emp_id or email)
     candidate_id: str = ""
 
@@ -2407,19 +2410,21 @@ class CandidateState(rx.State):
     def _get_candidate_feedback_file_path() -> Path:
         return active_data_file("candidate_feedbacks.json")
 
-    def _load_saved_candidate_feedbacks(self) -> dict[str, dict]:
+    def _load_saved_candidate_feedbacks(self):
         value = read_json_document(CandidateState._get_candidate_feedback_file_path(), {})
         if value == []:
-            return {}
+            value = {}
         if not isinstance(value, dict):
-            raise ValueError("Stored candidate feedback data is invalid.")
+            raise ValueError("Stored application settings are invalid.")
+        self._baseline_saved_candidate_feedbacks = deepcopy(value)
         return value
 
     def _persist_candidate_feedbacks(self):
-        write_json_document(
-            CandidateState._get_candidate_feedback_file_path(),
-            self.saved_candidate_feedbacks,
+        merged = merge_session_document(
+            CandidateState._get_candidate_feedback_file_path(), getattr(self, "_baseline_saved_candidate_feedbacks", {}), self.saved_candidate_feedbacks
         )
+        self.saved_candidate_feedbacks = merged
+        self._baseline_saved_candidate_feedbacks = deepcopy(merged)
 
     async def open_candidate_feedback_form(self):
         """Load and open the pending Admin-created Candidate Feedback Form."""

@@ -83,7 +83,7 @@ class CandidateResultsLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['evaluation_type'],'manual')
 
     async def test_unfinished_and_superseded_ai_have_no_score(self):
-        self.submitted();run=self.f.ai_result()
+        self.submitted();run=self.f.ai_result(complete=False)
         self.f.runs.restart(run['run_id'])
         row=await self.row()
         self.assertEqual((row['status'],row['score']),('Submitted','—'))

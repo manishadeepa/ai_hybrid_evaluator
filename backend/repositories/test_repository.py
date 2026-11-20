@@ -1,3 +1,4 @@
+from backend.persistence_lock import persistence_operation
 from pathlib import Path
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -113,6 +114,7 @@ class TestRepository:
     def get_by_id(self, record_id):
         return next((r for r in self.get_all() if r["test_id"] == record_id), None)
 
+    @persistence_operation
     def save(self, record):
         records = self.get_all()
         for index, existing in enumerate(records):

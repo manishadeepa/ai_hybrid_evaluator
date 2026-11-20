@@ -31,9 +31,10 @@ from ai_hybrid_evaluator.state import facilitator_state as facilitator_state_mod
 from ai_hybrid_evaluator.state.facilitator_state import FacilitatorState
 
 
-def _process_lock_or_update(root, test_id, action, barrier, output):
+def _process_lock_or_update(root, test_id, action, barrier, output, ready):
     service = LockTestService(LockTestRepository(Path(root) / "tests.json"))
-    barrier.wait(timeout=15)
+    ready.put(action)
+    barrier.wait(timeout=120)
     if action == "lock":
         output.put(("locked", service.lock_test(test_id, "F001", "facilitator")["is_locked"]))
         return
@@ -475,15 +476,19 @@ class TestLockTests(unittest.TestCase):
         context = multiprocessing.get_context("spawn")
         barrier = context.Barrier(2)
         output = context.Queue()
+        ready = context.Queue()
         processes = [
             context.Process(
                 target=_process_lock_or_update,
-                args=(str(self.root), self.test_id, action, barrier, output),
+                args=(str(self.root), self.test_id, action, barrier, output, ready),
             )
             for action in ("lock", "update")
         ]
         for process in processes:
             process.start()
+        # Importing Reflex in a Windows spawned process can be slow. Start the
+        # operation timeout only after both workers have initialized.
+        self.assertEqual({ready.get(timeout=120) for _ in processes}, {"lock", "update"})
         results = [output.get(timeout=30) for _ in processes]
         for process in processes:
             process.join(timeout=30)

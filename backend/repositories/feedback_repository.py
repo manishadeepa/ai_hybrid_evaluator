@@ -1,3 +1,4 @@
+from backend.persistence_lock import persistence_operation
 """Survey-only stores. Reads never create files or migrate legacy evaluation comments."""
 from copy import deepcopy
 from pathlib import Path
@@ -24,6 +25,7 @@ class FeedbackRepository:
         self._validate(rows)
         return rows
 
+    @persistence_operation
     def save(self, row):
         rows = [r for r in self.get_all() if r[self.identity] != row[self.identity]] + [deepcopy(row)]
         self._validate(rows)

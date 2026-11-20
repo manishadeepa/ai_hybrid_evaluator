@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from backend.repositories.json_repository import JSONRepository
+from backend.persistence_lock import persistence_operation
 from backend.shared_catalog import (
     CandidateDict as Candidate,
     FacilitatorDict as Facilitator,
@@ -41,6 +42,7 @@ def _get_profile(file_path: Path, emp_id: str, defaults: dict) -> dict:
     return {**defaults, **matches[0]} if matches else dict(defaults)
 
 
+@persistence_operation
 def _save_profile(file_path: Path, emp_id: str, data: dict) -> dict:
     identity = str(emp_id or "").strip()
     if not identity:

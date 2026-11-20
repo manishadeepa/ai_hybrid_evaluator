@@ -10,8 +10,9 @@ from sqlalchemy import Column, DateTime, JSON, MetaData, String, Table, func, in
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.engine import Engine, URL
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
+from backend.database.mysql_unit_of_work import document_connection
 from backend.data_paths import DEFAULT_DATA_DIR
 from backend.services.credential_encryption import get_credential_cipher
 
@@ -34,6 +35,7 @@ _DOCUMENTS = Table(
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     ),
+    mysql_engine="InnoDB",
 )
 
 
@@ -144,6 +146,14 @@ class MySQLJSONStore:
             return
         try:
             _METADATA.create_all(self.engine, checkfirst=True)
+            if self.engine.dialect.name == "mysql":
+                with self.engine.connect() as connection:
+                    table_engine = connection.execute(text(
+                        "SELECT ENGINE FROM information_schema.tables "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'application_json_documents'"
+                    )).scalar_one_or_none()
+                if str(table_engine).casefold() != "innodb":
+                    raise ValueError("MySQL application storage must use InnoDB for safe transactional updates.")
             if self._fingerprint:
                 _SCHEMA_READY.add(self._fingerprint)
         except SQLAlchemyError as exc:
@@ -152,12 +162,13 @@ class MySQLJSONStore:
             ) from None
 
     def get_document(self, document_key: str, default=None):
-        self.ensure_schema()
+        if self.engine.dialect.name != "mysql":
+            self.ensure_schema()
         statement = select(_DOCUMENTS.c.payload).where(
             _DOCUMENTS.c.document_id == self.document_id(document_key)
         )
         try:
-            with self.engine.connect() as connection:
+            with document_connection(self) as connection:
                 payload = connection.execute(statement).scalar_one_or_none()
         except SQLAlchemyError as exc:
             raise ValueError(
@@ -168,12 +179,13 @@ class MySQLJSONStore:
         return payload
 
     def has_document(self, document_key: str) -> bool:
-        self.ensure_schema()
+        if self.engine.dialect.name != "mysql":
+            self.ensure_schema()
         statement = select(_DOCUMENTS.c.document_id).where(
             _DOCUMENTS.c.document_id == self.document_id(document_key)
         )
         try:
-            with self.engine.connect() as connection:
+            with document_connection(self) as connection:
                 return connection.execute(statement).scalar_one_or_none() is not None
         except SQLAlchemyError as exc:
             raise ValueError(
@@ -185,14 +197,15 @@ class MySQLJSONStore:
             json.dumps(payload, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ValueError("MySQL application data must be valid JSON.") from exc
-        self.ensure_schema()
+        if self.engine.dialect.name != "mysql":
+            self.ensure_schema()
         values = {
             "document_id": self.document_id(document_key),
             "document_key": document_key,
             "payload": payload,
         }
         try:
-            with self.engine.begin() as connection:
+            with document_connection(self, write=True) as connection:
                 existing_key = connection.execute(
                     select(_DOCUMENTS.c.document_key).where(
                         _DOCUMENTS.c.document_id == values["document_id"]
@@ -228,9 +241,10 @@ class MySQLJSONStore:
             ) from None
 
     def list_documents(self) -> list[tuple[str, object]]:
-        self.ensure_schema()
+        if self.engine.dialect.name != "mysql":
+            self.ensure_schema()
         try:
-            with self.engine.connect() as connection:
+            with document_connection(self) as connection:
                 rows = connection.execute(
                     select(_DOCUMENTS.c.document_key, _DOCUMENTS.c.payload)
                 ).all()
@@ -242,9 +256,10 @@ class MySQLJSONStore:
 
     def import_documents(self, documents: list[tuple[str, object]]) -> None:
         """Import without replacing non-empty target data."""
-        self.ensure_schema()
+        if self.engine.dialect.name != "mysql":
+            self.ensure_schema()
         try:
-            with self.engine.begin() as connection:
+            with document_connection(self, write=True) as connection:
                 existing_rows = connection.execute(
                     select(_DOCUMENTS.c.document_id, _DOCUMENTS.c.document_key, _DOCUMENTS.c.payload)
                 ).all()

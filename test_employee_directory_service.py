@@ -14,6 +14,12 @@ class EmployeeDirectoryServiceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.workbook = Path(self.temp.name) / "EMP_information.xlsx"
         self.workbook.touch()
+        storage_patch = patch.object(employee_directory_service, "read_json_document", return_value=None)
+        mysql_patch = patch("backend.database.mysql_json_store.active_mysql_store", return_value=None)
+        storage_patch.start()
+        mysql_patch.start()
+        self.addCleanup(storage_patch.stop)
+        self.addCleanup(mysql_patch.stop)
 
     @patch("backend.services.employee_directory_service.pd.read_excel")
     def test_normalizes_header_whitespace_and_returns_employee_details(self, read_excel):
@@ -42,6 +48,7 @@ class EmployeeDirectoryServiceTests(unittest.TestCase):
             self.workbook,
             sheet_name="Sheet1",
             dtype=str,
+            keep_default_na=False,
         )
 
     @patch("backend.services.employee_directory_service.pd.read_excel")
